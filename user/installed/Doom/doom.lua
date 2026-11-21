@@ -91,7 +91,8 @@ end
 -- copy of it - two of them still making a Lua string of every window,
 -- after this one had stopped. One copy now, in `regions.lua`.
 --
-local wad, why = regions.read_whole(path)
+local wad
+wad, why = regions.read_whole(path)
 
 if not wad then
   print("doom: " .. tostring(why))
@@ -190,7 +191,8 @@ do
   end
 end
 
-local ok, started, why = pcall(doom.start, at, size)
+local ok, started
+ok, started, why = pcall(doom.start, at, size)
 
 -- Before the verdict, because whatever Doom said about it is in the ring
 -- and is the part worth reading.

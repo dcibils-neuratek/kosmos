@@ -69,6 +69,12 @@ struct k3d_vk_view {
                                      * (0, 1, 0); a cockpit's rolls with the
                                      * aircraft. Last, so an initialiser that
                                      * does not name it leaves it zero. */
+    float light[3];                 /* the sun's colour, 0 to 1: all zeros is
+                                     * white, so a view that does not name it
+                                     * is lit as before (Flight's time of
+                                     * day, F6a) */
+    float glow;                     /* the sky's glow around the sun and its
+                                     * disc, in the sun's colour: 0 is none */
 };
 
 struct k3d_vk_mesh {

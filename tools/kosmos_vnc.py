@@ -463,6 +463,14 @@ def step(viewer, text):
 
         for k in reversed(held):
             viewer.key(k, False)
+    elif verb == "hold":
+        # `hold left 3`: a key held down for that long - an arrow flown
+        # with, which a press and release in one instant is not.
+        name, seconds = rest.split()
+        k = keysym(name)
+        viewer.key(k, True)
+        time.sleep(float(seconds))
+        viewer.key(k, False)
     elif verb == "wait":
         time.sleep(float(rest))
     else:

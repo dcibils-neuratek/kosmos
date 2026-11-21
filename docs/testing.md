@@ -40144,3 +40144,62 @@ pictures with every window arranged and none ended, and Flight shows
 the whole gate's load and passed on their own, in 2:25. Both are in the
 roadmap as flakes to fix. `make shot` then wrote both pictures.
 
+
+## 18.960 Flight's time of day and its views named (0.12.40)
+
+**In short:** Flight can now be flown at dawn, morning, noon, afternoon,
+dusk or night, chosen with T or in the pause sheet's new Time row. The
+view it is in is named in a chip on the screen, and V or a click on the
+chip steps through Chase, Cockpit and Tower. Building it found a local
+declared twice in one file, and a new host check now keeps every Lua
+file in the tree free of that trap.
+
+- **The sun from the hour.** For an equinox day, the hour gives the sun's
+  hour angle, and with the city's latitude that gives its direction: at
+  Rio, 17:45 puts the sun 3.4 degrees up, towards 272 degrees. At night
+  the moon stands opposite. The 3D Kit's view gained a light colour (all
+  zeros is white, as before) and a glow, and every shader's push block a
+  `light` vector. The sky shader draws a disc and a halo towards the sun,
+  and with a low sun's glow (above the day's 0.3) it turns the horizon
+  into a band. The day's sky keeps its straight blend.
+- **Skies keyed by the sun's height**, from -12 degrees (night) to 35
+  (the day's old colours), blended between the rows: zenith, horizon,
+  haze, the light's colour, the ambient light and the glow.
+- **The view chip** sits top right ("View: Chase" with a V key cap) at
+  480 pixels and wider, and under the graphics panel in a narrower window.
+  The sheet lists the keys in two lines above its buttons.
+- **One name twice in one scope.** Flight's hours were first called
+  `local TIMES`, four hundred lines above the graphics panel's `local
+  TIMES = 120`. The sheet's row read the second one, a number, and
+  `ipairs` on it stopped Flight with "attempt to index a number value"
+  and no line number: the error came from inside C, and Lua in Kosmos has
+  no `debug` library to add a traceback. It was found by bisecting with
+  prints. `tools/luaredefined.lua` runs the vendored luacheck's warning
+  411 over every Lua file Kosmos writes, in `make host-check`. It found
+  seven more cases, each harmless today and each the same trap. All were
+  renamed: wm, screenshot, audiolag, Write, the Super Nintendo (`wanted`
+  became `owed`) and Doom (two). 359 files are clean now.
+
+**Checked** by `x86-flight`, which now also presses V three times, T
+twice, and reads the screen at noon and at dusk:
+
+- the chip said `chase`, `cockpit`, `tower`, in that order;
+- the times went noon, afternoon, dusk, and dusk's sun was 3.4 degrees
+  up, towards 272;
+- the window held 376 orange pixels at noon and 6112 at dusk. The count
+  is taken inside the window's box only, because the desktop's warm
+  wallpaper counted too when it was taken over the whole screen.
+
+The graphics panel's check failed once along the way. The low sun's band
+was first applied at every glow, noon's 0.3 included, and the sky behind
+the panel's translucent ground read 0.13 near-black where it must read
+0.3. With the band weighted by the glow above 0.3, it reads 0.89, as
+before.
+
+**Controls:**
+
+- With the sky's colours frozen at the day's and no chip drawn, the suite
+  failed with "the view chip said []" and the same orange count at noon
+  and dusk (195 against 195).
+- A scratch file with two `local TIMES` in one scope fails
+  `luaredefined.lua`.

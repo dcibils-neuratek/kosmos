@@ -41,6 +41,7 @@ local settings = prefs.open("flight", {
   model = "/Home/Apps/Flight/cessna_172.glb",    -- the aircraft (assets/models/cessna172)
   graphics = true,                               -- the graphics panel open (F3)
   start = "city",                                -- "city", "runway" or "final" (F5i)
+  time = "noon",                                 -- the time of day, one of HOURS (F6a)
   place = false,                                 -- a place searched for: { name, note, lon, lat }
   recent = false,                                -- the sheet's Recent: { key } or places
   finder = false,                                -- places looked up there, not Nominatim
@@ -49,7 +50,7 @@ local settings = prefs.open("flight", {
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
-              v = 47, p = 25, r = 19, f3 = 61 }
+              v = 47, p = 25, r = 19, f3 = 61, t = 20 }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local function now() return sys.ticks() / counter_hz end
@@ -140,7 +141,72 @@ local view = {
   sun = { 0.3, 1.0, 0.2 }, ambient = 0.35,
   zenith = { 0.22, 0.42, 0.80 }, horizon = { 0.78, 0.84, 0.92 },
   haze = { 0.72, 0.78, 0.86 }, haze_start = 4000, haze_end = 40000,
+  light = { 1, 1, 1 }, glow = 0.3,
 }
+
+-- **The time of day** (F6a; Diego, 20 November 2026: "I love playing in
+-- dusk", "We neee to chose what time of day to play in"). An hour of the
+-- local solar day, at the equinox, so it means the same in every city:
+-- the sun's direction from the hour and the place's latitude, and the
+-- sky, the haze, the sun's colour and the ambient share blended between
+-- five pictures of the sky by how high the sun stands - night at twelve
+-- degrees under the horizon, twilight at three under, the golden hour at
+-- four over, the afternoon at fifteen and the day from thirty-five. Dusk
+-- is the sun three degrees up in the west, orange along the horizon.
+-- `T` steps through them while flying; the sheet chooses one.
+local HOURS = { { key = "dawn", name = "Dawn", hour = 6.25 },
+                { key = "morning", name = "Morning", hour = 9 },
+                { key = "noon", name = "Noon", hour = 12 },
+                { key = "afternoon", name = "Afternoon", hour = 15.5 },
+                { key = "dusk", name = "Dusk", hour = 17.75 },
+                { key = "night", name = "Night", hour = 21 } }
+local SKIES = {   -- the sun's height in degrees, then what the sky is at it
+  { -12, zenith = { 0.02, 0.03, 0.08 }, horizon = { 0.05, 0.07, 0.14 },
+    haze = { 0.05, 0.07, 0.13 }, light = { 0.35, 0.40, 0.55 }, ambient = 0.16, glow = 0 },
+  { -3, zenith = { 0.08, 0.12, 0.30 }, horizon = { 0.50, 0.36, 0.42 },
+    haze = { 0.36, 0.30, 0.36 }, light = { 0.85, 0.50, 0.40 }, ambient = 0.28, glow = 0.8 },
+  { 4, zenith = { 0.18, 0.30, 0.58 }, horizon = { 0.84, 0.62, 0.56 },
+    haze = { 0.72, 0.58, 0.55 }, light = { 1.00, 0.65, 0.42 }, ambient = 0.48, glow = 1.0 },
+  { 15, zenith = { 0.20, 0.36, 0.72 }, horizon = { 0.88, 0.80, 0.74 },
+    haze = { 0.80, 0.76, 0.74 }, light = { 1.00, 0.88, 0.72 }, ambient = 0.36, glow = 0.6 },
+  { 35, zenith = { 0.22, 0.42, 0.80 }, horizon = { 0.78, 0.84, 0.92 },
+    haze = { 0.72, 0.78, 0.86 }, light = { 1.00, 1.00, 1.00 }, ambient = 0.35, glow = 0.3 },
+}
+
+local function time_of(key)
+  for i, t in ipairs(HOURS) do if t.key == key then return t, i end end
+  return HOURS[3], 3
+end
+
+local function set_time(key)
+  local t = time_of(key)
+  local lat, h = math.rad(settings.lat), math.rad((t.hour - 12) * 15)
+  -- East, up and north at the equinox, then the world's x east, y up, z south.
+  local east, up, north = -math.sin(h), math.cos(lat) * math.cos(h), -math.sin(lat) * math.cos(h)
+  local height = math.deg(math.asin(math.max(-1, math.min(1, up))))
+  local a, b = SKIES[1], SKIES[#SKIES]
+  for i = 1, #SKIES - 1 do
+    if height >= SKIES[i][1] and height < SKIES[i + 1][1] then a, b = SKIES[i], SKIES[i + 1] end
+  end
+  local f = b[1] == a[1] and 0 or math.max(0, math.min(1, (height - a[1]) / (b[1] - a[1])))
+  if height < SKIES[1][1] then f = 0 end
+  local function mix(x, y) return x + (y - x) * f end
+  for _, k3 in ipairs({ "zenith", "horizon", "haze", "light" }) do
+    for i = 1, 3 do view[k3][i] = mix(a[k3][i], b[k3][i]) end
+  end
+  view.ambient, view.glow = mix(a.ambient, b.ambient), mix(a.glow, b.glow)
+  -- What lights the ground: the sun held just over the horizon through the
+  -- twilight, and at night the moon, opposite it.
+  if height < -6 then
+    view.sun[1], view.sun[2], view.sun[3] = -east, -up, north
+  else
+    view.sun[1], view.sun[2], view.sun[3] = east, math.max(up, 0.03), -north
+  end
+  settings:set("time", t.key)
+  say(("time %s at %.2f h: the sun %.1f degrees up, towards %.0f"):format(t.key, t.hour, height,
+      (math.deg(math.atan(east, north)) + 360) % 360))
+end
+set_time(settings.time)
 
 -- **The cities** (F5h): where each is flown from, its airfield and a line
 -- about it - the place box says them, and the tower stands on the
@@ -728,7 +794,7 @@ for i = 1, TIMES do times[i] = 0 end
 local spark_xy = {}
 local graphics, graphics_said, graphics_next = nil, false, 0
 local face_big, face_small, face_mono
-local recent = { n = 0, since = 0, fps = 0 }
+local rate = { n = 0, since = 0, fps = 0 }
 
 local function count_of(n)
   if n >= 1e6 then return ("%.2f M"):format(n / 1e6) end
@@ -745,10 +811,10 @@ local function draw_graphics(w, said, took, t)
   local draws, triangles, gpu_ms, presented = w:stats()
   local own = math.max(0, took * 1000 - (gpu_ms or 0))
   processor_ms = processor_ms and processor_ms + (own - processor_ms) * 0.1 or own
-  recent.n = recent.n + 1
-  if t - recent.since >= 1 then
-    recent.fps = recent.n / (t - recent.since)
-    recent.n, recent.since = 0, t
+  rate.n = rate.n + 1
+  if t - rate.since >= 1 then
+    rate.fps = rate.n / (t - rate.since)
+    rate.n, rate.since = 0, t
   end
   if not settings.graphics then
     if graphics then w:overlay(nil, 0, 0, 2) graphics = nil end
@@ -770,7 +836,7 @@ local function draw_graphics(w, said, took, t)
   end
   local gw, gh = graphics:size()
   graphics:fill(0, 0, gw, gh, GLASS)
-  local fps = ("%.1f"):format(recent.fps)
+  local fps = ("%.1f"):format(rate.fps)
 
   if not full then
     graphics:text(4, 1, fps .. " fps", BRIGHT, nil, face_small)
@@ -826,7 +892,7 @@ local function draw_graphics(w, said, took, t)
   local gx, gy = settings.width - gw - (full and 16 or 4), full and 16 or 4
   local ok, why = w:overlay(graphics, gx, gy, 2)
   if not ok then say("graphics failed=" .. tostring(why)) end
-  if not graphics_said and recent.fps > 0 then
+  if not graphics_said and rate.fps > 0 then
     say(("graphics %dx%d at %d,%d device=%s draws=%d triangles=%d gpu_ms=%s frame_ms=%.2f "
          .. "processor_ms=%.2f presented=%s")
         :format(gw, gh, gx, gy, w:device():match("^%S+"), draws, triangles,
@@ -906,6 +972,47 @@ local function draw_place(w)
   credit_view = S.view
 end
 
+-- **The view, said** (F6b; Diego, 20 November 2026: "don't know how to
+-- change cockpit to chase view"). `V` stepped the views and nothing on the
+-- screen said so. A chip in the top right corner of every view names it
+-- and its key - under the graphics panel when that is open - and a click
+-- on it is `V`. Redrawn only when the view or its place changes.
+local VIEWS = { "Chase", "Cockpit", "Tower" }
+local view_chip, view_chip_face, view_chip_said, view_chip_box
+
+local function draw_view_chip(w)
+  local y = 16
+  if graphics then
+    local _, gh = graphics:size()
+    y = 16 + gh + 8
+  end
+  local key = S.view .. ":" .. y
+  if key == view_chip_said then return end
+  if settings.width < 120 then return end
+  view_chip_face = view_chip_face or gfx.face("ibmplexsans-medium", 13) or gfx.face("ibmplexsans", 13)
+  local words = (settings.width >= 480 and "View: " or "") .. VIEWS[S.view]
+  local cw = gfx.measure(words, view_chip_face) + gfx.measure("V", view_chip_face) + 44
+  view_chip = gfx.surface{ w = cw, h = 30 }
+  view_chip:fill(0, 0, cw, 30, 0x00000000)
+  view_chip:fill_round(0, 0, cw, 30, 0xe0161a20, 9)
+  local after = view_chip:text(12, 6, words, 0xfff4f6f9, nil, view_chip_face)
+  view_chip:fill_round(after + 10, 5, cw - after - 18, 20, 0xff4c8dff, 5)
+  view_chip:text(after + 16, 6, "V", 0xffffffff, nil, view_chip_face)
+  -- A narrow window has no place box, and its top left is free.
+  local x = settings.width >= 480 and settings.width - cw - 16 or 4
+  if settings.width < 480 then y = graphics and 26 or 4 end
+  local ok, why = w:overlay(view_chip, x, y, 6)
+  if not ok then say("view chip failed=" .. tostring(why)) return end
+  view_chip_box = { x, y, cw, 30 }
+  say(("view %s laid at %d,%d %dx30"):format(VIEWS[S.view]:lower(), x, y, cw))
+  view_chip_said = key
+end
+
+local function on_view_chip(cx, cy)
+  local b = view_chip_box
+  return b and cx and cx >= b[1] and cx < b[1] + b[3] and cy >= b[2] and cy < b[2] + b[4]
+end
+
 -- **The pause sheet** (F5i): where in the world and from where. `P`
 -- opens it and pauses; `Escape` or Fly on closes it and flies on from
 -- where it stopped; Restart starts again with what it says - another city,
@@ -953,6 +1060,7 @@ local function sheet_rows()
   end
   rows[#rows + 1] = { kind = "places", label = "Recent", items = recent() }
   rows[#rows + 1] = { kind = "starts", label = "Start", items = STARTS }
+  rows[#rows + 1] = { kind = "times", label = "Time", items = HOURS }
   rows[#rows + 1] = { kind = "buttons", items = { { name = "Restart" }, { name = "Fly on" } } }
   return rows
 end
@@ -968,6 +1076,7 @@ local function chosen(row, item)
   if row.kind == "starts" then
     return item.key == (usable(row, item) and SHEET.start or "city")
   end
+  if row.kind == "times" then return item.key == settings.time end
   return item.name == "Fly on"
 end
 
@@ -1024,6 +1133,8 @@ local function choose(w, row, i)
     SHEET.place = item
   elseif row.kind == "starts" then
     if usable(row, item) then SHEET.start = item.key end
+  elseif row.kind == "times" then
+    set_time(item.key)                 -- at once, under the sheet
   elseif item.name == "Restart" then
     restart(SHEET.place, SHEET.start)
     sheet_close(w)
@@ -1113,7 +1224,7 @@ local function draw_sheet(w)
   local rows = sheet_rows()
   local width, height = settings.width, settings.height
   local sw = math.min(460, width - 32)
-  local parts = { SHEET.focus, SHEET.text, SHEET.said or "",
+  local parts = { SHEET.focus, SHEET.text, SHEET.said or "", settings.time,
                   SHEET.place and SHEET.place.name or "-", SHEET.start or "-" }
   for _, r in ipairs(rows) do
     parts[#parts + 1] = (r.label or r.kind) .. ":" .. tostring(SHEET.cols[r.label or r.kind])
@@ -1150,7 +1261,7 @@ local function draw_sheet(w)
     end
     return n
   end
-  local sh = 70
+  local sh = 70 + 44                  -- and the keys, above the buttons
   for _, r in ipairs(rows) do sh = sh + (r.kind == "buttons" and 48 or lines(r) * 30 + 10) end
   sh = math.min(sh, height - 16)
   if not sheet_surface or select(2, sheet_surface:size()) ~= sh or sheet_surface:size() ~= sw then
@@ -1178,6 +1289,13 @@ local function draw_sheet(w)
       hits[#hits + 1] = { left, y, fw, 26, ri, 1 }
       y = y + 40
     elseif r.kind == "buttons" then
+      -- The keys, said once where a person looks for them (F6b).
+      s:fill(18, y - 4, sw - 36, 1, LINE)
+      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z throttle \u{b7} F flaps",
+             DIM, nil, sheet_face)
+      s:text(18, y + 22, "V view \u{b7} T time of day \u{b7} P pause \u{b7} R start again \u{b7} F3 graphics",
+             DIM, nil, sheet_face)
+      y = y + 44
       local x = sw - 18
       for i = #r.items, 1, -1 do
         local item = r.items[i]
@@ -1287,6 +1405,7 @@ restart = function(place, how)
     missing.e, missing.i = {}, {}
     place_tower()
     place_said = nil
+    set_time(settings.time)            -- the sun stands elsewhere at another latitude
     say(("restarted in %s at %.4f %.4f"):format(here and here.name or "?", settings.lat,
         settings.lon))
   end
@@ -1318,7 +1437,12 @@ while not w:closed(0) do
   if SHEET.open then
     sheet_input(w)
   else
-    if v then S.view = S.view % 3 + 1 end
+    local cx, cy = w:clicked()
+    if v or on_view_chip(cx, cy) then S.view = S.view % 3 + 1 end
+    if w:pressed(KEY.t) then
+      local _, i = time_of(settings.time)
+      set_time(HOURS[i % #HOURS + 1].key)
+    end
     if p then
       sheet_open()
       w:typed()                            -- the P that opened it
@@ -1336,7 +1460,6 @@ while not w:closed(0) do
       start(g)
     end
     w:typed()
-    w:clicked()
   end
 
   if not S.paused then
@@ -1361,6 +1484,7 @@ while not w:closed(0) do
                net.imagery.why and net.imagery.why ~= "" and (" (" .. net.imagery.why .. ")") or ""))
   end
   draw_place(w)
+  draw_view_chip(w)
   if S.view == 3 and not tower.said then
     say(("tower at x=%.0f z=%.0f ground=%s distance=%.0f focal=%.1f")
         :format(tower.x, tower.z, tower.ground and ("%.0f"):format(tower.ground) or "none",

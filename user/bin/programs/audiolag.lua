@@ -229,7 +229,8 @@ print(("audiolag: device raised its line %d times for %d periods")
 -- is for spotting regressions rather than for knowing whether something is
 -- fast, and this is what that warning looks like as a number.
 --
-local worst_gap, gaps = 0, 0
+local gaps = 0
+worst_gap = 0
 local prev = sys.ticks()
 local stop = prev + hz                  -- one second
 

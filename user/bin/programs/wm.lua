@@ -5297,7 +5297,7 @@ handlers.windows = function(req)
 
   -- The application in front and its menus, with the first page: what
   -- the bar at the top draws between the Kosmos menu and the indicators.
-  local front = nil
+  front = nil
 
   if from == 1 then
     local f = OUT.front_app()

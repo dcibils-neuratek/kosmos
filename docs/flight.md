@@ -422,14 +422,22 @@ ends on the M700:
   in dusk", "We neee to chose what time of day to play in", "Also some
   real ATC radio could be nice if there is any stream of audio public we
   can tune into".
-  - **F6a - time of day.** Dawn, morning, noon, afternoon, dusk and night
-    in the pause sheet, remembered: the sun's height and bearing from the
-    hour, and the sky, the horizon, the haze and the light on the slopes
-    coloured from them - dusk's orange low in the west. `T` steps through
-    them while flying.
-  - **F6b - the views, said.** `V` steps chase, cockpit and tower, and
-    nothing on the screen said so. The strip names the view with its key,
-    clicking it changes it, and the pause sheet lists the keys.
+  - **F6a - time of day**, **built in 0.12.40** (`testing.md` 18.960).
+    Dawn, morning, noon, afternoon, dusk and night in the pause sheet,
+    remembered, and `T` steps through them while flying. Each is an hour
+    of the solar day at the equinox, so dusk is 17:45 in every city: the
+    sun's direction from the hour and the latitude, and the zenith, the
+    horizon, the haze, the sun's colour and the ambient share blended
+    between five skies by how high the sun stands. The 3D Kit's view gained
+    two fields every program on it can use: `light`, the sun's colour (a
+    view without it is lit white, as before), and `glow`, the sun's disc
+    and the light around it in the sky, strongest along the horizon under
+    it. At night the moon, opposite the sun, lights the ground.
+  - **F6b - the views, said**, **built in 0.12.40**. A chip in the top
+    right corner names the view, "View: Chase" beside a `V` key cap,
+    under the graphics panel when that is open, and a click on it changes
+    the view. The pause sheet lists every key. (This said the strip would
+    name it; the cockpit has no strip, and the chip is in every view.)
   - **F6c - the propeller and the engine.** The propeller turned 30 times
     a second, which a frame of 10 to 60 a second samples into standing
     still or turning backwards; it is drawn at a rate the eye can follow

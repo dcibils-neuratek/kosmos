@@ -29,12 +29,14 @@ struct mesh_push {
     float sun[4];       /* w: ambient */
     float haze[4];
     float range[4];     /* start, end */
+    float light[4];     /* rgb: the sun's colour */
 };
 
-/* A model's: the view's, then its own matrix and tint, 208 bytes. That is
+/* A model's: the view's, then its own matrix and tint, 224 bytes. That is
  * past the 128 Vulkan 1.3 promises and inside the 256 that 1.4 does and
  * that lavapipe and anv give; the view is pushed once and only the last 80
- * bytes for each model. */
+ * bytes for each model. The view alone is 144 since the sun had a colour
+ * (F6a), past 128 for the same reason. */
 struct model_push {
     struct mesh_push view;
     float model[16];
@@ -46,6 +48,8 @@ struct sky_push {
     float eye[4];
     float zenith[4];
     float horizon[4];
+    float sun[4];       /* xyz: towards the sun; w: the glow */
+    float light[4];     /* rgb: the sun's colour */
 };
 
 static void refuse(struct kvk *v, const char *why)
@@ -699,7 +703,17 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
         mp.haze[i] = view->haze[i];
         sp.zenith[i] = view->zenith[i];
         sp.horizon[i] = view->horizon[i];
+        sp.sun[i] = (float)sun[i];
     }
+    /* The sun's colour: white when the view names none. */
+    {
+        int named = view->light[0] != 0.0f || view->light[1] != 0.0f || view->light[2] != 0.0f;
+
+        for (int i = 0; i < 3; i++) {
+            mp.light[i] = sp.light[i] = named ? view->light[i] : 1.0f;
+        }
+    }
+    sp.sun[3] = view->glow;
     mp.sun[3] = view->ambient;
     mp.range[0] = view->haze_start;
     mp.range[1] = view->haze_end;

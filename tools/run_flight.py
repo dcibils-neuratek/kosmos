@@ -152,7 +152,7 @@ prefs.open("flight", {}):set{
   report = 2, frames = 0, finder = "%(base)s/search",
 }
 local s = prefs.open("flight", {})
-s:reset("city") s:reset("place") s:reset("recent") s:reset("start")
+s:reset("city") s:reset("place") s:reset("recent") s:reset("start") s:reset("time")
 print("flight setup done")
 """
 
@@ -275,6 +275,24 @@ def strip_words_at(R, data, band):
                 out.add((x - left, y - top))
     return out
 
+def orange(ppm, box):
+    """How many of the window's pixels are a dusk's warm colour: red over
+    blue, and bright. Only the window's - `box` is where the window manager
+    put it, x, y, width, height - since the desktop's wallpaper has warm
+    colours of its own."""
+    import run_screenshot
+    w, h, rgb = run_screenshot.parse_ppm(ppm)
+    x0, y0, bw, bh = box
+    n = 0
+    for y in range(y0, min(h, y0 + bh)):
+        for x in range(x0, min(w, x0 + bw)):
+            i = (y * w + x) * 3
+            r, g, b = rgb[i], rgb[i + 1], rgb[i + 2]
+            if r > 150 and r - b > 40 and g < r - 20:
+                n += 1
+    return n
+
+
 def island_checks(seen, island, asked, guest):
     """The invented island (F5j): Flight said it went offline and why, the
     place box says so, the credit is gone, and the terrain was handed the
@@ -361,6 +379,7 @@ def main():
     guest = SV.boot(IMAGE, telnet, web)
     fails = []
     screen = None
+    noon_screen = dusk_screen = None
     seen = ""
 
     def latest(after=0):
@@ -492,11 +511,29 @@ def main():
         sheet_key("down", "down to Start")
         sheet_key("right", "right to the runway")
         sheet_key("ret", "choosing the runway")
+        sheet_key("down", "down to Time")
         sheet_key("down", "down to the buttons")
         sheet_key("left", "left to Restart")
         sheet_key("ret", "Restart")
         guest.wait_for("flight started runway", "the restart")
         rio = wait_frames(3, "on Rio's runway")
+
+        # The time of day (F6a): T twice from noon is dusk, and the
+        # horizon turns orange. Counted against the frame at noon, since
+        # the desktop around the window has colours of its own.
+        noon_screen = guest.screendump()
+        for step in ("afternoon", "dusk"):
+            have = guest.seen.count("flight time ")
+            keys(True, "t")
+            time.sleep(0.1)
+            keys(False, "t")
+            until = time.monotonic() + 30
+            while time.monotonic() < until and guest.seen.count("flight time ") == have:
+                guest._read_available()
+                time.sleep(0.1)
+        wait_frames(3, "at dusk")
+        time.sleep(0.5)
+        dusk_screen = guest.screendump()
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):
             time.sleep(1.0)
             R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-tower.png"),
@@ -739,6 +776,36 @@ def main():
                      % (sx, sz, tws))
     if viewed["view"] == before["view"]:
         fails.append("V did not change the view: still %d" % viewed["view"])
+
+    # The views, said (F6b): the chip named each view as V stepped them.
+    chips = [c for i, c in enumerate(re.findall(r"flight view (\w+) laid at", seen))
+             if i == 0 or c != re.findall(r"flight view (\w+) laid at", seen)[i - 1]]
+    print("flight: the view chip said %r" % (chips,))
+    if chips[:3] != ["chase", "cockpit", "tower"]:
+        fails.append("the view chip did not name chase, cockpit and tower in turn: %r" % (chips,))
+
+    # The time of day (F6a): noon first, then T to the afternoon and dusk -
+    # the sun three degrees up in Rio's west, 22.9 degrees south: at the
+    # equinox at 17:45 it stands cos(22.9) cos(86.25) up, so 3.4 degrees,
+    # towards 272 - and the horizon orange where it was blue.
+    times = re.findall(r"flight time (\w+) at [\d.]+ h: the sun (-?[\d.]+) degrees up, "
+                       r"towards (\d+)", seen)
+    print("flight: times %r" % (times,))
+    want = math.degrees(math.asin(math.cos(math.radians(22.9)) * math.cos(math.radians(86.25))))
+    if not times or times[0][0] != "noon" or [t[0] for t in times[-2:]] != ["afternoon", "dusk"]:
+        fails.append("the time did not go from noon to the afternoon and dusk: %r" % (times,))
+    elif abs(float(times[-1][1]) - want) > 0.3 or abs(int(times[-1][2]) - 272) > 2:
+        fails.append("dusk's sun is not %.1f degrees up towards 272: %r" % (want, times[-1]))
+    where = re.search(r"wm: window Flight at (\d+),(\d+) (\d+)x(\d+)", seen)
+    if noon_screen and dusk_screen and where:
+        box = tuple(int(v) for v in where.groups())
+        before_o, after_o = orange(noon_screen, box), orange(dusk_screen, box)
+        print("flight: orange pixels at noon %d, at dusk %d" % (before_o, after_o))
+        if after_o < before_o + 1000 or after_o < 3 * before_o:
+            fails.append("dusk did not turn the horizon orange: %d orange pixels at noon, %d at "
+                         "dusk" % (before_o, after_o))
+    else:
+        fails.append("no pictures at noon and dusk")
     if not re.match(r"drawn=\d+ of \d+ ready=\d+", viewed["drawn"]) or \
             int(re.match(r"drawn=(\d+)", viewed["drawn"]).group(1)) == 0:
         fails.append("no ground was drawn: %r" % viewed["drawn"])

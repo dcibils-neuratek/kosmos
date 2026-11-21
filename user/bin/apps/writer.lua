@@ -632,8 +632,8 @@ local function draw_document(s, x0, w0, y)
 
   -- The language the document is hyphenated in.
   local tags = { "en-us", "es" }
-  local words = {}
-  for i, t in ipairs(tags) do words[i] = writedoc.LANGUAGES[t] end
+  local names = {}
+  for i, t in ipairs(tags) do names[i] = writedoc.LANGUAGES[t] end
 
   s:text(x0, y + (30 - gfx.height()) // 2, "Language", theme.text_dim, nil, "ui")
 
@@ -641,7 +641,7 @@ local function draw_document(s, x0, w0, y)
                  text = writedoc.LANGUAGES[doc.language] or doc.language }
   pk.chooser(s, lang)
   ins:control("language", lang, function()
-    ins:open_menu("language", lang.x, lang.y + lang.h + 4, lang.w, words,
+    ins:open_menu("language", lang.x, lang.y + lang.h + 4, lang.w, names,
               index_of(tags, doc.language),
               function(i) doc_edit("language", { language = tags[i] }) end)
   end)

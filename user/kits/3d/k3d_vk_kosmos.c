@@ -1261,6 +1261,18 @@ static int l_window_draw(lua_State *L)
     numbers(L, 3, "haze", view.haze, 3);
     numbers(L, 3, "haze_start", &view.haze_start, 1);
     numbers(L, 3, "haze_end", &view.haze_end, 1);
+    /* The sun's colour and the sky's glow (F6a), when the view names them:
+     * a white sun and no glow without. */
+    lua_getfield(L, 3, "light");
+    if (!lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        numbers(L, 3, "light", view.light, 3);
+    } else {
+        lua_pop(L, 1);
+    }
+    lua_getfield(L, 3, "glow");
+    view.glow = lua_isnil(L, -1) ? 0.0f : (float)luaL_checknumber(L, -1);
+    lua_pop(L, 1);
     /* The camera's up, when it rolls - the cockpit's; the world's without. */
     lua_getfield(L, 3, "up");
     if (!lua_isnil(L, -1)) {

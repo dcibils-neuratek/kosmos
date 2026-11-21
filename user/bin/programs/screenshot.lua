@@ -34,8 +34,6 @@ if not screen then
   return
 end
 
-local lent
-
 lent, why = wmproto.watch(screen)
 
 if not lent then

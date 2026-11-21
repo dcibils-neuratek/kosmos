@@ -10,6 +10,7 @@ layout(push_constant) uniform View {
     vec4 sun;           // xyz: towards the sun; w: the ambient share
     vec4 haze;          // rgb: the haze's colour
     vec4 range;         // x: where haze starts, y: where it is whole
+    vec4 light;         // rgb: the sun's colour (F6a)
 } v;
 
 layout(location = 0) in vec3 position;

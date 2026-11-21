@@ -6139,6 +6139,9 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	    exit 1; \
 	fi
 	@echo "prefs: every setting through the settings kit"
+	@# No local declared twice in one scope (testing.md 18.960): Flight's
+	@# second `TIMES` ended it with no line to show where.
+	@$(HOSTDIR)/lua tools/luaredefined.lua $$(find user -name '*.lua' -not -path '*/upstream/*' | sort)
 	@# The format, `kfs.c`, on this machine before anything is booted - the
 	@# fastest of these and the one that fails first when the disk layout is
 	@# wrong - plain and through the disk server's cache (`docs/diskfs.md`).

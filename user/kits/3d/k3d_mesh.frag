@@ -9,6 +9,7 @@ layout(push_constant) uniform View {
     vec4 sun;
     vec4 haze;
     vec4 range;
+    vec4 light;         // rgb: the sun's colour (F6a)
 } v;
 
 layout(location = 0) in vec3 world;
@@ -19,7 +20,9 @@ layout(location = 0) out vec4 colour;
 
 void main()
 {
-    float lit = v.sun.w + (1.0 - v.sun.w) * max(dot(normalize(facing), v.sun.xyz), 0.0);
+    // The ambient share white, the sun's in the sun's colour.
+    vec3 lit = vec3(v.sun.w) + (1.0 - v.sun.w) *
+               max(dot(normalize(facing), v.sun.xyz), 0.0) * v.light.rgb;
     float far = clamp((distance(world, v.eye.xyz) - v.range.x) / (v.range.y - v.range.x),
                       0.0, 1.0);
 

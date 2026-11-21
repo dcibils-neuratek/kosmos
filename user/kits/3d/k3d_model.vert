@@ -11,6 +11,7 @@ layout(push_constant) uniform Model {
     vec4 sun;           // xyz: towards the sun; w: the ambient share
     vec4 haze;          // rgb: the haze's colour
     vec4 range;         // x: where haze starts, y: where it is whole
+    vec4 light;         // rgb: the sun's colour (F6a)
     mat4 model;         // the world from the model
     vec4 tint;          // what the texture is multiplied by
 } v;

@@ -5681,3 +5681,29 @@ Flight's terrain loaded, switching to the Liquid Glass look asked for
 more and the window manager stopped. The machine now has 2 GB, as a real
 computer running all of this would.
 
+
+## 21 November 2026 - Flight at dusk, and its views named
+
+**In short:** Flight can be flown at any of six times of day, dusk among
+them, and the view it is in is named on the screen.
+
+**What changed.** T steps through dawn, morning, noon, afternoon, dusk
+and night, and the pause sheet has a Time row too. The choice is kept for
+the next flight. The sun stands where it would at that hour over the city
+you are flying: at Rio at 17:45 it is three and a half degrees above the
+western horizon. The sky turns from blue to a warm band at the horizon
+with a glow towards the sun, and the light on the ground and on the
+aircraft takes the sun's colour. A small chip on the screen says which
+view you are in, Chase, Cockpit or Tower. V or a click on it changes it,
+and the pause sheet lists every key.
+
+**A bug found on the way.** The first version stopped Flight the moment
+the sheet opened, with an error that named no line. Two things in the
+same file had the same name, the list of hours and the graphics panel's
+count of frames, and the second hid the first. A new check now runs over
+every Lua file in the system before each test run and fails if a name is
+declared twice in one place. It found seven more, all harmless for now,
+and all renamed.
+
+**Measured.** At the test's small window, dusk has sixteen times as many
+orange pixels as noon: 6112 against 376.

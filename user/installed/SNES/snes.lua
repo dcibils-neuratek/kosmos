@@ -537,7 +537,7 @@ local period = counter_hz / fps
 due = sys.ticks()
 
 -- Whether the console owes the device, or the clock, a frame.
-local function wanted(now)
+local function owed(now)
   if out then
     return out:queued() * out.frames < per_frame
   end
@@ -563,7 +563,7 @@ local broken = false                    -- the core failed: nothing to keep
 while win.running do
   local now = sys.ticks()
 
-  if not paused and wanted(now) then
+  if not paused and owed(now) then
     local fine, dropped = pcall(snes.frame, win:surface(), scale)
     local after = sys.ticks()
 
@@ -616,7 +616,7 @@ while win.running do
   local idle
 
   if out then
-    idle = not wanted(sys.ticks())
+    idle = not owed(sys.ticks())
   else
     idle = due - sys.ticks() > period / 2
   end

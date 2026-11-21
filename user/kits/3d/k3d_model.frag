@@ -11,6 +11,7 @@ layout(push_constant) uniform Model {
     vec4 sun;
     vec4 haze;
     vec4 range;
+    vec4 light;         // rgb: the sun's colour (F6a)
     mat4 model;
     vec4 tint;
 } v;
@@ -39,7 +40,9 @@ void main()
     if (!gl_FrontFacing) {
         n = -n;
     }
-    float lit = v.sun.w + (1.0 - v.sun.w) * max(dot(n, v.sun.xyz), 0.0);
+    // The ambient share white, the sun's in the sun's colour.
+    vec3 lit = vec3(v.sun.w) + (1.0 - v.sun.w) *
+               max(dot(n, v.sun.xyz), 0.0) * v.light.rgb;
     float far = clamp((distance(world, v.eye.xyz) - v.range.x) / (v.range.y - v.range.x),
                       0.0, 1.0);
 

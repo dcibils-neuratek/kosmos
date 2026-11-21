@@ -208,8 +208,14 @@ city - and the 3D Kit's `w:typed` and `w:clicked`; **F5j** (0.12.38,
 18.958), the island: with nothing fetched, Flight says it is offline and
 flies over an island invented in C (`k3d_island.c`, `g:invent`);
 **0.12.39** (18.959), Flight in the dated screenshot, on its island, with
-`tile` laying out on paper first and the gallery's machine at 2 GB. Next
-the imagery deeper near the ground, then F6. **The
+`tile` laying out on paper first and the gallery's machine at 2 GB;
+**0.12.40** (18.960), F6a and F6b - the time of day (T, or the sheet's Time
+row; the sun from the hour and the latitude, skies keyed by its height, a
+glow towards it) and the view named in a chip (V or a click), with
+`tools/luaredefined.lua` in `make host-check` after a local declared twice
+ended Flight. Next, in Diego's evening order (20 November): F6c the
+propeller and the engine's sound, F8 real airports, F9 ATC through a Radio
+Kit; then the rest of F6, F7, and the imagery deeper near the ground. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found
