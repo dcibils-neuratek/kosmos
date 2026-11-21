@@ -5707,3 +5707,22 @@ and all renamed.
 
 **Measured.** At the test's small window, dusk has sixteen times as many
 orange pixels as noon: 6112 against 376.
+
+## 21 November 2026 - Flight's propeller turns, and its engine is heard
+
+**In short:** the propeller now visibly turns, and Flight has an engine
+note that rises with the throttle, plus wind that grows with the speed.
+
+**What changed.** The propeller had been turned at its real speed, about
+forty times a second. A screen that draws thirty frames a second catches
+it almost where it was each time, so it looked frozen. It now turns the
+way a propeller looks on film: slowly at idle, faster with power, and
+never so far between two frames that the eye loses it. The sound comes
+from the synthesiser Groove plays, so Flight needed no new sound code. It
+holds two notes, a growling engine tuned to the cylinders' firing rate
+and a hiss of wind, and adjusts them a few times a second. M turns the
+sound off.
+
+**Measured.** In the test machine the sound card received samples up to
+9829 of a possible 32767. The old propeller moved one and a half turns
+between frames there, and the new one a sixth.

@@ -40203,3 +40203,47 @@ before.
   and dusk (195 against 195).
 - A scratch file with two `local TIMES` in one scope fails
   `luaredefined.lua`.
+
+## 18.961 Flight's propeller and its engine heard (0.12.41)
+
+**In short:** Flight's propeller now visibly turns, and Flight makes a
+sound: an engine whose note follows the throttle, and wind that grows
+with the airspeed. Both play through the Synth Kit, the engine Groove
+uses, so no new code in C was needed.
+
+- **The propeller.** It turned at 6 + 34 x throttle turns a second. Under
+  TCG a frame is 50 ms, so the propeller moved 1.49 turns a frame, and
+  on a real machine a two-bladed propeller came round almost to where it
+  was. It now turns 3 + 9 x throttle times a second, and never more than
+  a sixth of a turn a frame. That is a third of the way to the next
+  blade, so it always reads as turning forwards. The M700, at about 34
+  frames a second, runs at that cap.
+- **The engine.** It plays two held notes on two tracks of a song.
+  - The engine is a saw and a square an octave below with a sine under
+    them, through a low-pass that opens with the throttle (250 to 1650
+    Hz), with a wobble at a sixth of the firing rate. Its pitch is the
+    firing rate, bent from E2: 700 + 2000 x throttle + 8 x airspeed turns
+    a minute, capped at 2750, and a four-cylinder fires twice a turn, so
+    that is 23 to 92 a second.
+  - The wind is noise through a band-pass at 300 + 30 x airspeed Hz, as
+    loud as the airspeed.
+
+  The kit reads a track's parameters on every block, so a changed song,
+  sent at most ten times a second and only when something moved, changes
+  the held notes without restarting them. `kosmos: needs audio` puts the
+  kit's thread in the audio band, and `M` turns the sound off and on.
+
+**Checked** by `x86-flight`. Its machine now has an HDA card writing a
+WAV, as Doom's suite has. Every propeller line turned between nothing and
+a sixth of a turn a frame (0.167 at TCG's pace), and the engine was never
+silent. The kit said `rpm=2540 hz=84.7 cut=1450 wind=0.35 rendered=2048`,
+and the card's loudest sample was 9829. On the M700 the kit rendered
+33792 frames at peak 0.336 into the stream Flight.
+
+**Controls:**
+
+- With the old rate restored, the suite failed with "the propeller did
+  not turn forwards by under a sixth of a turn a frame" (1.49 a frame).
+- On the first run the machine had no sound card. Flight said "sound
+  none: this machine has no sound device", and the suite failed with
+  "the engine was not heard".

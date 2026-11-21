@@ -213,9 +213,10 @@ flies over an island invented in C (`k3d_island.c`, `g:invent`);
 row; the sun from the hour and the latitude, skies keyed by its height, a
 glow towards it) and the view named in a chip (V or a click), with
 `tools/luaredefined.lua` in `make host-check` after a local declared twice
-ended Flight. Next, in Diego's evening order (20 November): F6c the
-propeller and the engine's sound, F8 real airports, F9 ATC through a Radio
-Kit; then the rest of F6, F7, and the imagery deeper near the ground. **The
+ended Flight; **0.12.41** (18.961), F6c - the propeller at a rate a frame
+can show, and the engine and the wind as two held notes on the Synth Kit
+(`M` for the sound). Next, in Diego's evening order (20 November): F8 real
+airports, F9 ATC through a Radio Kit; then the rest of F6, F7, and the imagery deeper near the ground. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found

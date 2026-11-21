@@ -438,12 +438,19 @@ ends on the M700:
     under the graphics panel when that is open, and a click on it changes
     the view. The pause sheet lists every key. (This said the strip would
     name it; the cockpit has no strip, and the chip is in every view.)
-  - **F6c - the propeller and the engine.** The propeller turned 30 times
-    a second, which a frame of 10 to 60 a second samples into standing
-    still or turning backwards; it is drawn at a rate the eye can follow
-    at low power and as a blurred disc above it. The engine's note, from
-    the Synth Kit, follows the power and the propeller's speed, with the
-    wind rising with the airspeed.
+  - **F6c - the propeller and the engine**, **built in 0.12.41**
+    (`testing.md` 18.961). The propeller turned at its true rate, up to 40
+    turns a second, which frames at 10 to 60 a second sample into standing
+    still or turning backwards. It is drawn as a camera shows one: three
+    turns a second at idle to twelve at full power, and never more than a
+    sixth of a turn a frame, so it always turns forwards. (This said a
+    blurred disc above low power; the capped rate reads as turning at
+    every frame rate, and a disc would need the model to carry one.) The
+    engine and the wind are two held notes on the Synth Kit, into a
+    stream called Flight in the Mixer. The engine's pitch is its firing
+    rate, 23 a second at idle and 90 at full power, and its low-pass opens
+    with the throttle. The wind is noise through a band-pass that rises and
+    grows with the airspeed. `M` turns the sound off and on, remembered.
 - **F8 - real airports.** OurAirports' `airports.csv` and `runways.csv`
   (public domain), the paved runways of every airport with a code, made
   small by a build step into a file Flight carries, and searched by the

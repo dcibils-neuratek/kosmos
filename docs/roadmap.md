@@ -12092,7 +12092,7 @@ screenshot **in 0.12.39** (18.959); then the imagery deeper near the eye
 when it is low. **Agreed 20 November 2026, Diego's evening list** (`flight.md`, in
 this order): F6a the time of day, dusk among it, **built in 0.12.40**
 (18.960); F6b the views named on the screen, **built in 0.12.40**; F6c the propeller drawn so it is seen to turn, and the
-engine's sound; F8 real airports - every paved runway from OurAirports,
+engine's sound, **built in 0.12.41** (18.961); F8 real airports - every paved runway from OurAirports,
 taking off and landing on it; F9 live air traffic control through a new
 Radio Kit, which Music's Radio source wants too. **Flakes seen in the 0.12.39 gate** (testing.md 18.959): `x86-jetski`'s
 menu check read the menu without "Add to favorites" and "Settings", and

@@ -6,7 +6,7 @@
 -- kosmos: name Flight
 -- kosmos: icon App_Generic
 -- kosmos: section applications
--- kosmos: needs tiles
+-- kosmos: needs tiles audio
 -- kosmos: image k3dvk.elf
 -- kosmos: image on intel-gpu k3dvk-anv.elf
 --
@@ -30,6 +30,8 @@ local k = use("k3dvk.elf")
 local tiles = use("/Kosmos/Libraries/tiles.lua")
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 local keys = use("/Kosmos/Libraries/keys.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
+local synth = use("/Kosmos/Kits/synth")
 
 local settings = prefs.open("flight", {
   city = "mvd",                                  -- which of CITIES, or none
@@ -42,6 +44,7 @@ local settings = prefs.open("flight", {
   graphics = true,                               -- the graphics panel open (F3)
   start = "city",                                -- "city", "runway" or "final" (F5i)
   time = "noon",                                 -- the time of day, one of HOURS (F6a)
+  sound = true,                                  -- the engine and the wind heard (F6c, M)
   place = false,                                 -- a place searched for: { name, note, lon, lat }
   recent = false,                                -- the sheet's Recent: { key } or places
   finder = false,                                -- places looked up there, not Nominatim
@@ -50,7 +53,7 @@ local settings = prefs.open("flight", {
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
-              v = 47, p = 25, r = 19, f3 = 61, t = 20 }
+              v = 47, p = 25, r = 19, f3 = 61, t = 20, m = 50 }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local function now() return sys.ticks() / counter_hz end
@@ -377,8 +380,101 @@ local function place(plane, pitch, roll, dt)
   plane:turn(SURFACE.right, math.rad(15) * roll)
   plane:turn(SURFACE.left, -math.rad(15) * roll)
   plane:turn(SURFACE.flaps, -math.rad(30) * S.flaps)
-  S.prop = ((S.prop or 0) + (6 + 34 * S.throttle) * 2 * math.pi * dt) % (2 * math.pi)
+  -- **The propeller as it is seen** (F6c). Turned at its true rate - 40
+  -- turns a second at full power - two blades come round to where they
+  -- were between one frame and the next, and it stood still or crawled
+  -- backwards. A camera shows a propeller turning slower than it does, and
+  -- this does too: from three turns a second at idle to twelve at full
+  -- power, and never more than a sixth of a turn a frame, which is a third
+  -- of the way from one blade to the next and turns forwards at any rate.
+  local turns = math.min(3 + 9 * S.throttle, (1 / 6) / math.max(dt, 1e-3))
+  S.prop_step = turns * dt
+  S.prop = ((S.prop or 0) + turns * 2 * math.pi * dt) % (2 * math.pi)
   plane:spin(SURFACE.prop, S.prop)
+end
+
+-- **The engine and the wind, heard** (F6c), on the Synth Kit - the
+-- engine Groove plays, in the audio band, into a stream of Flight's own
+-- in the Mixer. Two tracks hold a note each for as long as Flight flies:
+-- the engine, a saw and a square an octave down with a sine under them,
+-- through a low-pass that opens with the throttle and a wobble at the
+-- blades' rate; and the wind, noise through a band-pass that rises and
+-- grows with the airspeed. The engine's pitch is its firing rate - a
+-- four-cylinder fires twice a turn, so 700 turns a minute at idle are 23
+-- a second and 2700 at full power 90 - bent from E2, 82 Hz, which is as
+-- far as the kit's bend reaches either side. What changes is said to the
+-- kit as a song, at most ten times a second and only when it moved: the
+-- kit reads a track's parameters every block, so the held notes go on.
+local ENGINE_NOTE, ENGINE_HZ = 40, 82.41
+local engine = { on = false, sent = 0, said = false }
+local engine_song = {
+  bpm = 120, master = 0.8,
+  tracks = {
+    { type = "synth", vol = 0.55, params = {
+        w1 = 1, w2 = 2, oct2 = -1, mix = 0.35, sub = 0.5, noise = 0.04, mono = 2,
+        ftype = 1, cut = 400, res = 0.25, env = 0, aA = 0.4, aD = 1, aS = 1, aR = 0.6,
+        lfoR = 10, lfoC = 0.12, lfoP = 0, lvl = 0.9, uni = 1, det = 0, glide = 0 } },
+    { type = "synth", vol = 0, params = {
+        w1 = 4, w2 = 4, oct2 = -2, mix = 1, sub = 0, noise = 1, mono = 2,
+        ftype = 2, cut = 600, res = 0.2, env = 0, aA = 0.8, aD = 1, aS = 1, aR = 0.8,
+        lfoR = 0.3, lfoC = 0.2, lfoP = 0, lvl = 0.6, uni = 1, det = 0, glide = 0 } },
+  },
+}
+
+local function engine_start()
+  if engine.on or not settings.sound then return end
+  local out, why = audio.open("Flight", 8)
+  if out then
+    local ok, err = pcall(synth.start, out.ring, out.rate)
+    if not ok then out:close() out, why = nil, err end
+  end
+  if not out then
+    say("sound none: " .. tostring(why))
+    settings.sound = false                   -- not asked again this flight
+    return
+  end
+  engine.out, engine.on, engine.sent = out, true, 0
+  synth.song(engine_song)
+  synth.note_on(1, ENGINE_NOTE, 0.8)
+  synth.note_on(2, 24, 0.8)
+  say("sound on: the engine and the wind, into the stream Flight")
+end
+
+local function engine_stop()
+  if not engine.on then return end
+  synth.close()
+  engine.out:close()
+  engine.on, engine.out = false, nil
+end
+
+local engine_state = {}
+local function engine_sound(t)
+  if not settings.sound then engine_stop() return end
+  engine_start()
+  if not engine.on or t - engine.sent < 0.1 then return end
+  local rpm = math.min(2750, 700 + 2000 * S.throttle + 8 * S.v)
+  local hz = rpm / 30
+  local e, wind = engine_song.tracks[1], engine_song.tracks[2]
+  local cut = math.floor(250 + 1400 * S.throttle + 4 * S.v)
+  local wcut = math.floor(300 + 30 * S.v)
+  local wvol = math.min(0.45, S.v / 70 * 0.45)
+  e.params.lfoR = math.floor(hz / 6 * 10 + 0.5) / 10
+  if math.abs(e.params.cut - cut) > 15 or math.abs(wind.vol - wvol) > 0.01
+     or math.abs(wind.params.cut - wcut) > 15 or engine.sent == 0 then
+    e.params.cut, wind.params.cut, wind.vol = cut, wcut, wvol
+    synth.song(engine_song)
+  end
+  synth.bend(1, 12 * math.log(hz / ENGINE_HZ, 2))
+  engine.sent = t
+  engine.rpm = rpm
+  if not engine.said then
+    local st = synth.state(engine_state)
+    if (st.rendered or 0) > 0 then
+      say(("sound engine rpm=%.0f hz=%.1f cut=%d wind=%.2f rendered=%d peak=%.3f")
+          :format(rpm, hz, cut, wvol, st.rendered, math.max(st.peak_l or 0, st.peak_r or 0)))
+      engine.said = true
+    end
+  end
 end
 
 -- The tiles: what the terrain still wants, asked of `tiles` and handed to
@@ -1291,7 +1387,7 @@ local function draw_sheet(w)
     elseif r.kind == "buttons" then
       -- The keys, said once where a person looks for them (F6b).
       s:fill(18, y - 4, sw - 36, 1, LINE)
-      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z throttle \u{b7} F flaps",
+      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z throttle \u{b7} F flaps \u{b7} M sound",
              DIM, nil, sheet_face)
       s:text(18, y + 22, "V view \u{b7} T time of day \u{b7} P pause \u{b7} R start again \u{b7} F3 graphics",
              DIM, nil, sheet_face)
@@ -1455,6 +1551,10 @@ while not w:closed(0) do
       graphics_next = 0
     end
     if f then S.flaps = (S.flaps + 0.5) % 1.5 end
+    if w:pressed(KEY.m) then
+      settings:set("sound", not settings.sound)
+      say("sound " .. (settings.sound and "wanted" or "off"))
+    end
     if r or S.crashed then
       if S.crashed then say("crashed") end
       start(g)
@@ -1470,6 +1570,7 @@ while not w:closed(0) do
     fly(dt, pitch, roll, g:height(S.x, S.z))
     if plane then place(plane, pitch, roll, dt) end
   end
+  engine_sound(t)
   draw_strip(w, g:height(S.x, S.z))
   draw_panel(w, dt)
   draw_sheet(w)
@@ -1510,6 +1611,10 @@ while not w:closed(0) do
     -- What the strip shows now and how often it was laid again, so a
     -- strip that stopped following the flight is seen in the log.
     say(("strip redrawn=%d shows %s"):format(strip_redrawn, strip_said or "nothing"))
+    say(("propeller %.3f turns a frame at throttle %.2f, engine %s")
+        :format(S.prop_step or 0, S.throttle,
+                engine.on and ("%.0f rpm"):format(engine.rpm or 0) or "silent"))
   end
   if frame == settings.frames then say("done") w:closed(120) break end
 end
+engine_stop()

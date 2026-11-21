@@ -376,6 +376,13 @@ def main():
     # memory it finds, and every machine it is for has gigabytes.
     i = R.X86_ARGS.index("-m")
     R.X86_ARGS = R.X86_ARGS[:i + 1] + ["1536M"] + R.X86_ARGS[i + 2:]
+    # A sound card writing what it is given to a WAV here (F6c), as Doom's
+    # suite hears its demo: the engine is checked by what reached it.
+    heard = os.path.join(WORK, "heard.wav")
+    if os.path.exists(heard):
+        os.remove(heard)
+    R.X86_ARGS = R.X86_ARGS + ["-audiodev", "wav,id=snd0,path=%s" % heard,
+                               "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"]
     guest = SV.boot(IMAGE, telnet, web)
     fails = []
     screen = None
@@ -806,6 +813,35 @@ def main():
                          "dusk" % (before_o, after_o))
     else:
         fails.append("no pictures at noon and dusk")
+    # The propeller and the engine (F6c): the propeller turns forwards, by
+    # at most a sixth of a turn a frame - a third of the way from one blade
+    # to the next - and never stands still; and the engine is heard, the
+    # Synth Kit rendering into Flight's own stream with something in it.
+    props = [(float(a), float(b), c) for a, b, c in
+             re.findall(r"flight propeller ([\d.]+) turns a frame at throttle ([\d.]+), "
+                        r"engine (\w+)", seen)]
+    print("flight: the propeller %r" % (props[:6],))
+    if not props or any(not 0 < p[0] <= 1 / 6 + 1e-3 for p in props):
+        fails.append("the propeller did not turn forwards by under a sixth of a turn a frame: "
+                     "%r" % (props,))
+    elif any(p[2] == "silent" for p in props):
+        fails.append("the engine was silent on a propeller line: %r" % (props,))
+    sound = re.search(r"flight sound engine rpm=(\d+) hz=([\d.]+) cut=(\d+) wind=([\d.]+) "
+                      r"rendered=(\d+) peak=([\d.]+)", seen)
+    print("flight: %s" % (sound.group(0) if sound else
+                          "no sound line: %r" % re.findall(r"flight sound.*", seen)))
+    if not sound or int(sound.group(5)) == 0 or float(sound.group(6)) < 0.01:
+        fails.append("the engine was not heard: %r" % re.findall(r"flight sound.*", seen))
+    if "--island" not in sys.argv:
+        loudest = 0
+        if os.path.exists(heard):
+            with open(heard, "rb") as f:
+                pcm = f.read()[44:]
+            n = len(pcm) // 2
+            loudest = max((abs(v) for v in struct.unpack("<%dh" % n, pcm[:n * 2])), default=0)
+        print("flight: the sound card's loudest sample %d" % loudest)
+        if loudest < 1000:
+            fails.append("the sound card heard no engine: its loudest sample was %d" % loudest)
     if not re.match(r"drawn=\d+ of \d+ ready=\d+", viewed["drawn"]) or \
             int(re.match(r"drawn=(\d+)", viewed["drawn"]).group(1)) == 0:
         fails.append("no ground was drawn: %r" % viewed["drawn"])
