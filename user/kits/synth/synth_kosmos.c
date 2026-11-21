@@ -405,11 +405,28 @@ static void apply(const struct cmd *c)
     }
 }
 
-/* The audio thread's half: what the window asked for, in order. */
+static void take_song(void);
+
+/*
+ * The audio thread's half: what the window asked for, in order.
+ *
+ * **The song is taken after the head is read, and here rather than only at
+ * the top of a pass.** The window makes a song before it posts what is to
+ * be played in it - `start`, `song`, `note_on` is Flight's order - and the
+ * thread drops a command with no song to apply it to. Taken only at the top
+ * of the pass, the window could hand both over between the thread's
+ * `take_song` and its `drain`: the note was applied to no song and lost,
+ * and the engine rendered silence for as long as it ran - Flight's engine
+ * heard silent in one gate in three, and a program's every start but a
+ * cold one's (`testing.md` 18.983). The head read with acquire sees every
+ * command posted so far, and so every song the window made before them.
+ */
 static void drain(void)
 {
     uint32_t head = __atomic_load_n(&cmd_head, __ATOMIC_ACQUIRE);
     uint32_t tail = cmd_tail;
+
+    if (tail != head) take_song();
 
     while (tail != head) {
         apply(&cmds[tail % CMDS]);

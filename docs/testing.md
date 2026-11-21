@@ -41197,3 +41197,44 @@ City field is offered there as well, and choosing it sets where Q flies.
   15 tokens where it reads 10, with 115 kept, and answered nonsense -
   which is not how slowness looks, so it is on the roadmap to find. Alone
   it passed in 1:55 with its 37 checks.
+
+## 18.983 The Synth Kit's first note, no longer lost (0.12.63)
+
+**In short:** Flight's engine was heard silent in about one gate in three
+because the Synth Kit could lose the first note of a start. The kit's
+thread now takes a waiting song before it applies commands, so the note
+always has a song to play in.
+
+- **The cause.** The window starts the kit's thread, then hands it a song
+  as a pointer and posts the note in the command ring. Each pass, the
+  thread took a waiting song and then applied the commands, and it drops
+  a command when it holds no song. A thread on another core could take
+  "no song yet", then find the song and the note both handed over, apply
+  the note to nothing, and take the song only on the next pass. It then
+  rendered silence for as long as it ran: `rendered` counted up and the
+  peak stayed at nought. 18.977 said the song was taken before the
+  commands, and that was true only at the top of a pass.
+- **The fix**, in `synth_kosmos.c`'s `drain`: read the command head, and
+  if there are commands, take a waiting song first. The window makes the
+  song before it posts the commands that follow, and the head is read
+  with acquire, so every song made before a visible command is visible
+  too.
+- **The check**, `x86-sound`'s new `synth_start` part. `synthstart`
+  (`user/bin/programs/synthstart.lua`) opens the sound, starts the
+  thread, hands it a song and a held note in Flight's order, waits past
+  the attack, and says whether it was heard. The kit keeps its song past
+  a close, so only a process's first start can meet a thread with none.
+  The part therefore runs the program 30 times at the prompt, on four
+  processors with an HDA controller.
+- **The control**: without the fix, 1 of 30 starts was heard. The one
+  heard was the first, cold, start; every warm start lost its note. With
+  the fix, 30 of 30.
+- **The gate**: 128 of 130 suites passed in 786 s. `x86-sound` passed with
+  30 of 30 starts heard, and Flight's four suites passed too. Two failed
+  beside the others and passed alone:
+  - `x86-xavier`, once more. This time it was the box's answer against
+    the kit's: 76 tokens read with none kept, where the follow-up of
+    18.982 had kept 115. Both are the conversation's cache, on the
+    roadmap to find.
+  - `x86-loader`, whose posixtest gave no answer at all.
+  Alone, the two passed in 1:55 with 37 and 24 checks.

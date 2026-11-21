@@ -2670,6 +2670,38 @@ def memdisk(image, check):
 
 
 
+def synth_start(image, check):
+    """The Synth Kit started thirty times, each a program's first start.
+
+    A note posted while the kit's thread had not yet taken the song was
+    dropped - the thread plays nothing without a song - and Flight's engine
+    was heard silent in about one gate in three: `rendered` counting and the
+    peak at nought (`testing.md` 18.983). `synthstart` opens the sound,
+    starts the thread, hands it a song and a held note in Flight's order, and
+    says whether the note was heard; on four processors, so the thread runs
+    beside the program that is handing it things.
+    """
+    rounds = 30
+    out = boot(image, None, 240.0, typed=["synthstart"] * rounds, extra=(
+        "-smp", "4",
+        "-device", "ich9-intel-hda",
+        "-device", "hda-output,audiodev=a0",
+        "-audiodev", "none,id=a0",
+    ))
+
+    if out is None:
+        check(False, "the machine would not boot with an HDA controller")
+        return
+
+    said = re.findall(r"synthstart: (heard|silent|no sound[^\r\n]*)", out)
+    silent = [w for w in said if w != "heard"]
+    print("synth_start: %d starts, %d heard, %d not"
+          % (len(said), len(said) - len(silent), len(silent)))
+    check(len(said) == rounds and not silent,
+          "of %d starts of the Synth Kit, %d said and %d were not heard: %r"
+          % (rounds, len(said), len(silent), silent[:3]))
+
+
 def sound_eapd(image, check):
     """**A pin that controls an amplifier's power has it switched on.**
 
@@ -5808,7 +5840,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -5853,6 +5885,8 @@ def main():
         sound_slow_codec(image, check)
     if 'sound_eapd' in wanted:
         sound_eapd(image, check)
+    if 'synth_start' in wanted:
+        synth_start(image, check)
 
     # And the disk, which is the other thing this board does not take from
     # virtio. A ThinkPad's storage is NVMe or nothing - `docs/thinkpad.md`

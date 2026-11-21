@@ -6234,3 +6234,32 @@ both aircraft land at about 310.
 316 fpm; stopped 1,595 m along. Without the flare the 747 hits at 877.
 In QEMU the 747 took itself off Rio's 1,323 m runway at 140 kt after
 1,002 m.
+
+## 21 November 2026 - The engine's lost note
+
+**In short:** Flight's engine was sometimes silent. In about one test
+run in three the sound was being made, but it was the sound of nothing.
+The cause was a lost first note in the Synth Kit, which every
+application that plays sound through it could meet. It is fixed.
+
+**What.** When a program starts the Synth Kit, a thread of its own
+starts making sound. The program hands that thread a song, then asks it
+for a note. The thread looked for a new song, then read its requests. If
+the song and the note both arrived between those two looks, the thread
+read the note while it had no song, threw it away, and picked up the
+song a moment later. It went on playing that song with no note held:
+silence, for the whole flight.
+
+**Why it matters.** This was not Flight's fault, and it was not rare
+outside Flight either. A small test program that starts the kit thirty
+times heard only the very first start. Every later one lost its note,
+because by then the program loaded fast enough to hit the gap every
+time. Flight met it less often only because it starts slowly.
+
+**The fix.** The thread now looks for a waiting song after it has seen
+the requests, and before it acts on them. The program always hands over
+the song before the note, so a note the thread can see always has its
+song there too.
+
+**Measurements.** Thirty starts in a row: 1 heard before the fix, 30
+after.

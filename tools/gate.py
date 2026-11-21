@@ -1025,7 +1025,7 @@ SUITES = [
     # machines running - "worst write 33216 us" - and passed alone, twice.
     # That run is the evidence the note above says to wait for.
     Suite("x86-sound", ["python3", "tools/run_x86.py", X86, "--parts",
-                        "sound,sound_slow_codec,sound_eapd"],
+                        "sound,sound_slow_codec,sound_eapd,synth_start"],
           alone=True, x86=True),
     Suite("x86-usb-1", ["python3", "tools/run_x86.py", X86, "--parts",
                         "usb,usb_blocks,usb_diskbench,usb_home,"
