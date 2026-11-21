@@ -6208,3 +6208,29 @@ descending 6 nm before the fix. The Cessna takes 64 minutes and the
 747 27, both arriving within 0.02 nm of the fix, at 3,067 ft for
 3,067 and 3,070, heading 282 for runway 29's 282. With the top of
 descent taken away they arrive at 5,000 ft, and the check fails.
+
+## 21 November 2026 - Runway to runway
+
+**In short:** Flight now takes off and lands by itself. On Carrasco's
+runway with Ezeiza chosen, Q opens the throttle, lifts off at the
+aircraft's own speed, flies the route, comes down a three-degree glide
+path, flares, and brakes to a stop on the centre line.
+
+**What.** The take-off is full power along the runway the aircraft is
+on, the yoke back at the rotate speed - 58 kt for the Cessna, 140 for
+the 747. The landing aims at a point 300 m past the threshold, closes
+the throttle a few metres up and eases the sink, then brakes.
+
+**What the measurement found.** Two things, both by flying it on the
+Mac rather than reading it. The glide path was flown to 20 cm and was
+aimed 300 m short of the runway: a sign. And the flare, at the gentle
+gains that hold a cruise, let the 747 meet the runway at 530 feet a
+minute, near the 600 that counts as a crash; at three times the gain
+both aircraft land at about 310.
+
+**Measurements.** The Cessna: off at 59 kt after 243 m of Carrasco's
+3,200; 74 minutes; down at 311 fpm 338 m past Ezeiza's threshold; stopped
+515 m along. The 747: off at 140 kt after 950 m; 32 minutes; down at
+316 fpm; stopped 1,595 m along. Without the flare the 747 hits at 877.
+In QEMU the 747 took itself off Rio's 1,323 m runway at 140 kt after
+1,002 m.

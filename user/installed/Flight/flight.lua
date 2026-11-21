@@ -2405,18 +2405,24 @@ function AIRCRAFT.route(ap)
   local lon, lat = ANCHOR.lonlat(S.x, S.z)
   local from = db:near(lon, lat, 50, 1)[1] or { lon = lon, lat = lat, feet = 0, runways = {} }
   local plan, why = AIRCRAFT.model.route(from, to, PLANE,
-                                         (settings.wind or 0) > 0 and settings.wind_from or nil, airports)
+                                         (settings.wind or 0) > 0 and settings.wind_from or nil, airports,
+                                         { lon = lon, lat = lat, heading = math.deg(S.psi) % 360,
+                                           ground = S.ground })
   if not plan then say("route: " .. tostring(why)) return end
   ap.plan = plan
-  AIRCRAFT.guide(ap)
+  AIRCRAFT.guide(ap, nil)
   say(("route %s to %s %s, %.0f nm, cruise %d ft, bearing %03d"):format(from.iata or from.ident or "here",
       to.iata or to.ident, plan.arr.name, plan.nm, plan.cruise_ft,
       math.floor(math.deg(ap.heading) % 360 + 0.5) % 360))
 end
 
-function AIRCRAFT.guide(ap)
+function AIRCRAFT.guide(ap, ground_h)
   local lon, lat = ANCHOR.lonlat(S.x, S.z)
-  AIRCRAFT.model.guide(ap.plan, ap, S, PLANE, lon, lat, airports, say)
+  local way = AIRCRAFT.model.guide(ap.plan, ap, S, PLANE, lon, lat, airports, say, ground_h)
+  if way == "stopped" then
+    ap.on = false
+    say(("route done: stopped on %s %s"):format(ap.plan.to.iata or ap.plan.to.ident, ap.plan.arr.name))
+  end
 end
 
 function AIRCRAFT.switch(g)
@@ -2648,8 +2654,14 @@ while not w:closed(0) do
             math.floor(ap.alt * 3.28084 + 0.5), math.floor(ap.speed * 1.94384 + 0.5)))
       end
       if ap.on then ap.on = false said("off")
-      elseif S.ground then say("autopilot: not on the ground")
-      else AIRCRAFT.model.engage(ap, S, PLANE) AIRCRAFT.route(ap) said("on") end
+      elseif S.ground and (settings.fly_to or "") == "" then say("autopilot: not on the ground")
+      else
+        AIRCRAFT.model.engage(ap, S, PLANE)
+        AIRCRAFT.route(ap)
+        -- On the wheels only a route's take-off flies (F10d).
+        if S.ground and not ap.plan then ap.on = false say("autopilot: not on the ground")
+        else said("on") end
+      end
     end
     if w:pressed(KEY.h) then
       settings:set("shadows", not settings.shadows)
@@ -2680,11 +2692,19 @@ while not w:closed(0) do
     -- (A count in S, not a for's: the main chunk is at Lua's 200 locals.)
     S.steps = S.rate
     WIND.kt, WIND.from = settings.wind, settings.wind_from
-    if S.ap.on and S.ap.plan then AIRCRAFT.guide(S.ap) end
     repeat
-      if S.ap.on then pitch, roll = AIRCRAFT.model.autopilot(S.ap, S, PLANE, dt) end
+      -- The route, then the autopilot, each step: a flare at 4x is four
+      -- steps' worth of ground coming up, asked for under each.
+      if S.ap.on and S.ap.plan then AIRCRAFT.guide(S.ap, g:height(S.x, S.z)) end
+      if S.ap.on then
+        pitch, roll = AIRCRAFT.model.autopilot(S.ap, S, PLANE, dt)
+        brake = S.ap.brake or 0
+      end
       AIRCRAFT.model.fly(S, PLANE, WIND, dt, pitch, roll, g:height(S.x, S.z), brake, say)
-      if S.ap.on and (S.ground or S.crashed) then S.ap.on = false say("autopilot off: on the ground") end
+      if S.ap.on and S.crashed or S.ap.on and S.ground and not S.ap.plan then
+        S.ap.on = false
+        say("autopilot off: on the ground")
+      end
       S.steps = S.steps - 1
     until S.steps == 0 or S.crashed
     -- The engine's spool said at each quarter it passes, in the flight's

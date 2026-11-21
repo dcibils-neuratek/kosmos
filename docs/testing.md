@@ -41131,3 +41131,48 @@ host test flies Carrasco to Ezeiza with both aircraft to the final fix,
 - **The gate**: 131 of 132 suites passed in 660 s. `x86-jetski` failed
   its menu check (two rows missing as it was read: its known flake) and
   passed alone in 2:25.
+
+## 18.981 Flight takes off and lands by itself (0.12.61)
+
+**In short:** a route now runs from runway to runway. The host test flies
+Carrasco to Ezeiza with both aircraft from rest to a stop: the Cessna
+lands at 311 fpm and the 747 at 316, both on the centre line. In QEMU the
+747 takes itself off Rio's runway by Q.
+
+- **Runway to runway** on the host, Carrasco 25 to Ezeiza 29:
+  - the Cessna: off at 59 kt after 243 m of 3,200; 74 minutes; down at
+    311 fpm, 338 m past the threshold, 0.0 m off the centre line;
+    stopped 515 m along;
+  - the 747: off at 140 kt after 950 m; 32 minutes; down at 316 fpm,
+    663 m past, 0.3 m off; stopped 1,595 m along;
+  - both through takeoff, departure, enroute, intercept, final, flare,
+    rollout and stopped, and the height's climb, cruise and descent.
+- **Where the aircraft is**: on the wheels at either end of Carrasco's
+  runway the take-off is from that end; on the wheels off any runway no
+  route is made; engaged 3 nm out on Ezeiza's 29, lined up, the route
+  begins at its final and lands, 311 fpm, stopped after 173 s. 44 checks,
+  nought failed.
+- **A third control**, `no-flare`: the 747 meets the runway at 877 fpm
+  and crashes, and the Cessna, never flaring, never rolls out; 5 fail.
+  `frozen` now fails 15 and `no-descent` 4. `make` fails if any passes.
+- **Found tuning**:
+  - the glide path, flown to 0.2 m, aimed 300 m short of the threshold:
+    `along` counts out from it, and its touchdown was `along - 0.3`;
+  - the flare at the cruise's yoke gain left the 747 at 530 fpm. A sweep
+    of the flare's height (a fifth, sixth and eighth of the speed) and
+    its easing (0.2 and 0.3) found 336 to 530; the yoke at three times
+    its gain while a rate is held gave 316, where five and eight gave
+    366 and 385 and floated further.
+- **In QEMU**, `x86-flight-747`, taken off by Q with `fly_to = "GIG"`:
+  the route from SDU (taken off from 02R, the end it stands on, under
+  the wheels at each of the terrain's moves) to Galeao's 33, 8 nm, takeoff
+  then departure;
+  the spool a quarter at 2.5 s and three quarters at 9.1 s, the 6.6 s a
+  six-second spool takes towards full power; off at 140 kt after
+  1,002 m of 1,323. The roll is 1,002 m with the terrain left unmoved
+  (one run at `anchor_after` 400 km) as with its three moves, so the
+  check is now 930-1,080 m about it. **Its control**, `--instant-spool`:
+  the spool at once, and it fails.
+- **The gate**: 130 of 131 suites passed in 633 s, Flight's among them.
+  `arm-sandboxwin` failed once, its shell giving no prompt in the Console
+  tab under the gate's load, and passed alone in 43 s with its 19 checks.

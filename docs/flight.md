@@ -854,6 +854,59 @@ ends on the M700:
     holds the hand-flown final to, flown by the autopilot. The sheet
     gains "Fly to", an airport typed as the place is, and Flight flies
     there by itself, the time faster if it is asked (F11).
+    - **In two pieces** (21 November, before the code):
+      - **F10d-1, the flying**, in `model.lua` and held on the host. The
+        route starts on the runway when the aircraft is on one: the
+        autopilot may engage on the wheels with a route. Then:
+        - **take-off**: full power, the wheels steered along the
+          runway's heading, the yoke level until the aircraft's rotate
+          speed (`speeds.rotate`: 58 kt the Cessna, 140 kt the 747), then
+          the climb; on the runway's heading to 1,000 ft over the field,
+          then the route;
+        - **landing**: from the final fix, a 3 degree glide path to a
+          touchdown 300 m past the threshold, the path's rate handed to
+          the autopilot; the flare at a height for the speed (a sixth of
+          it in metres: 6 m the Cessna, 12 m the 747), the throttle
+          closed and the sink eased to under 1 m/s; on the wheels, the
+          brakes and the centre line until stopped.
+
+        The autopilot gains holds that set a control outright rather than
+        through a target - the yoke, the throttle, a climb rate - since a
+        take-off and a flare are flown that way. The host test flies
+        Carrasco to Ezeiza from runway to runway with both aircraft. Each
+        must leave the ground within the runway, touch down on runway 29
+        under 600 fpm within its width, and stop on it. **Its control**
+        takes the flare away, and the touchdown's rate fails.
+        **F10d-1 built in 0.12.61** (`testing.md` 18.981). What the first
+        runs found:
+        - the glide path was flown to 0.2 m but aimed 300 m short of the
+          threshold, `along` being counted out from it; the Cessna came
+          down on the grass;
+        - the flare at the cruise's yoke gain left the 747 at 530 fpm.
+          The flare is now at a sixth of the speed in metres, with the
+          yoke at three times its gain while a rate is held outright:
+          both land at about 310 fpm;
+        - on the wheels the route takes off from the runway end the
+          aircraft is on, and engaged lined up with the arrival's runway
+          within 12 nm it lands on that one, beginning at its final;
+        - a guard that the autopilot never climbs faster than the speed
+          pays for: under the approach speed (a fifth over it clean) the
+          climb wanted falls away.
+
+        In Flight, Q engages on the wheels with a route set; the route
+        and the autopilot run each step of the model, so a flare at 4x is
+        asked about the ground four times a frame; on the runway the
+        autopilot's brakes are the wheels', and "route done" lets go
+        once stopped. `x86-flight-747` takes off by Q now rather than by
+        keys, its spool, lift-off and re-anchoring checks unchanged.
+      - **F10d-2, Fly to**: the sheet's row, an airport typed as a place
+        is and kept in `fly_to`; Q then flies there. Drawn in
+        `flight.html` first: the airport is typed in the City field the
+        sheet already has, and every airport that search finds is
+        offered on the Fly to row as well, beside None and the airport
+        chosen before, each with its distance. One field rather than
+        two, since a second would need typing to follow the focus,
+        which the sheet has never had.
 - **F11 - the time faster** - asked by Diego on 21 November 2026: "I
   should be able to speed up the game by 2x, 3x, 4x". The flight model
   is stepped two, three or four times a frame with the frame's time, so

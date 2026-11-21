@@ -45,7 +45,8 @@ return {
   },
 
   speeds = { cruise = 128, cruise_throttle = 0.55,       -- 250 kt at 1,500 ft
-             approach = 74, approach_throttle = 0.45, approach_flaps = 1 },
+             approach = 74, approach_throttle = 0.45, approach_flaps = 1,
+             rotate = 72, ceiling_ft = 35000 },         -- 140 kt; a jet's cruise ceiling (F10)
   chase = { back = 110, high = 24 },
   eye = { ahead = 27, high = 3.3 },              -- the flight deck, 27 m forward
 

@@ -74,8 +74,8 @@ CALM = "--calm" in sys.argv
 # pad with its stick in the middle rather than full left, so nothing rolls
 # it and the suite must fail.
 NO_PAD = "--no-pad" in sys.argv
-# `--b747` (F12b): the 747 on Rio's runway, taken off at 4x with flaps 15,
-# the throttle at nine tenths and the yoke back - its jets spooling up over
+# `--b747` (F12b): the 747 on Rio's runway, taken off at 4x by the
+# autopilot on a route (F10d) - its jets spooling up over
 # seconds, and off the ground before the runway ends. `--instant-spool` is
 # its control: the same 747 with jets that follow the throttle in a
 # twentieth of a second, which the spool's check must refuse.
@@ -438,14 +438,23 @@ def b747_checks(seen):
                               model.group(0) if model else "no model line"))
     if not flown or flown.group(3) != "jet":
         fails.append("the 747 was not flown on a jet: %r" % re.findall(r"flight aircraft[^\r\n]*", seen))
+    # Taken off by the autopilot on a route (F10d): from the runway it is
+    # on, SDU 02R, towards Galeao, the take-off said and then the departure.
+    route = re.search(r"flight route SDU to GIG (\w+), (\d+) nm", seen)
+    ways = re.findall(r"flight route (takeoff|departure),", seen)
+    print("flight: the route %r, then %r" % (route.groups() if route else None, ways))
+    if not route or ways[:2] != ["takeoff", "departure"]:
+        fails.append("Q with fly_to = GIG did not take the 747 off on its route: %r %r"
+                     % (route.groups() if route else None, ways))
     if not model or model.group(2) != "1904":
         fails.append("the 747's model, 1,904 triangles, was not loaded: %r"
                      % (model.group(0) if model else None))
     # The spool: from a quarter to three quarters of the way, as a jet's
-    # six-second spool towards nine tenths takes, 8.8 s - and no time at
-    # all for one that follows the throttle at once (the control).
+    # six-second spool towards full power takes - 6.6 s, the autopilot's
+    # take-off opening the throttle (F10d) - and no time at all for one
+    # that follows the throttle at once (the control).
     quarters = {float(q): float(t) for q, t, kind in re.findall(
-        r"flight spool ([\d.]+) at ([\d.]+) s, throttle 0\.90, (\w+)", seen) if kind == "jet"}
+        r"flight spool ([\d.]+) at ([\d.]+) s, throttle 1\.00, (\w+)", seen) if kind == "jet"}
     q1 = next((t for q, t in sorted(quarters.items()) if 0.25 <= q < 0.5), None)
     q3 = next((t for q, t in sorted(quarters.items()) if 0.75 <= q < 1.0), None)
     print("flight: the jets' spool %r" % (sorted(quarters.items()),))
@@ -461,8 +470,9 @@ def b747_checks(seen):
         fails.append("the 747 did not lift off at 120-175 kt within SDU's 1,323 m: %r" % off.group(0))
     # The terrain moved under it (F10a), every 400 m here: on the runway the
     # same runway is under the wheels after as before, found among the new
-    # centre's - and the roll measured across the moves is the 1,080 m it
-    # is unmoved, since where the roll began moved with the frame.
+    # centre's - and the roll measured across the moves is the 1,002 m it
+    # is unmoved (the autopilot's take-off, F10d; 1,080 by the keys before),
+    # since where the roll began moved with the frame.
     moves = re.findall(r"flight anchored again at (-?[\d.]+) (-?[\d.]+), (\d+) m from the last; "
                        r"on ([^\r\n]*?) before, ([^\r\n]*?) after", seen)
     print("flight: the terrain moved %d times: %r" % (len(moves), moves[:4]))
@@ -470,8 +480,8 @@ def b747_checks(seen):
     if len(on_runway) < 2 or any(m[3] != "SDU 02R/20L" or m[4] != m[3] for m in on_runway):
         fails.append("the terrain did not move twice in the roll, the runway the same under it: %r"
                      % (moves,))
-    if off and not 1000 <= int(off.group(2)) <= 1160:
-        fails.append("the roll across the moves was not the 1,080 m it is unmoved: %r" % off.group(0))
+    if off and not 930 <= int(off.group(2)) <= 1080:
+        fails.append("the roll across the moves was not the 1,002 m it is unmoved: %r" % off.group(0))
     if fails:
         for f in fails:
             print("FAIL: " + f)
@@ -591,7 +601,7 @@ def main():
             # where a flight moves it every 40 km.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway", aircraft = "%s",'
                     ' weather = "clear", wind = 0, anchor_after = 400, lon = -43.205,'
-                    ' lat = -22.955 }\n'
+                    ' lat = -22.955, fly_to = "GIG" }\n'
                     % ("b747instant" if INSTANT else "b747"))
         if LAND:
             # 150 m out on a three-degree path: eight metres up, four seconds
@@ -700,9 +710,9 @@ def main():
         guest.wait_for("flight device=", "the window opened")
 
         if B747:
-            # The time 4x, the flaps a step, the throttle at nine tenths and
-            # the yoke back: on the wheels it only raises the nose, and
-            # once the wings carry it, it climbs away.
+            # The time 4x, then Q with a route set (F10d): the autopilot
+            # takes off on its own - full power, the approach's flaps, the
+            # yoke back at the 747's rotate speed - from the runway it is on.
             guest.wait_for("flight started runway", "on Rio's runway")
             wait_frames(2, "on the runway")
             for rate in (2, 3, 4):
@@ -714,12 +724,10 @@ def main():
                 while guest.seen.count("flight time %dx" % rate) == have and time.monotonic() < until:
                     guest._read_available()
                     time.sleep(0.1)
-            for k in ("f", "9"):
-                keys(True, k)
-                time.sleep(0.1)
-                keys(False, k)
-                wait_frames(1, "pressed " + k)
-            keys(True, "down")
+            keys(True, "q")
+            time.sleep(0.1)
+            keys(False, "q")
+            wait_frames(1, "pressed Q")
             # Waited for by frames, not seconds: the roll is about 170
             # frames at 4x, and a frame under TCG is one second alone and
             # three beside the gate's other suites - 420 s ran out under
@@ -735,7 +743,6 @@ def main():
                     break
                 time.sleep(0.2)
             wait_frames(2, "climbing away")
-            keys(False, "down")
             if os.environ.get("KOSMOS_FLIGHT_SHOT"):        # the 747 climbing, for a person
                 time.sleep(3)
                 R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"], guest.screendump())

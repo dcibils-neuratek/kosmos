@@ -6168,7 +6168,7 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	@# aircraft under the autopilot, then the control - its integrators
 	@# frozen - which must fail.
 	$(HOSTDIR)/lua tools/test_flightmodel.lua build/airports/airports.tsv
-	@for c in frozen no-descent; do \
+	@for c in frozen no-descent no-flare; do \
 	  if $(HOSTDIR)/lua tools/test_flightmodel.lua build/airports/airports.tsv $$c >/dev/null; then \
 	    echo "FAIL: the flight model's control $$c passed: the checks do not bite"; exit 1; fi; done
 	@$(HOSTDIR)/lua tools/luaredefined.lua $$(find user -name '*.lua' -not -path '*/upstream/*' | sort)

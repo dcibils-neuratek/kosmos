@@ -5,7 +5,7 @@
 -- in well under a second. The autopilot holds what it was engaged on, then
 -- follows a new heading, height and speed, and must arrive at each and stay.
 --
---     build/host/lua tools/test_flightmodel.lua build/airports/airports.tsv [frozen|no-descent]
+--     build/host/lua tools/test_flightmodel.lua build/airports/airports.tsv [frozen|no-descent|no-flare]
 --
 -- Then the route (F10c): Carrasco to Ezeiza on the real airports file,
 -- each aircraft taken from 1,500 ft over Carrasco to Ezeiza's final fix,
@@ -18,6 +18,8 @@
 -- the checks that it arrived must fail.
 -- `no-descent` is the second: the route's top of descent taken away, so
 -- the aircraft arrives at its cruise height and must fail the fix's.
+-- `no-flare` is the third: the landing flown down the glide path into the
+-- runway, which a 747 does at about 800 fpm.
 local M = dofile("user/installed/Flight/model.lua")
 fs = { read = function(path)
   local f = io.open(path, "rb")
@@ -160,6 +162,114 @@ for _, key in ipairs{ "cessna172", "b747" } do
           key .. " did not fly each phase once, in order: " .. seen)
   end
   ::skip::
+end
+
+-- **Runway to runway** (F10d): the same route begun on Carrasco's runway
+-- at rest, taken off, flown, landed on Ezeiza's 29 and stopped. The
+-- ground is each field's elevation near it.
+for _, key in ipairs{ "cessna172", "b747" } do
+  local P = mvd and eze and M.aircraft(read("user/installed/Flight/Aircraft/" .. key .. ".lua"), key, "")
+  if not P then goto skip2 end
+  do
+    local plan = assert(M.route(mvd, eze, P, nil, airports))
+    local dep = plan.dep
+    local lon0, lat0 = dep.lon, dep.lat
+    local field0, field1 = dep.feet * 0.3048, plan.arr.feet * 0.3048
+    local S = { x = 0, z = 0, y = field0 + P.gear, v = 0, psi = math.rad(dep.heading), phi = 0,
+                gamma = 0, alpha = 0.03, flaps = 0, throttle = 0, ground = true }
+    local W, AP, dt = { kt = 0, from = 270 }, {}, 1 / 30
+    local ways = {}
+    local function say(s) local p = s:match("^route (%a+)") if p then ways[#ways + 1] = p end end
+    M.engage(AP, S, P)
+    if control == "no-flare" then M.FLARE_OFF = true end
+    local R = 6371000
+    local function lonlat()
+      return lon0 + math.deg(S.x / (R * math.cos(math.rad(lat0)))), lat0 - math.deg(S.z / R)
+    end
+    local lifted, touched, t, rolled = nil, nil, 0, 0
+    while t < 3 * 3600 do
+      local lon, lat = lonlat()
+      local near_dep = airports.km(lon, lat, dep.lon, dep.lat) < airports.km(lon, lat, plan.arr.lon, plan.arr.lat)
+      local ground = near_dep and field0 or field1
+      local way = M.guide(plan, AP, S, P, lon, lat, airports, say, ground)
+      if way == "stopped" then break end
+      local pitch, roll = M.autopilot(AP, S, P, dt)
+      local was = S.ground
+      M.fly(S, P, W, dt, pitch, roll, ground, AP.brake, function() end)
+      t = t + dt
+      if S.crashed then break end
+      if was and not S.ground and not lifted then
+        lifted = { m = math.sqrt(S.x ^ 2 + S.z ^ 2), kt = S.v * 1.94384 }
+      end
+      if not was and S.ground and lifted and not touched then
+        local along, right = M.on_final(plan, lon, lat, airports)
+        touched = { fpm = S.landed or 0, along = along * 1000, right = right * 1000,
+                    kt = S.v * 1.94384 }
+      end
+    end
+    local lon, lat = lonlat()
+    local along, right = M.on_final(plan, lon, lat, airports)
+    local rw = plan.arr_runway
+    print(("%s runway to runway %s %s to %s %s in %.0f min: lifted off at %.0f kt after %.0f m of %.0f; "
+           .. "touched down at %.0f fpm, %.0f m past the threshold, %.1f m off the centre line; stopped "
+           .. "%.0f m along, %.1f m off; %s")
+          :format(key, mvd.iata, dep.name, eze.iata, plan.arr.name, t / 60,
+                  lifted and lifted.kt or 0, lifted and lifted.m or 0, plan.dep_runway.length * 0.3048,
+                  touched and touched.fpm or 0, touched and -touched.along or 0,
+                  touched and touched.right or 0, -along * 1000, right * 1000,
+                  S.crashed and ("crashed: " .. S.crashed) or table.concat(ways, ",")))
+    check(not S.crashed, key .. " crashed from runway to runway: " .. tostring(S.crashed))
+    check(lifted and lifted.m < plan.dep_runway.length * 0.3048, key .. " did not leave the ground on Carrasco's runway")
+    check(touched and touched.fpm < 600, key .. " did not touch down under 600 fpm")
+    check(touched and -touched.along > 0 and -touched.along < rw.length * 0.3048
+          and math.abs(touched.right) < rw.width * 0.3048 / 2,
+          key .. " did not touch down on Ezeiza's runway")
+    check(S.v < 0.5 and -along * 1000 < rw.length * 0.3048 and math.abs(right) * 1000 < rw.width * 0.3048 / 2,
+          key .. " did not stop on the runway")
+  end
+  ::skip2::
+end
+
+-- **Where the aircraft is** (F10d): on the wheels at either end of
+-- Carrasco's runway the take-off is from that end; and engaged 3 nm out
+-- on Ezeiza's 29, lined up, the route is already on its final and lands.
+if mvd and eze then
+  local P = M.aircraft(read("user/installed/Flight/Aircraft/cessna172.lua"), "cessna172", "")
+  for _, e in ipairs(mvd.runways[1].ends) do
+    local plan = M.route(mvd, eze, P, nil, airports,
+                         { lon = e.lon, lat = e.lat, heading = e.heading, ground = true })
+    check(plan and plan.dep == e, "a take-off from MVD " .. e.name .. " was not from that end")
+  end
+  local off = M.route(mvd, eze, P, nil, airports,
+                      { lon = mvd.lon + 0.2, lat = mvd.lat, heading = 0, ground = true })
+  check(not off, "a route on the wheels off any runway was made")
+  local e29
+  for _, r in ipairs(eze.runways) do for _, e in ipairs(r.ends) do if e.name == "29" then e29 = e end end end
+  local lon, lat = airports.ahead(e29.lon, e29.lat, (e29.heading + 180) % 360, 3 * 1.852)
+  local field = e29.feet * 0.3048
+  local plan = M.route(eze, eze, P, 270, airports, { lon = lon, lat = lat, heading = e29.heading })
+  check(plan and plan.arr == e29, "lined up on EZE 29, the route did not land on it")
+  if plan then
+    local R, lon0, lat0 = 6371000, lon, lat
+    local S = { x = 0, z = 0, y = field + P.gear + 3 * 1852 * M.GLIDE + 15, v = P.speeds.approach,
+                psi = math.rad(e29.heading), phi = 0, gamma = -0.05, alpha = 0.05, flaps = 0.5,
+                throttle = 0.3, ground = false }
+    local AP, first, t = {}, nil, 0
+    M.engage(AP, S, P)
+    while t < 900 do
+      local x, y = lon0 + math.deg(S.x / (R * math.cos(math.rad(lat0)))), lat0 - math.deg(S.z / R)
+      local way = M.guide(plan, AP, S, P, x, y, airports, nil, field)
+      first = first or way
+      if way == "stopped" or S.crashed then break end
+      local pitch, roll = M.autopilot(AP, S, P, 1 / 30)
+      M.fly(S, P, { kt = 0 }, 1 / 30, pitch, roll, field, AP.brake, function() end)
+      t = t + 1 / 30
+    end
+    print(("engaged 3 nm out on EZE 29: began at %s, ended %s after %.0f s, %s"):format(first,
+          plan.way, t, S.crashed or ("landed at %.0f fpm"):format(S.landed or 0)))
+    check(first == "final" and plan.way == "stopped" and not S.crashed,
+          "engaged on EZE 29's final, it did not land from there")
+  end
 end
 
 print(("flight model: %d checks, %d failed%s"):format(checks + fails, fails, control and (" (" .. control .. ", a control)") or ""))
