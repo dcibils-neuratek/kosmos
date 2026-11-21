@@ -671,7 +671,9 @@ local function engine_sound(t)
   engine.rpm = rpm
   if not engine.said then
     local st = synth.state(engine_state)
-    if (st.rendered or 0) > 0 then
+    -- Said once the engine is past its attack: the first period alone
+    -- is the envelope's rise, and its peak says nothing of the sound.
+    if (st.rendered or 0) >= 4096 then
       say(("sound engine rpm=%.0f hz=%.1f cut=%d wind=%.2f rendered=%d peak=%.3f")
           :format(rpm, hz, cut, wvol, st.rendered, math.max(st.peak_l or 0, st.peak_r or 0)))
       engine.said = true
@@ -718,17 +720,22 @@ local function hand(g, kind, z, x, y)
     handed = handed + 1
     return true
   end
-  local src = kind == "e" and net.elevation or net.imagery
+  local src = kind == "e" and net.elevation or net.imagery      -- "r", a roof's: the imagery
   local bytes = fs.read(src:path(z, x, y))
   if not bytes then return false end
+  -- What did not come is the sea - but a roof's piece is left to the
+  -- terrain, which lays the walls' concrete there instead (nil).
+  local missing_picture = kind == "e" and SEA_LEVEL or kind == "i" and SEA or nil
   local picture
   if #bytes == 0 then
-    picture = kind == "e" and SEA_LEVEL or SEA
+    picture = missing_picture
   else
     local ok, made = pcall(decoders[src.format], bytes)
-    if not ok or not made then picture = kind == "e" and SEA_LEVEL or SEA else picture = made end
+    if not ok or not made then picture = missing_picture else picture = made end
   end
-  if kind == "e" then g:elevation(z, x, y, picture) else g:imagery(z, x, y, picture) end
+  if kind == "e" then g:elevation(z, x, y, picture)
+  elseif kind == "r" then g:roof(z, x, y, picture)
+  else g:imagery(z, x, y, picture) end
   handed = handed + 1
   return true
 end
@@ -764,10 +771,12 @@ local function feed(g, eye)
   if offline.on then return feed_invented(g, eye) end
   asking.e, asking.i, asking.v = 0, 0, 0
   for _, t in ipairs(g:wanted(eye)) do
-    local kind = t[1]
+    -- A roof's piece ("r") is the imagery source's, asked in its one list:
+    -- a source's `want` replaces the list before it.
+    local kind = t[1] == "r" and "i" or t[1]
     local id = key(t[2], t[3], t[4])
     local gone = missing[kind]
-    if (gone[id] or not hand(g, kind, t[2], t[3], t[4])) and asking[kind] < tiles.MAX then
+    if (gone[id] or not hand(g, t[1], t[2], t[3], t[4])) and asking[kind] < tiles.MAX then
       gone[id] = true
       local list, n = asked[kind], asking[kind] * 3
       list[n + 1], list[n + 2], list[n + 3] = t[2], t[3], t[4]
@@ -1682,7 +1691,7 @@ local function terrain()
                     radius = 1, split = 2.0, most = math.min(300, keep), elevation = 13,
                     keep = keep, uploads = 8, flats = not offline.on and flats_here() or nil,
                     buildings = settings.buildings and not offline.on and 14 or nil,
-                    buildings_radius = 1 }
+                    buildings_radius = 1, roofs = settings.buildings and not offline.on and 16 or nil }
 end
 local g = terrain()
 say(("device=%s keep=%d free_mb=%d"):format(w:device(), keep, free_mb))

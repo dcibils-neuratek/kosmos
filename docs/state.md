@@ -223,7 +223,7 @@ levelled through the 3D Kit's `flats`, B for the brakes and a landing under
 over the imagery, asphalt and ICAO's paint, through the 3D Kit's new
 `w:shape` and a part's pull towards the eye. **0.12.44** (18.964), F9's radio - `radio.lua` over the
 Network Kit's download and the Playback Kit, `radio` at the prompt,
-`x86-radio`. **0.12.45** (18.965), F6's buildings B1-B3 - the MVT reader keeps heights, the 3D Kit's `k3d_extrude.c`, the terrain stands the vector tiles' buildings up on the builder's thread (46,906 over London on the M700, 11.6 ms a frame); B4, the photograph's roofs, next. **Waiting on Diego**: where Flight's ATC comes from - LiveATC
+`x86-radio`. **0.12.45** (18.965), F6's buildings B1-B3 - the MVT reader keeps heights, the 3D Kit's `k3d_extrude.c`, the terrain stands the vector tiles' buildings up on the builder's thread (46,906 over London on the M700, 11.6 ms a frame); **0.12.46** (18.966), B4 - the roofs wear the satellite photograph, sixteen zoom-16 pieces a tile, and a missing piece is concrete; two racing checks in `x86-flight` fixed, the panel checks' failure kept as a screen when it next happens. Next: F6's weather and shadows, then F7 (gamepad). **Waiting on Diego**: where Flight's ATC comes from - LiveATC
 prohibits third-party use of its streams (and its playlists are behind a
 Cloudflare check, not to be got round), so permission, another source, or ATC
 spoken by Kosmos. Next, in Diego's evening order (20 November): then the rest of F6, F7, and the imagery deeper near the ground. **The

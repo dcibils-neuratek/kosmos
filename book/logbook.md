@@ -5823,3 +5823,29 @@ check on paper, such as a courtyard of 84 square metres. Flight's suite
 serves tiles of known buildings and counts that all of them, and all
 their triangles, came out. On the M700, Heathrow and the City of London
 were flown and photographed.
+
+## 21 November 2026 - Flight's roofs from above
+
+**In short:** the roofs of Flight's buildings now show the satellite
+photograph of what is really on them, so a city seen from above looks
+like the city.
+
+**What changed.** Each tile of buildings asks for sixteen more detailed
+pieces of the satellite picture, two zoom levels closer than the
+buildings' own map tile. They are put together into one picture and laid
+across the roofs, each roof showing the part of the photograph it stands
+under. Until every piece has come, the roofs stay the plain stone colour.
+If the server has no picture for a piece, that piece stays stone too.
+The first try painted it as sea, which is what an empty ground tile is,
+and that would have given London blue roofs.
+
+**What you see.** The rooftops carry the photograph instead of one flat
+colour. London's roofs are mostly grey from above, so from the chase
+view at 1,800 feet the difference is slight; it is a lower, steeper look
+that will show it.
+
+**Checked.** Flight's suite serves the pieces and counts that the roofs
+took them. Its control refuses every piece and has to fail, and it does.
+Two of the suite's checks had been reading their numbers at the wrong
+moment and are fixed. On the M700 all 18 tiles over London wore their
+photograph.

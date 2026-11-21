@@ -453,8 +453,11 @@ ends on the M700:
       **B1 to B3 built in 0.12.45** (`testing.md` 18.965). Over the City
       of London the M700 held 46,906 buildings, 770,445 triangles, at
       11.6 ms a frame. The terrain also answers `g:top(x, z, r)`, the
-      highest roof near a place, and the tower view stands above it. B4
-      is next.
+      highest roof near a place, and the tower view stands above it.
+      **B4 built in 0.12.46** (`testing.md` 18.966): the roofs wear the
+      imagery at zoom 16, sixteen pieces a tile in one 1024 picture, and
+      a piece that does not come is the walls' concrete. Over London the
+      M700's 18 tiles were all roofed.
 - **Diego's evening list, 20 November 2026**, taken before the rest of F6
   and in this order: "Make sure we can takeoff and land in real airport
   locations", "Also don't know how to change cockpit to chase view",

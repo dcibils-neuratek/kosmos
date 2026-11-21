@@ -155,10 +155,20 @@ struct btile {
     uint8_t *bytes;                 /* NULL until they come */
     size_t nbytes;
     struct job *job;                /* BUILDING and MESHED */
-    struct k3d_vk_model model;      /* READY, when `triangles` */
+    struct k3d_vk_model model;      /* READY, when `triangles`: the walls */
+    struct k3d_vk_model roofs;      /* READY, when `roof_triangles` */
     struct box *boxes;              /* from MESHED on, kept with the bytes */
     size_t nboxes;
-    unsigned made, refused, triangles;
+    unsigned made, refused, triangles, roof_triangles;
+    /* The photograph over it (B4): `pieces` imagery tiles at the roofs'
+     * zoom, each ROOF_PIECE square, laid into one picture as they come;
+     * on the device once all have. */
+    uint32_t *roof_pixels;
+    uint32_t pieces;                /* a bit for each piece held */
+    uint32_t photos;                /* and for each that is a photograph,
+                                     * not the concrete a missing one is */
+    struct k3d_vk_texture roof_texture;
+    int textured;
     unsigned used;
 };
 
@@ -183,6 +193,7 @@ struct terrain {
     /* The buildings: their zoom (0, none), how many tiles out from the
      * eye's, how many held at most; and the builder's inflater. */
     unsigned bzoom, bradius, bkeep;
+    unsigned rzoom;                 /* the roofs' imagery zoom; 0, plain */
     struct btile *btiles;
     unsigned nbtiles, btiles_room;
     struct gunzip_work *work;
@@ -354,7 +365,8 @@ static double ring_area(const struct mvt_tile *t, const struct mvt_part *r)
     return a;
 }
 
-#define BUILDING_HEIGHT 6.0f        /* metres, for a footprint that says none */
+#define BUILDING_HEIGHT 6.0f
+#define ROOF_PIECE 256              /* texels on a side of one roof piece */        /* metres, for a footprint that says none */
 
 static void build_buildings(struct job *j, struct gunzip_work **work)
 {
@@ -500,6 +512,17 @@ static void build_buildings(struct job *j, struct gunzip_work **work)
         if (j->failed) {
             break;
         }
+    }
+    /* A roof's (u, v) across the tile, 0 to 1 - where on the tile's
+     * photograph it stands (B4) - from the frame's metres it was given. */
+    for (size_t i = 0; i < j->solid.nroof; i++) {
+        struct k3d_extrude_vertex *v = &j->solid.roof[i];
+        double n = ldexp(1.0, j->at.z);
+        double u = (v->position[0] / j->place.metres + j->place.ox) * n - j->at.x;
+        double w = (v->position[2] / j->place.metres + j->place.oy) * n - j->at.y;
+
+        v->uv[0] = (float)fmin(1.0, fmax(0.0, u));
+        v->uv[1] = (float)fmin(1.0, fmax(0.0, w));
     }
     free(xz);
     free(rings);
@@ -682,6 +705,12 @@ static int l_terrain(lua_State *L)
                   "buildings at a zoom from the elevation's to 16");
     luaL_argcheck(L, g->bradius <= 4, 1, "buildings_radius at most 4");
     g->bkeep = (2 * g->bradius + 1) * (2 * g->bradius + 1) * 2;
+    /* `roofs = 16`: the roofs wear the imagery at that zoom, up to two
+     * deeper than the buildings' - 16 pieces, a picture of 1024. */
+    g->rzoom = (unsigned)field_or(L, 1, "roofs", 0);
+    luaL_argcheck(L, g->rzoom == 0 || (g->bzoom > 0 && g->rzoom >= g->bzoom &&
+                                       g->rzoom <= g->bzoom + 2), 1,
+                  "roofs at the buildings' zoom or up to two deeper");
     g->chosen = calloc(g->most, sizeof(*g->chosen));
     g->drawn = calloc(g->most, sizeof(*g->drawn));
     if (g->chosen == NULL || g->drawn == NULL) {
@@ -772,6 +801,7 @@ static int l_terrain_gc(lua_State *L)
         }
         free(g->btiles[i].bytes);
         free(g->btiles[i].boxes);
+        free(g->btiles[i].roof_pixels);
     }
     free(g->btiles);
     free(g->work);
@@ -814,6 +844,14 @@ static void push_tile(lua_State *L, const char *kind, struct k3d_tile t, unsigne
     lua_pushinteger(L, t.y);
     lua_rawseti(L, -2, 4);
     lua_rawseti(L, -2, (lua_Integer)++*listed);
+}
+
+/* Every piece of a tile's roof picture, as `pieces` holds them. */
+static uint32_t roof_all(const struct terrain *g)
+{
+    unsigned k = 1u << (g->rzoom - g->bzoom);
+
+    return k * k >= 32 ? 0xFFFFFFFFu : (1u << (k * k)) - 1;
 }
 
 /* The building tiles within `bradius` of the eye's, nearest first: how
@@ -888,6 +926,19 @@ static int l_terrain_wanted(lua_State *L)
 
             if (b == NULL || b->bytes == NULL) {
                 push_tile(L, "v", around[k], &listed);
+            } else if (g->rzoom > 0 && (b->state == MESHED || b->state == READY) &&
+                       b->made > 0 && b->pieces != roof_all(g)) {
+                /* Its roofs' photograph, the pieces not yet here (B4). */
+                unsigned d = g->rzoom - g->bzoom, k2 = 1u << d;
+
+                for (unsigned p = 0; p < k2 * k2; p++) {
+                    if (!(b->pieces & (1u << p))) {
+                        struct k3d_tile r = { (b->at.x << d) + p % k2, (b->at.y << d) + p / k2,
+                                              (uint8_t)g->rzoom };
+
+                        push_tile(L, "r", r, &listed);
+                    }
+                }
             }
         }
     }
@@ -1058,25 +1109,78 @@ static int l_terrain_top(lua_State *L)
     return 1;
 }
 
+/* g:roof(z, x, y, surface): a piece of the photograph over a tile of
+ * buildings, at the roofs' zoom - laid where it goes in the tile's roof
+ * picture, scaled to ROOF_PIECE if it is not that already. With no
+ * surface, the server had none: the piece is the walls' concrete, so the
+ * picture is still whole - and not the sea an empty ground tile is. */
+#define ROOF_CONCRETE 0xFF9E998Fu   /* 0.62, 0.60, 0.56: the walls' tint */
+static int l_terrain_roof(lua_State *L)
+{
+    struct terrain *g = terrain_check(L, 1);
+    struct k3d_tile t = tile_args(L, 2);
+    unsigned w = 0, h = 0, pitch = 0;
+    const uint32_t *px = lua_isnoneornil(L, 5) ? NULL : kosmos_surface_pixels(L, 5, &w, &h, &pitch);
+
+    luaL_argcheck(L, g->rzoom > 0 && t.z == g->rzoom, 2, "a tile at the roofs' zoom");
+    luaL_argcheck(L, px == NULL || (w >= 1 && h >= 1), 5, "a picture of a pixel at least");
+
+    unsigned d = g->rzoom - g->bzoom, k = 1u << d, side = ROOF_PIECE * k;
+    struct btile *b = btile_of(g, above(t, g->bzoom));
+    unsigned px0 = t.x - (b ? b->at.x << d : 0), py0 = t.y - (b ? b->at.y << d : 0);
+
+    if (b == NULL || (b->pieces & (1u << (py0 * k + px0)))) {
+        return 0;
+    }
+    if (b->roof_pixels == NULL &&
+        (b->roof_pixels = calloc((size_t)side * side, sizeof(*b->roof_pixels))) == NULL) {
+        return luaL_error(L, "out of memory for a roof's picture");
+    }
+    for (unsigned y = 0; y < ROOF_PIECE; y++) {
+        uint32_t *to = b->roof_pixels + (size_t)(py0 * ROOF_PIECE + y) * side + px0 * ROOF_PIECE;
+
+        if (px == NULL) {
+            for (unsigned x = 0; x < ROOF_PIECE; x++) {
+                to[x] = ROOF_CONCRETE;
+            }
+            continue;
+        }
+        const uint32_t *row = (const uint32_t *)((const uint8_t *)px +
+                                                 (size_t)(y * h / ROOF_PIECE) * pitch);
+
+        for (unsigned x = 0; x < ROOF_PIECE; x++) {
+            to[x] = row[x * w / ROOF_PIECE];
+        }
+    }
+    b->pieces |= 1u << (py0 * k + px0);
+    if (px != NULL) {
+        b->photos |= 1u << (py0 * k + px0);
+    }
+    return 0;
+}
+
 /* g:built() -> "tiles=T ready=R buildings=B refused=F triangles=N": the
  * buildings held, as a line to print. */
 static int l_terrain_built(lua_State *L)
 {
     struct terrain *g = terrain_check(L, 1);
-    unsigned ready = 0, made = 0, refused = 0, triangles = 0;
+    unsigned ready = 0, made = 0, refused = 0, triangles = 0, roofed = 0, pieces = 0;
 
     for (unsigned i = 0; i < g->nbtiles; i++) {
         const struct btile *b = &g->btiles[i];
 
+        pieces += (unsigned)__builtin_popcount(b->photos);
         if (b->state == READY) {
             ready++;
             made += b->made;
             refused += b->refused;
-            triangles += b->triangles;
+            triangles += b->triangles + b->roof_triangles;
+            roofed += b->textured && b->photos != 0;
         }
     }
-    lua_pushfstring(L, "tiles=%d ready=%d buildings=%d refused=%d triangles=%d", (int)g->nbtiles,
-                    (int)ready, (int)made, (int)refused, (int)triangles);
+    lua_pushfstring(L, "tiles=%d ready=%d buildings=%d refused=%d triangles=%d roofed=%d "
+                    "pieces=%d", (int)g->nbtiles, (int)ready, (int)made, (int)refused,
+                    (int)triangles, (int)roofed, (int)pieces);
     return 1;
 }
 
@@ -1257,8 +1361,17 @@ static void terrain_forget_grounds(struct terrain *g)
             if (open && b->triangles > 0) {
                 k3d_vk_model_free(&w->renderer, &b->model);
             }
+            if (open && b->roof_triangles > 0) {
+                k3d_vk_model_free(&w->renderer, &b->roofs);
+            }
             b->state = WAITING;
-            b->triangles = 0;
+            b->triangles = b->roof_triangles = 0;
+        }
+        if (b->textured) {
+            if (open) {
+                k3d_vk_texture_free(&w->renderer, &b->roof_texture);
+            }
+            b->textured = 0;
         }
     }
 }
@@ -1782,44 +1895,41 @@ static int advance_buildings(struct window *w, struct terrain *g, const double e
         } else if (b->state == MESHED && *uploaded < g->uploads) {
             struct job *j = b->job;
             struct k3d_extruded *e = &j->solid;
-            size_t nv = e->nroof + e->nwall, ni = e->nroof_index + e->nwall_index;
 
-            if (ni > 0 && nv < UINT32_MAX && ni < UINT32_MAX) {
-                struct k3d_vk_model_vertex *v = malloc(sizeof(*v) * nv);
-                uint32_t *ix = malloc(sizeof(*ix) * ni);
-                int ok;
-
-                _Static_assert(sizeof(struct k3d_vk_model_vertex) ==
-                               sizeof(struct k3d_extrude_vertex),
-                               "an extruded corner is a model's corner");
-                if (v == NULL || ix == NULL) {
-                    free(v);
-                    free(ix);
-                    continue;
-                }
-                if (e->nroof > 0) {
-                    memcpy(v, e->roof, sizeof(*v) * e->nroof);
-                }
-                if (e->nwall > 0) {
-                    memcpy(v + e->nroof, e->wall, sizeof(*v) * e->nwall);
-                }
-                if (e->nroof_index > 0) {
-                    memcpy(ix, e->roof_index, sizeof(*ix) * e->nroof_index);
-                }
-                for (size_t i = 0; i < e->nwall_index; i++) {
-                    ix[e->nroof_index + i] = e->wall_index[i] + (uint32_t)e->nroof;
-                }
-                ok = k3d_vk_model(&w->renderer, &b->model, v, (uint32_t)nv, ix, (uint32_t)ni);
-                free(v);
-                free(ix);
-                if (!ok) {
+            _Static_assert(sizeof(struct k3d_vk_model_vertex) == sizeof(struct k3d_extrude_vertex),
+                           "an extruded corner is a model's corner");
+            /* The walls and the roofs apart: the roofs wear the photograph. */
+            if (e->nwall_index > 0 && e->nwall < UINT32_MAX && e->nwall_index < UINT32_MAX) {
+                if (!k3d_vk_model(&w->renderer, &b->model,
+                                  (const struct k3d_vk_model_vertex *)e->wall, (uint32_t)e->nwall,
+                                  e->wall_index, (uint32_t)e->nwall_index)) {
                     return 0;
                 }
-                b->triangles = (unsigned)(ni / 3);
+                b->triangles = (unsigned)(e->nwall_index / 3);
+            }
+            if (e->nroof_index > 0 && e->nroof < UINT32_MAX && e->nroof_index < UINT32_MAX) {
+                if (!k3d_vk_model(&w->renderer, &b->roofs,
+                                  (const struct k3d_vk_model_vertex *)e->roof, (uint32_t)e->nroof,
+                                  e->roof_index, (uint32_t)e->nroof_index)) {
+                    return 0;
+                }
+                b->roof_triangles = (unsigned)(e->nroof_index / 3);
             }
             job_free(j);
             b->job = NULL;
             b->state = READY;
+            ++*uploaded;
+        }
+        /* The photograph, on the device once every piece has come. */
+        if (b->state == READY && g->rzoom > 0 && !b->textured && b->roof_pixels != NULL &&
+            b->pieces == roof_all(g) && *uploaded < g->uploads) {
+            unsigned side = ROOF_PIECE << (g->rzoom - g->bzoom);
+
+            if (!k3d_vk_texture(&w->renderer, &b->roof_texture, b->roof_pixels, side, side,
+                                VK_FORMAT_B8G8R8A8_UNORM)) {
+                return 0;
+            }
+            b->textured = 1;
             ++*uploaded;
         }
     }
@@ -1839,20 +1949,29 @@ static int advance_buildings(struct window *w, struct terrain *g, const double e
         }
         struct btile *b = &g->btiles[oldest];
 
-        if (b->state == READY && b->triangles > 0) {
-            k3d_vk_model_free(&w->renderer, &b->model);
+        if (b->state == READY) {
+            if (b->triangles > 0) {
+                k3d_vk_model_free(&w->renderer, &b->model);
+            }
+            if (b->roof_triangles > 0) {
+                k3d_vk_model_free(&w->renderer, &b->roofs);
+            }
+            if (b->textured) {
+                k3d_vk_texture_free(&w->renderer, &b->roof_texture);
+            }
         } else if (b->state == MESHED) {
             job_free(b->job);
         }
         free(b->bytes);
         free(b->boxes);
+        free(b->roof_pixels);
         g->btiles[oldest] = g->btiles[--g->nbtiles];
     }
     /* What is drawn, once nothing more moves in the list. */
     for (unsigned k = 0; k < na; k++) {
         struct btile *b = btile_of(g, around[k]);
 
-        if (b != NULL && b->state == READY && b->triangles > 0) {
+        if (b != NULL && b->state == READY && (b->triangles > 0 || b->roof_triangles > 0)) {
             drawn[(*ndrawn)++] = b;
         }
     }
@@ -2002,8 +2121,10 @@ static int l_window_draw(lua_State *L)
             return 2;
         }
         if (nstanding > 0) {
-            if (nplane + nstanding > w->models_room) {
-                unsigned more = (nplane + nstanding) * 2;
+            unsigned extra = 2 * nstanding, put = 0;
+
+            if (nplane + extra > w->models_room) {
+                unsigned more = (nplane + extra) * 2;
                 struct k3d_vk_model_draw *bigger = malloc(more * sizeof(*bigger));
 
                 if (bigger == NULL) {
@@ -2018,16 +2139,32 @@ static int l_window_draw(lua_State *L)
             } else if (plane != w->models && nplane > 0) {
                 memmove(w->models, plane, nplane * sizeof(*plane));
             }
+            /* The walls a light concrete; the roofs the photograph where it
+             * has come, the concrete until then. */
             for (unsigned i = 0; i < nstanding; i++) {
-                struct k3d_vk_model_draw *d = &w->models[nplane + i];
+                struct btile *b = standing[i];
 
-                memset(d, 0, sizeof(*d));
-                d->model = &standing[i]->model;
-                d->tint[0] = 0.62f, d->tint[1] = 0.60f, d->tint[2] = 0.56f, d->tint[3] = 1.0f;
-                d->matrix[0] = d->matrix[5] = d->matrix[10] = d->matrix[15] = 1.0f;
+                for (int part = 0; part < 2; part++) {
+                    struct k3d_vk_model_draw *d = &w->models[nplane + put];
+
+                    if ((part == 0 && b->triangles == 0) || (part == 1 && b->roof_triangles == 0)) {
+                        continue;
+                    }
+                    memset(d, 0, sizeof(*d));
+                    d->model = part == 0 ? &b->model : &b->roofs;
+                    if (part == 1 && b->textured) {
+                        d->texture = &b->roof_texture;
+                        d->tint[0] = d->tint[1] = d->tint[2] = 1.0f;
+                    } else {
+                        d->tint[0] = 0.62f, d->tint[1] = 0.60f, d->tint[2] = 0.56f;
+                    }
+                    d->tint[3] = 1.0f;
+                    d->matrix[0] = d->matrix[5] = d->matrix[10] = d->matrix[15] = 1.0f;
+                    put++;
+                }
             }
             plane = w->models;
-            nplane += nstanding;
+            nplane += put;
         }
     }
     uint32_t laid = 0;
@@ -2613,6 +2750,7 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "buildings", l_terrain_buildings },
         { "built", l_terrain_built },
         { "top", l_terrain_top },
+        { "roof", l_terrain_roof },
         { "height", l_terrain_height },
         { "__gc", l_terrain_gc },
         { NULL, NULL },

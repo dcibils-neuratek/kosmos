@@ -40488,3 +40488,60 @@ buildings and 3456 triangles, and the sky above the panel at 1.0. The
 panel is laid over the frame, and the suite's buildings stand about 12
 degrees below that row, so this is listed with the gate's flakes
 (`roadmap.md`).
+
+## 18.966 Flight's roofs wear the photograph (0.12.46)
+
+**In short:** the roofs of Flight's buildings now wear the satellite
+photograph, two zooms deeper than the buildings' tiles: 16 imagery tiles
+at zoom 16 over each zoom-14 tile of buildings, laid into one 1024 by
+1024 picture. Over the City of London the M700 held 18 tiles, about
+60,000 buildings and 980,000 triangles, and all 18 wore their photograph.
+A piece the server does not have becomes the walls' concrete, not the
+sea an empty ground tile is.
+
+- **The terrain** (`k3d_vk_kosmos.c`). A tile of buildings is two models
+  now, the walls and the roofs, and is drawn with two calls.
+  - Each roof point's (u, v) is where it stands on its tile, 0 to 1,
+    worked out after the build from the frame's metres. It is the
+    inverse of `k3d_place_world`.
+  - Once a tile is made, `g:wanted` lists `{ "r", 16, x, y }` for the
+    pieces it still lacks. `g:roof(z, x, y, surface)` lays a piece into
+    the tile's picture, scaled to 256 if needed. With no surface, it
+    lays the concrete (0.62, 0.60, 0.56, the walls' tint).
+  - The picture goes on the device once every piece has come, within
+    the frame's uploads budget. The roofs are drawn plain until then.
+  - A tile keeps its picture and which pieces are photographs when the
+    ground is forgotten.
+  - `g:built()` adds `roofed`, the tiles whose roofs wear a photograph,
+    and `pieces`, the photographed pieces held.
+- **Flight** asks for a roof's pieces from the imagery source, in its one
+  want list. It hands an empty or undecodable piece over as nothing, so
+  the terrain lays the concrete. The constructor's `roofs = 16` turns it
+  on, and it stays off offline, over the invented island.
+
+**Checked by `x86-flight`**, which serves the same JPEG for every zoom.
+196 pieces were asked for, every photographed piece was held, and 9 tiles
+were roofed. **Control:** `--no-roofs` refuses every zoom-16 piece. The
+roofs become concrete and the suite fails with "no tile's roofs wear the
+photograph: 194 pieces asked, 0 tiles roofed". The first version of the
+control passed: a refused piece was painted as sea and counted as a
+photograph. That is why a missing piece is now concrete, and why only
+photographs count.
+
+**Two of the suite's checks raced, and are fixed.** The buildings check
+read the last report, and the suite restarts Flight at other places,
+which gives the buildings back. One run's last report said no tile was
+ready at all. The checks now read the report with the most tiles ready,
+and the most roofed. And the engine's line was said after the first
+period, whose peak is the envelope's rise: 768 samples at 0.008 failed
+the 0.01 check. It is said after 4,096 samples now, and the passing runs
+read 0.39 to 0.52.
+
+**The panel checks are still unexplained.** Under the gate, the cockpit
+panel's check and the graphics box's check failed together once. The
+box read 936 of its 1,152 pixels light, so something light covered the
+top of the picture. Four runs alone and the final gate all passed. The
+suite now keeps the screen it judged when either check fails
+(`panel-failed.png` and `graphics-failed.png` in its work directory), so
+the next failure can be looked at. The final gate passed all five suites
+(`x86-flight`, `-land`, `-island`, `x86-flightpath`, `host`) in 3:08.

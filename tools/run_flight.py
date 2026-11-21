@@ -55,7 +55,11 @@ LAND = "--land" in sys.argv
 # tiles name their layer `buildings`, which OpenMapTiles' is not, so none
 # is stood up and the suite must fail.
 WRONG_LAYER = "--wrong-layer" in sys.argv
-sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer")]
+# `--no-roofs` (B4) is the roofs' control: the imagery at zoom 16 - the
+# roofs' pieces - is refused, so the roofs are the walls' concrete, no
+# tile's wears a photograph, and the suite must fail.
+NO_ROOFS = "--no-roofs" in sys.argv
+sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer", "--no-roofs")]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
@@ -138,7 +142,7 @@ def vector_tile():
 
 
 def tile_server():
-    asked = {"elev": 0, "img": 0, "vec": 0, "search": None}
+    asked = {"elev": 0, "img": 0, "vec": 0, "roof": 0, "search": None}
     vector = vector_tile()
     made = {}
 
@@ -175,7 +179,13 @@ def tile_server():
                 asked["vec"] += 1
                 self.send(200, vector, "application/x-protobuf")
                 return
-            if re.match(r"^/img/(\d+)/(\d+)/(\d+)$", self.path):
+            m = re.match(r"^/img/(\d+)/(\d+)/(\d+)$", self.path)
+            if m and m.group(1) == "16":
+                asked["roof"] += 1
+                if NO_ROOFS:
+                    self.send(404, b"", "text/plain")
+                    return
+            if m:
                 asked["img"] += 1
                 self.send(200, JPEG, "image/jpeg")
                 return
@@ -700,12 +710,15 @@ def main():
     # of the triangles they make - so the reader, the extruder and the
     # upload each had the whole of it.
     b = re.findall(r"flight buildings tiles=(\d+) ready=(\d+) buildings=(\d+) refused=(\d+) "
-                   r"triangles=(\d+)", seen)
+                   r"triangles=(\d+) roofed=(\d+) pieces=(\d+)", seen)
     print("flight: the Mac served %d vector tiles; buildings %r" % (asked["vec"], b[-1] if b else None))
     if not b:
         fails.append("Flight said nothing of its buildings")
     else:
-        tiles_, ready, made, refused, triangles = map(int, b[-1])
+        # The report with the most tiles ready: a restart at another place
+        # gives the buildings back and stands them up again.
+        best = max(b, key=lambda r: int(r[1]))
+        tiles_, ready, made, refused, triangles, roofed, pieces = map(int, best)
         if asked["vec"] == 0 or ready == 0:
             fails.append("no tile of buildings was stood up: %d asked, %r" % (asked["vec"], b[-1]))
         elif made != ready * BUILDINGS_A_TILE or refused != 0 or \
@@ -714,6 +727,16 @@ def main():
                          "%d refused, %d triangles of %d" % (ready, made, ready * BUILDINGS_A_TILE,
                                                              refused, triangles,
                                                              ready * TRIANGLES_A_TILE))
+        # The roofs (B4): their photograph asked for, piece by piece at zoom
+        # 16, and a tile's roofs wearing it once its sixteen had come - in
+        # any report, since a restart at another place makes them again.
+        roofed = max(int(r[5]) for r in b)
+        pieces = max(int(r[6]) for r in b)
+        print("flight: the Mac was asked for %d roof pieces; %d held, %d tiles roofed"
+              % (asked["roof"], pieces, roofed))
+        if asked["roof"] < 16 or pieces < 16 or roofed < 1:
+            fails.append("no tile's roofs wear the photograph: %d pieces asked, %d tiles roofed"
+                         % (asked["roof"], roofed))
     if asked["elev"] == 0 or asked["img"] == 0 or viewed["tiles"] == 0:
         fails.append("tiles were not fetched and handed: %d elevation, %d imagery asked, %d handed"
                      % (asked["elev"], asked["img"], viewed["tiles"]))
@@ -801,8 +824,10 @@ def main():
         if os.environ.get("KOSMOS_FLIGHT_SIZE"):
             pass
         elif block is None or block[0] < 0.3 or block[1] < 12 or block[2] < 0.5:
+            kept = os.path.join(WORK, "panel-failed.png")
+            R.write_png(kept, screen)
             fails.append("no panel on the cockpit's screen - a near-black block %dx%d with "
-                         "dials in it: %r" % (pw, ph, block))
+                         "dials in it: %r (the screen: %s)" % (pw, ph, block, kept))
     # The graphics panel (F5g): said once with the 3D Kit's figures for a
     # frame - its draw calls, at least the sky's and the ground's, the
     # triangles, and the device's own time for it - and on the chase view's
@@ -836,8 +861,11 @@ def main():
         if os.environ.get("KOSMOS_FLIGHT_SIZE"):
             pass
         elif box is None or box[0] < 0.3 or box[1] < 8:
+            kept = os.path.join(WORK, "graphics-failed.png")
+            R.write_png(kept, chase)
             fails.append("no graphics panel on the chase view's screen - a near-black box "
-                         "%dx%d at %d,%d with words in it: %r" % (gw, gh, gx, gy, box))
+                         "%dx%d at %d,%d with words in it: %r (the screen: %s)"
+                         % (gw, gh, gx, gy, box, kept))
     # The tower (F5h): on the city's airfield - Carrasco, MVD, about 14 km
     # east-north-east of the bay - in the terrain's own projection, and its
     # lens a sixtieth of the distance to the aircraft, between 1.4 and 400.
