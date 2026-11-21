@@ -41046,3 +41046,49 @@ to the place the flight began.
   its twenty-at-once check with a connection reset, the load flake it
   has had before (18.977), and passed alone in 43 s with 36 checks.
   Flight's suites, `x86-flight` and `x86-flight-747`, passed in the gate.
+
+## 18.979 Flight's autopilot (0.12.59)
+
+**In short:** Q switches on an autopilot that holds the heading, height
+and speed the aircraft had. The flight model moved into `model.lua`, so a
+host test flies both aircraft under it in under a second, and QEMU proves
+only the key.
+
+- **The host test**, `tools/test_flightmodel.lua`, in `make` after the
+  airports. Each aircraft is read from its own file by `M.aircraft`, put
+  level at its cruise 1,500 m up, and given 120 s to settle under the
+  autopilot. It is then told 90 degrees right, 300 m higher and a tenth
+  faster, and given 300 s:
+  - the Cessna: 090.0 for 090.0, 1,800 m for 1,800, 60.5 m/s for 60.5;
+  - the 747: 090.0 for 090.0, 1,800 m for 1,800, 140.8 m/s for 140.8;
+  - banked 25 degrees at most, climbed 5.5 m/s at most for a 5 m/s
+    limit.
+
+  18 checks, nought failed.
+- **The control**, `frozen`: the integrators on the yoke and throttle
+  held where engaging put them. 7 of 18 checks fail: neither aircraft
+  holds its height or speed, and the 747 runs to 232 m/s. `make` fails
+  if the control ever passes.
+- **Found tuning.** A speed hold in throttle per m/s of error made the
+  747's six-second spool swing its throttle between 0 and 0.5 with no
+  end. The fix asks for an acceleration and turns it into throttle by the
+  aircraft's mass over its full thrust. The climb overshoots by about a
+  tenth while speed is traded for height; a sweep of twelve pairs of
+  yoke gains found none without it, so the check allows a fifth rather
+  than the one pair that crept under.
+- **In QEMU**, `x86-flight`: Q engaged at 356 degrees, 1,561 ft and
+  102 kt. The right arrow, held for six frames, turned the heading held
+  to 008, and Q again let go with the height and speed unchanged. The
+  Keys page shows 19 keys in 4 groups. **Its control**, the line that
+  turns the heading held removed for one run: 358 on and 358 off, and the
+  suite failed on it.
+- **One list of Flight's Lua.** `installed.programs(name)` gives a
+  folder's own `.lua` files. The install, `run_flight.py` and
+  `run_gallery.py` take it, where the two suites had named `flight.lua`
+  by hand.
+- **Suites by themselves**: `host`, `x86-flight`, `x86-flight-747` and
+  `x86-flight-land` passed in 4:39.
+- **The gate**: 128 of 129 suites passed in 640 s. `x86-flight` failed
+  only on the engine heard silent (rendered, peak 0: the roadmap's flake,
+  its third gate in a day), with the autopilot's and the keys' checks
+  passing in the same run; alone it passed in 3:30.

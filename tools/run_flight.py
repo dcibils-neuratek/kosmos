@@ -601,12 +601,11 @@ def main():
             if os.environ.get("KOSMOS_FLIGHT_TIME"):            # a picture's hour, for a person
                 f.write('prefs.open("flight", {}):set{ time = "%s" }\n'
                         % os.environ["KOSMOS_FLIGHT_TIME"])
-    files = [(os.path.join(WORK, "setup.lua"), FOLDER + "/setup.lua"), (image, FOLDER + "/k3dvk.elf"),
-             (os.path.join(ROOT, "user", "installed", "Flight", "flight.lua"),
-              FOLDER + "/flight.lua")]
-    # Its aircraft's models, its airports (F8) and its aircraft files
-    # (F12), as `installed.py` puts them beside it.
+    files = [(os.path.join(WORK, "setup.lua"), FOLDER + "/setup.lua"), (image, FOLDER + "/k3dvk.elf")]
+    # Its program and its model (F10b), its aircraft's models, its airports
+    # (F8) and its aircraft files (F12), as `installed.py` puts them beside it.
     import installed                                         # noqa: E402
+    files += [(here, FOLDER + "/" + inside) for here, inside in installed.programs("Flight")]
     files += [(os.path.join(ROOT, there), FOLDER + "/" + here)
               for there, here in installed.ASSETS["Flight"]]
     files += [(here, FOLDER + "/" + inside) for here, inside in installed.flight_made()]
@@ -862,6 +861,32 @@ def main():
         for rate in (3, 4, 1):
             press_x(rate)
         faster["back"] = wait_frames(1, "back at 1x")
+
+        # The autopilot (F10b): Q holds what the aircraft is doing, the right
+        # arrow held turns the heading it holds rather than the aircraft,
+        # and Q again lets go and says what it was holding by then. Its
+        # arithmetic is held on the host (`tools/test_flightmodel.lua`); this
+        # is the key, the strip and the arrows' meaning.
+        def press_q(word):
+            have = guest.seen.count("flight autopilot " + word)
+            keys(True, "q")
+            time.sleep(0.1)
+            keys(False, "q")
+            until = time.monotonic() + 60
+            while guest.seen.count("flight autopilot " + word) == have and time.monotonic() < until:
+                guest._read_available()
+                time.sleep(0.1)
+        press_q("on")
+        wait_frames(1, "the autopilot on")
+        if os.environ.get("KOSMOS_FLIGHT_SHOT"):            # the strip under the autopilot
+            wait_frames(2, "the strip redrawn")
+            R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-autopilot.png"),
+                        guest.screendump())
+        keys(True, "right")
+        wait_frames(6, "the right arrow held under the autopilot")
+        keys(False, "right")
+        press_q("off")
+        wait_frames(1, "the autopilot off")
 
         # The yoke back: it climbs.
         start = faster["back"]
@@ -1295,10 +1320,19 @@ def main():
         fails.append("X did not make the time 2x: a frame carried it %.2f times as far" % ratio)
     if rates != ["2", "3", "4", "1"]:
         fails.append("X did not step 2x, 3x, 4x and back to 1x: %r" % (rates,))
+    held = re.findall(r"flight autopilot (on|off): heading (\d+), (\d+) ft, (\d+) kt", seen)
+    print("flight: the autopilot said %r" % (held,))
+    if [h[0] for h in held] != ["on", "off"]:
+        fails.append("Q did not switch the autopilot on and off: %r" % (held,))
+    else:
+        turned = (int(held[1][1]) - int(held[0][1])) % 360
+        if not 1 <= turned <= 60 or held[1][2:] != held[0][2:]:
+            fails.append("the right arrow under the autopilot did not turn only its heading: %r"
+                         % (held,))
     shown = re.findall(r"flight keys shown: (\d+) keys in (\d+) groups", seen)
     print("flight: keys shown %r, none before F1: %s" % (shown, keys_before == 0))
-    if keys_before != 0 or shown != [("18", "4")]:
-        fails.append("F1 did not show the 18 keys in 4 groups once, after none: %r (before %d)"
+    if keys_before != 0 or shown != [("19", "4")]:
+        fails.append("F1 did not show the 19 keys in 4 groups once, after none: %r (before %d)"
                      % (shown, keys_before))
     if "flight keys closed" not in seen:
         fails.append("F1 again did not close the keys")

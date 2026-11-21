@@ -765,11 +765,73 @@ ends on the M700:
     throttle the keys and the pad already drive, so the flight model is
     not touched. A key switches it on and off, and the strip says the
     modes held.
+    - **Built in 0.12.59** (`testing.md` 18.979). The arithmetic of
+      flying left `flight.lua` for `model.lua` beside it: an aircraft
+      file's fields and checks, the wind, one step of the flight model,
+      and the autopilot. It takes what it works on as arguments and uses
+      nothing but `math`, so `tools/test_flightmodel.lua` flies it on the
+      host. Three holds, each over the controls a pilot has:
+      - **heading**: a bank towards it, never past 25 degrees;
+      - **height**: a climb or descent towards it of at most 5 m/s, the
+        yoke on that rate, proportional and integral;
+      - **speed**: an acceleration asked of the throttle, a tenth of the
+        error a second and at most 0.5 m/s2, turned into throttle by the
+        aircraft's mass over its full thrust here and now - so the
+        Cessna and the 747 are one loop with one set of gains. With the
+        Cessna's gains in throttle per m/s the 747's six-second spool
+        swung its throttle between 0 and 0.5 for good.
+
+      Q engages it on what the aircraft is doing, and Q again lets go;
+      with it on, the arrows turn the heading held 20 degrees a second
+      and the height 300 ft, A and Z the speed 5 kt, a number key takes
+      the throttle back and lets go, and the wheels on the ground let go.
+      The strip's labels say what is held, in AUTOPILOT's amber -
+      `HEADING 090` - and the state says AUTOPILOT; with "AP" in them
+      as well, a 1280-point strip ran each into the next. The climb rate overshoots its 5 m/s by about
+      a tenth as the aircraft trades speed for height; no gain removes
+      it, and the check allows a fifth.
   - **F10c - the route.** A flight plan is two airports from the
     Airports library: the departure's runway into the wind, a climb to a
     cruise height for the distance, a great-circle track to the arrival,
     a descent so as to be 3,000 ft over the field 10 nm out, and the
     runway into the wind there.
+    - **How it is built** (21 November, before the code). The plan and the
+      guidance are arithmetic, so they go in `model.lua` beside the
+      autopilot and are flown on the host. They take the Airports
+      library's `bearing` and `km` as arguments rather than carrying
+      copies (*One kit, one door*).
+      - **`M.route(from, to, P, wind_from, geo)`** makes the plan:
+        - each airport's runway end most nearly into the wind, or with
+          no wind the end most nearly along the track;
+        - a **final fix** 10 nm out on the arrival end's centre line;
+        - a cruise height from the distance - 5,000 ft for the 124 nm
+          from Carrasco to Ezeiza - never above the aircraft's
+          `speeds.ceiling_ft` (8,000 for the Cessna, 35,000 for the
+          747), and never under 3,000 ft over the higher field;
+        - the **top of descent**: as far out from the fix as a 3 degree
+          path (318 ft a nm) takes to come down from the cruise to
+          3,000 ft over the arrival field.
+      - **`M.guide(plan, AP, lon, lat, P, geo)`**, each frame, sets what
+        the autopilot holds:
+        - the heading, the great circle to the fix, then to the
+          threshold once it is passed;
+        - the height, the cruise until the top of descent, then the
+          3 degree path's height for the distance;
+        - the speed, the cruise and from the fix the approach.
+
+        It says each phase as it starts.
+      - **In Flight**: a route is `settings.fly_to`, an airport's code.
+        With one set, Q engages the autopilot on the route rather than on
+        what the aircraft is doing, and the strip's state says
+        `NAV EZE 87 nm`. The sheet's "Fly to" row is F10d's.
+      - **Held by** `tools/test_flightmodel.lua`, which flies Carrasco to
+        Ezeiza on the real airports file, with the Cessna and with the
+        747. Each must pass the fix within a nautical mile of the centre
+        line, at 3,000 ft over the field give or take 300, heading
+        within 20 degrees of the runway. **Its control** takes the top
+        of descent away, so the aircraft arrives at its cruise height
+        and the height check fails. `x86-flight` holds the key: with
+        `fly_to` set, Q holds the heading to the fix.
   - **F10d - the take-off and the landing.** Lined up, full power,
     rotate at the aircraft's speed and climb on the runway's heading;
     and at the end a three-degree glide path to the touchdown zone, the

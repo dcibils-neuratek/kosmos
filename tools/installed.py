@@ -99,6 +99,14 @@ def aircraft():
             for f in sorted(os.listdir(folder)) if f.endswith(".lua")]
 
 
+def programs(name):
+    """An application's own Lua, every `.lua` at the top of its folder, as
+    (here, inside): its program and what it loads beside it - Flight's
+    `model.lua` (F10b). The install, Flight's suite and the gallery take it."""
+    folder = os.path.join(INSTALLED, name)
+    return [(os.path.join(folder, f), f) for f in sorted(os.listdir(folder)) if f.endswith(".lua")]
+
+
 def flight_made():
     return airports() + aircraft()
 
@@ -179,9 +187,7 @@ def pairs(arch, home, apps=None):
         guest = (SYSTEM_APPS if name in SYSTEM else APPS) + "/" + name
         mine = []                                   # (here, inside), this folder's
 
-        for file in sorted(os.listdir(folder)):
-            if file.endswith(".lua"):
-                mine.append((os.path.join(folder, file), file))
+        mine += programs(name)
 
         program = os.path.join(folder, name.lower() + ".lua")
         images = images_of(program) if os.path.exists(program) else []

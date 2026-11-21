@@ -6137,3 +6137,42 @@ runways near the new centre are made.
 about a kilometre, has to come out the same. With one line removed so
 the roll's starting point is left behind, it measured six kilometres and
 the test failed, as it should.
+
+## 21 November 2026 - An autopilot
+
+**In short:** Flight has an autopilot. Press Q and the aircraft keeps
+flying the way it is - the same heading, the same height, the same
+speed - with nobody's hands on it. The arrows and A and Z then change
+what it holds rather than flying the aircraft. It is the second of four
+steps towards Flight taking off at Carrasco and landing at Ezeiza by
+itself.
+
+**What.** Three small controllers. One banks the aircraft towards the
+heading it should have, never past 25 degrees. One climbs or descends
+towards the height it should have, at most 5 m/s. One moves the throttle
+towards the speed it should have. Each works through the same yoke and
+throttle a person uses, so the flight model underneath is untouched.
+
+**Why it went into a file of its own.** Tuning a controller needs
+minutes of flying, many times over, and in QEMU a minute of flying is a
+quarter of an hour. So the arithmetic of flying left `flight.lua` for
+`model.lua`, which uses nothing but `math`. On this Mac a test now flies
+the Cessna and the 747 for seven minutes of their time in well under a
+second.
+
+**What the measurement found.** The first speed hold was written in
+throttle per metre a second of error, which suits a Cessna. On the 747,
+whose engines take six seconds to spool, the throttle swung from 0 to
+half and back forever. The fix was to ask for an acceleration instead,
+and turn it into throttle by the aircraft's own mass and thrust. One
+loop then flies both aircraft, and the 747 settles at 140.8 m/s for
+140.8.
+
+**Visible impact.** Q, and the strip's labels turn amber with what is
+held - `HEADING 090` - and it says AUTOPILOT. The Keys page has 19 keys.
+
+**Measurements.** Both aircraft turn 90 degrees, climb 300 m and speed
+up a tenth, and arrive exactly. The control holds the controllers'
+slow corrections still; it misses 7 of the 18 checks. In QEMU, the
+right arrow under the autopilot turned the held heading 12 degrees and
+nothing else; with that line removed, nought, and the suite failed.

@@ -209,9 +209,9 @@ def flight_disk(apps):
     with open(setup, "w") as f:
         f.write(FLIGHT_SETUP)
 
-    files = [(setup, FLIGHT + "/setup.lua"), (image, FLIGHT + "/k3dvk.elf"),
-             (os.path.join(root, "user/installed/Flight/flight.lua"), FLIGHT + "/flight.lua")]
+    files = [(setup, FLIGHT + "/setup.lua"), (image, FLIGHT + "/k3dvk.elf")]
     import installed                                         # noqa: E402
+    files += [(here, FLIGHT + "/" + inside) for here, inside in installed.programs("Flight")]
     files += [(os.path.join(root, there), FLIGHT + "/" + here)
               for there, here in installed.ASSETS["Flight"]]
     files += [(here, FLIGHT + "/" + inside) for here, inside in installed.flight_made()]

@@ -6164,6 +6164,12 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	@# airport Flight can start from, and the library that answers which
 	@# (`docs/flight.md` F8, testing.md 18.962).
 	$(HOSTDIR)/lua tools/test_airports.lua build/airports/airports.tsv
+	@# Flight's model flown on this machine (`docs/flight.md` F10b): both
+	@# aircraft under the autopilot, then the control - its integrators
+	@# frozen - which must fail.
+	$(HOSTDIR)/lua tools/test_flightmodel.lua
+	@if $(HOSTDIR)/lua tools/test_flightmodel.lua frozen >/dev/null; then \
+	  echo "FAIL: the autopilot's control passed: the checks do not bite"; exit 1; fi
 	@$(HOSTDIR)/lua tools/luaredefined.lua $$(find user -name '*.lua' -not -path '*/upstream/*' | sort)
 	@# The format, `kfs.c`, on this machine before anything is booted - the
 	@# fastest of these and the one that fails first when the disk layout is
