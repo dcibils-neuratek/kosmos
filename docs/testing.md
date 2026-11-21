@@ -40941,3 +40941,27 @@ seconds ahead of where the extra steps carry it.
   3x, 4x and 1x in that order. The Keys page now holds 18 keys.
 - **The gate.** Only `x86-flight` stands on what changed. It passed in
   3:24.
+
+## 18.976 Flight's aircraft as files (0.12.56)
+
+**In short:** the Cessna's numbers, engine, model, moving parts and
+sound left `flight.lua` for `Aircraft/cessna172.lua` (F12a). Flight
+reads every file in `Aircraft/` as data, with only `math` to hand, and
+checks each field before anything flies on it. The sheet has an
+Aircraft row; choosing one loads its model and starts again.
+
+- **Held by** `x86-flight`. The suite installs two more files: the
+  Cessna renamed "Test Cessna", and the Cessna with its mass removed,
+  which is the control. Flight must list
+  `Cessna 172 (cessna172), Test Cessna (testplane); nomass refused: no mass`,
+  fly the Cessna, and then fly the Test Cessna once it is chosen in the
+  sheet. Both happened. The sheet's state line now carries the aircraft,
+  so a choice is seen to answer. Before that, the first run timed out on
+  it.
+- `tools/installed.py`'s `aircraft()` is the one list of the files,
+  taken by the install, `x86-flight` and the gallery's `/Home`.
+- **The gate.** `make test` ran 132 suites, the ones `installed.py`
+  reaches, in 9:50. Two failed, and neither touches Flight. `x86-smbd`
+  timed out waiting for its visitor, as it has once before. `x86-jetski`
+  found 'Add to favorites' and 'Settings' missing from its menu's
+  picture. Both passed alone, in 2:24 together.

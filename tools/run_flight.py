@@ -540,7 +540,20 @@ def main():
               FOLDER + "/cessna_172.glb")]
     # Its airports (F8), as `installed.py` puts them beside it.
     import installed                                         # noqa: E402
-    files += [(here, FOLDER + "/" + inside) for here, inside in installed.airports()]
+    files += [(here, FOLDER + "/" + inside) for here, inside in installed.flight_made()]
+    # Two aircraft files more (F12): the Cessna under another name, to be
+    # chosen in the sheet and flown, and the Cessna with its mass left out -
+    # the control, which must be refused by that number's name.
+    cessna = open(os.path.join(ROOT, "user", "installed", "Flight", "Aircraft",
+                               "cessna172.lua")).read()
+    for name, text in (("testplane", cessna.replace('name = "Cessna 172"', 'name = "Test Cessna"')),
+                       ("nomass", cessna.replace("mass = 1043, ", ""))):
+        if text == cessna:
+            raise SystemExit("run_flight: the Cessna's file no longer has what %s changes" % name)
+        made = os.path.join(WORK, name + ".lua")
+        with open(made, "w") as f:
+            f.write(text)
+        files.append((made, FOLDER + "/Aircraft/" + name + ".lua"))
     megabytes = os.path.getsize(image) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, str(megabytes + 80)]
                    + ["%s:%s" % f for f in files], check=True, capture_output=True, cwd=ROOT)
@@ -796,6 +809,11 @@ def main():
         sheet_key("down", "down to Start")
         sheet_key("right", "right to the runway")
         sheet_key("ret", "choosing the runway")
+        # The aircraft (F12): the second file, by its name after the Cessna.
+        sheet_key("down", "down to Aircraft")
+        sheet_key("right", "right to the Test Cessna")
+        sheet_key("ret", "choosing the Test Cessna")
+        guest.wait_for("flight aircraft Test Cessna from", "the Test Cessna flown")
         sheet_key("down", "down to Time")
         sheet_key("down", "down to Weather")
         sheet_key("down", "down to Wind")
@@ -1141,6 +1159,18 @@ def main():
     # The window here is 160 by 100, too small for the page (as for the
     # sheet), so what is held is that F1 opens it with every key and closes
     # it; the page's drawing is seen on the M700.
+    # The aircraft as files (F12): the folder's three read, the one with
+    # no mass refused for it, and the Test Cessna flown once chosen.
+    listed = re.search(r"flight aircraft files: ([^\r\n]*)", seen)
+    print("flight: aircraft files %s" % (listed.group(1) if listed else "- no line"))
+    if not listed or listed.group(1).strip() != \
+            "Cessna 172 (cessna172), Test Cessna (testplane); nomass refused: no mass":
+        fails.append("the aircraft files were not the Cessna and the test's, with nomass refused: %r"
+                     % (listed.group(1) if listed else None))
+    flown = re.findall(r"flight aircraft (.+?) from Aircraft/(\w+)\.lua, (\w+) engine", seen)
+    print("flight: aircraft flown %r" % (flown,))
+    if flown != [("Cessna 172", "cessna172", "propeller"), ("Test Cessna", "testplane", "propeller")]:
+        fails.append("the Cessna, then the Test Cessna chosen in the sheet, were not flown: %r" % (flown,))
     # The time faster (F11): a frame at 2x carries it twice the 1x one.
     rates = re.findall(r"flight time (\d)x", seen)
     ratio = faster["2x"] / faster["1x"] if faster.get("1x") else 0

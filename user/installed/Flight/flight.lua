@@ -41,7 +41,7 @@ local settings = prefs.open("flight", {
   imagery_format = "jpg",
   elevation = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
   width = 1280, height = 720,
-  model = "/Home/Apps/Flight/cessna_172.glb",    -- the aircraft (assets/models/cessna172)
+  aircraft = "cessna172",                        -- which of Aircraft/<name>.lua (F12)
   graphics = true,                               -- the graphics panel open (F3)
   start = "city",                                -- "city", "runway" or "final" (F5i)
   final = 5000,                                  -- metres out a final-approach start begins
@@ -74,17 +74,70 @@ local function now() return sys.ticks() / counter_hz end
 
 local function say(s) print("flight " .. s) end
 
--- The aircraft: a Cessna 172's numbers, near enough to fly like one.
-local PLANE = {
-  mass = 1043, wing = 16.2,                      -- kg, m^2
-  cl0 = 0.30, cla = 5.0, stall = math.rad(15),   -- lift: CL0 + CLa * alpha
-  cd0 = 0.030, k = 0.050,                        -- drag: CD0 + k CL^2
-  flaps_cl = 0.45, flaps_cd = 0.030,
-  power = 96000, static = 2600,                  -- W at the propeller, N standing
-  prop_drag = 0.8,                               -- m2: the idling propeller's drag on the ground
-  roll_rate = math.rad(70), alpha_most = math.rad(12),
-  gear = 1.4,                                    -- the eye's height on its wheels
+-- **The aircraft, a file of its own** (F12): `Aircraft/<name>.lua` in
+-- Flight's folder returns its numbers, its engine, its model and its
+-- sound; `Aircraft/cessna172.lua` says what each one is. Read as data -
+-- with nothing but `math` to hand - and held field by field to what the
+-- flight model, the 3D Kit and the sound read, so a file that leaves one
+-- out is refused by its name rather than failing in the air.
+local AIRCRAFT = {
+  folder = "/Home/Apps/Flight",
+  needs = { "mass", "wing", "cl0", "cla", "stall", "cd0", "k", "flaps_cl", "flaps_cd",
+            "roll_rate", "alpha_most", "gear" },
+  engines = { propeller = { "power", "static", "prop_drag", "idle_rpm", "full_rpm" } },
+  parts = { "elevator", "flaps", "right", "left", "rudder", "prop" },
 }
+
+function AIRCRAFT.read(key)
+  local path = AIRCRAFT.folder .. "/Aircraft/" .. tostring(key) .. ".lua"
+  local text, why = fs.read(path)
+  if type(text) ~= "string" then return nil, "not read: " .. tostring(why) end
+  local chunk, err = load(text, "=" .. key, "t", { math = math })
+  if not chunk then return nil, tostring(err) end
+  local ok, a = pcall(chunk)
+  if not ok then return nil, tostring(a) end
+  if type(a) ~= "table" then return nil, "it returns no table" end
+  if type(a.name) ~= "string" or type(a.model) ~= "string" then return nil, "no name or model" end
+  for _, f in ipairs(AIRCRAFT.needs) do
+    if type(a[f]) ~= "number" then return nil, "no " .. f end
+  end
+  local e = a.engine
+  local wants = type(e) == "table" and AIRCRAFT.engines[e.kind]
+  if not wants then return nil, "no engine Flight knows: " .. tostring(type(e) == "table" and e.kind) end
+  for _, f in ipairs(wants) do
+    if type(e[f]) ~= "number" then return nil, "no engine." .. f end
+  end
+  if type(a.moving) ~= "table" then return nil, "no moving parts" end
+  a.parts = {}
+  for i, part in ipairs(AIRCRAFT.parts) do
+    if type(a.moving[part]) ~= "string" then return nil, "no moving." .. part end
+    a.parts[i] = a.moving[part]
+  end
+  local sd = a.sound
+  if type(sd) ~= "table" or type(sd.note) ~= "number" or type(sd.hz) ~= "number" then
+    return nil, "no sound's note and hz"
+  end
+  a.key, a.path = key, AIRCRAFT.folder .. "/" .. a.model
+  return a
+end
+
+-- Every file in the folder, read: the ones that fly for the sheet's row,
+-- and each refused said with why.
+function AIRCRAFT.list()
+  local out, refused = {}, {}
+  for _, f in ipairs(fs.list(AIRCRAFT.folder .. "/Aircraft") or {}) do
+    local key = tostring(f):match("^(.+)%.lua$")
+    if key then
+      local a, why = AIRCRAFT.read(key)
+      if a then out[#out + 1] = { key = key, name = a.name }
+      else refused[#refused + 1] = key .. " refused: " .. why end
+    end
+  end
+  table.sort(out, function(x, y) return x.name < y.name end)
+  return out, refused
+end
+
+local PLANE, PLANE_WHY = AIRCRAFT.read(settings.aircraft)
 local G = 9.81
 
 -- The state, one table for the whole flight; `start` fills it (below).
@@ -134,7 +187,7 @@ local function fly(dt, pitch, roll, ground_h, brake)
   if S.alpha > P.stall then cl = cl * 0.55 end   -- stalled
   local cd = P.cd0 + P.k * cl * cl + P.flaps_cd * S.flaps
   local lift, drag = q * P.wing * cl, q * P.wing * cd
-  local thrust = S.throttle * math.min(P.static, P.power / math.max(air, 1))
+  local thrust = S.throttle * math.min(P.engine.static, P.engine.power / math.max(air, 1))
   local m = P.mass
 
   if S.ground then
@@ -147,7 +200,7 @@ local function fly(dt, pitch, roll, ground_h, brake)
     -- about a kilometre on 0.04 g of rolling alone (Diego, 21 November:
     -- "i am at 0% throttle and the plane is still running on the floor");
     -- with it a C172's roll is a few hundred metres, brakes off.
-    local windmill = (1 - S.throttle) * 0.5 * rho * air * air * P.prop_drag
+    local windmill = (1 - S.throttle) * 0.5 * rho * air * air * P.engine.prop_drag
     S.v = math.max(0, S.v + (thrust - drag - windmill - friction) / m * dt)
     S.gamma = 0
     if lift > m * G * 1.02 and pitch > 0 then
@@ -402,8 +455,7 @@ end
 local airports_db, airports_why
 local function airports_here()
   if airports_db == nil and airports_why == nil then
-    local folder = tostring(settings.model):match("^(.*)/") or "/Home/Apps/Flight"
-    airports_db, airports_why = airports.open(folder .. "/airports.tsv")
+    airports_db, airports_why = airports.open(AIRCRAFT.folder .. "/airports.tsv")
     if not airports_db then say("airports none: " .. tostring(airports_why)) end
   end
   return airports_db
@@ -859,8 +911,6 @@ end
 -- and its wheels' place as the fourth. One table, refilled a frame.
 local placed = { 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 }
 local SURFACE = { elevator = 1, flaps = 2, right = 3, left = 4, rudder = 5, prop = 6 }
-local MOVING = { "elevator_0", "flaps_1", "aileron-right_2", "aileron-left_3", "rudder_4",
-                 "prop_5" }
 
 local function place(plane, pitch, roll, dt)
   local ch, sh = math.cos(S.psi), math.sin(S.psi)
@@ -908,7 +958,8 @@ end
 -- far as the kit's bend reaches either side. What changes is said to the
 -- kit as a song, at most ten times a second and only when it moved: the
 -- kit reads a track's parameters every block, so the held notes go on.
-local ENGINE_NOTE, ENGINE_HZ = 40, 82.41
+-- The note and the rates are the aircraft's (`sound`, `engine`): a
+-- Cessna's are E2 and 700 to 2700 turns a minute.
 local engine = { on = false, sent = 0, said = false }
 local engine_song = {
   bpm = 120, master = 0.8,
@@ -951,7 +1002,7 @@ local function engine_start()
   end
   engine.out, engine.on, engine.sent = out, true, 0
   synth.song(engine_song)
-  synth.note_on(1, ENGINE_NOTE, 0.8)
+  synth.note_on(1, PLANE.sound.note, 0.8)
   synth.note_on(2, 24, 0.8)
   say("sound on: the engine and the wind, into the stream Flight")
 end
@@ -979,7 +1030,9 @@ local function engine_sound(t)
     end
   end
   if not engine.on or t - engine.sent < 0.1 then return end
-  local rpm = math.min(2750, 700 + 2000 * S.throttle + 8 * S.v)
+  local en = PLANE.engine
+  local rpm = math.min(en.full_rpm + 50, en.idle_rpm + (en.full_rpm - en.idle_rpm) * S.throttle
+                                         + 8 * S.v)
   local hz = rpm / 30
   local e, wind = engine_song.tracks[1], engine_song.tracks[2]
   local cut = math.floor(250 + 1400 * S.throttle + 4 * S.v)
@@ -991,7 +1044,7 @@ local function engine_sound(t)
     e.params.cut, wind.params.cut, wind.vol = cut, wcut, wvol
     synth.song(engine_song)
   end
-  synth.bend(1, 12 * math.log(hz / ENGINE_HZ, 2))
+  synth.bend(1, 12 * math.log(hz / PLANE.sound.hz, 2))
   engine.sent = t
   engine.rpm = rpm
   if not engine.said then
@@ -1951,6 +2004,7 @@ local function sheet_rows()
   end
   rows[#rows + 1] = { kind = "places", label = "Recent", items = recent() }
   rows[#rows + 1] = { kind = "starts", label = "Start", items = STARTS }
+  rows[#rows + 1] = { kind = "aircraft", label = "Aircraft", items = AIRCRAFT.items or {} }
   rows[#rows + 1] = { kind = "times", label = "Time", items = HOURS }
   rows[#rows + 1] = { kind = "weathers", label = "Weather", items = DECK.choices }
   rows[#rows + 1] = { kind = "winds", label = "Wind", items = WIND.strengths }
@@ -1971,6 +2025,7 @@ local function chosen(row, item)
     return item.key == (usable(row, item) and SHEET.start or "city")
   end
   if row.kind == "times" then return item.key == settings.time end
+  if row.kind == "aircraft" then return item.key == settings.aircraft end
   if row.kind == "weathers" then return item.key == settings.weather end
   if row.kind == "winds" then return item.key == settings.wind end
   if row.kind == "froms" then return item.key == settings.wind_from end
@@ -1981,6 +2036,8 @@ local function sheet_open()
   SHEET.open, SHEET.focus, SHEET.cols, SHEET.text = true, 1, {}, ""
   SHEET.place, SHEET.start = here, settings.start
   SHEET.found, SHEET.asked, SHEET.said, SHEET.drawn = nil, nil, nil, nil
+  -- The aircraft files read once a sheet, not every frame it is up.
+  AIRCRAFT.items = AIRCRAFT.list()
   S.paused = true
 end
 
@@ -2045,6 +2102,9 @@ local function choose(w, row, i)
     if usable(row, item) then SHEET.start = item.key end
   elseif row.kind == "times" then
     set_time(item.key)                 -- at once, under the sheet
+  elseif row.kind == "aircraft" then
+    settings:set("aircraft", item.key) -- flown from the next frame, started again
+    say("aircraft chosen " .. item.key)
   elseif row.kind == "weathers" then
     settings:set("weather", item.key)  -- at once too, from the next frame
     DECK.h = nil
@@ -2145,7 +2205,7 @@ local function draw_sheet(w)
   local width, height = settings.width, settings.height
   local sw = math.min(460, width - 32)
   local parts = { SHEET.focus, SHEET.text, SHEET.said or "", settings.time, settings.weather,
-                  settings.wind, settings.wind_from,
+                  settings.wind, settings.wind_from, settings.aircraft,
                   SHEET.place and SHEET.place.name or "-", SHEET.start or "-" }
   for _, r in ipairs(rows) do
     parts[#parts + 1] = (r.label or r.kind) .. ":" .. tostring(SHEET.cols[r.label or r.kind])
@@ -2155,9 +2215,9 @@ local function draw_sheet(w)
   if key == SHEET.drawn then return end
   SHEET.drawn = key
   local focus = rows[SHEET.focus]
-  say(("sheet focus=%s:%s place=%s start=%s text=%q found=%d%s"):format(
+  say(("sheet focus=%s:%s place=%s start=%s aircraft=%s text=%q found=%d%s"):format(
       focus.label or focus.kind, tostring(SHEET.cols[focus.label or focus.kind] or "-"),
-      SHEET.place and SHEET.place.name or "none", SHEET.start, SHEET.text,
+      SHEET.place and SHEET.place.name or "none", SHEET.start, settings.aircraft, SHEET.text,
       SHEET.found and #SHEET.found or 0, SHEET.said and (" said=" .. SHEET.said) or ""))
   if sw < 300 or height < 300 then
     if not SHEET.small_said then say(("sheet not laid: %dx%d"):format(width, height)) end
@@ -2326,11 +2386,47 @@ function SHEET.keys.draw(w)
 end
 
 -- The window and the terrain.
+if not PLANE then
+  say(("no aircraft %s: %s"):format(tostring(settings.aircraft), tostring(PLANE_WHY)))
+  return
+end
+do
+  local list, refused = AIRCRAFT.list()
+  local names = {}
+  for i, a in ipairs(list) do names[i] = ("%s (%s)"):format(a.name, a.key) end
+  say(("aircraft files: %s%s"):format(table.concat(names, ", "),
+      #refused > 0 and ("; " .. table.concat(refused, "; ")) or ""))
+end
+say(("aircraft %s from Aircraft/%s.lua, %s engine"):format(PLANE.name, PLANE.key, PLANE.engine.kind))
 local w, why = k.window("Flight", settings.width, settings.height)
 if not w then say("failed=" .. tostring(why)) return end
 local plane
-plane, why = w:model(settings.model, MOVING)
+plane, why = w:model(PLANE.path, PLANE.parts)
 if plane then say("aircraft " .. plane:info()) else say("no aircraft: " .. tostring(why)) end
+
+-- Another aircraft chosen in the sheet (F12): read, its model put in the
+-- old one's place, and the flight started again in it. A file that will
+-- not fly leaves the one flying.
+function AIRCRAFT.switch(g)
+  local a, refused = AIRCRAFT.read(settings.aircraft)
+  if not a then
+    say(("aircraft %s refused: %s"):format(tostring(settings.aircraft), tostring(refused)))
+    settings:set("aircraft", PLANE.key)
+    return
+  end
+  local m, failed = w:model(a.path, a.parts)
+  if not m then
+    say(("aircraft %s's model: %s"):format(a.key, tostring(failed)))
+    settings:set("aircraft", PLANE.key)
+    return
+  end
+  PLANE, plane = a, m
+  say(("aircraft %s from Aircraft/%s.lua, %s engine"):format(a.name, a.key, a.engine.kind))
+  -- Started again where it is, and still paused if the sheet is up.
+  local paused = S.paused
+  start(g)
+  S.paused = paused
+end
 local ok
 ok, why = sources()
 local go_offline                       -- below, with the place box
@@ -2500,6 +2596,7 @@ while not w:closed(0) do
     w:typed()
   end
 
+  if settings.aircraft ~= PLANE.key then AIRCRAFT.switch(g) end
   if not S.paused then
     local pitch, roll, brake = PAD.controls(w, dt)
     -- The time faster is the model stepped again with the same frame's

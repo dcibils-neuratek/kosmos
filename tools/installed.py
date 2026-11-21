@@ -88,7 +88,20 @@ def airports():
     return [(made, "airports.tsv")]
 
 
-MADE = {"Flight": airports}
+def aircraft():
+    """Flight's aircraft (`docs/flight.md` F12): every file in its
+    `Aircraft` folder, as `Aircraft/<name>.lua`. One list, which this file,
+    Flight's suite and the gallery's /Home all take."""
+    folder = os.path.join(INSTALLED, "Flight", "Aircraft")
+    return [(os.path.join(folder, f), "Aircraft/" + f)
+            for f in sorted(os.listdir(folder)) if f.endswith(".lua")]
+
+
+def flight_made():
+    return airports() + aircraft()
+
+
+MADE = {"Flight": flight_made}
 
 
 def stripped(image, apps, staged, objcopy):

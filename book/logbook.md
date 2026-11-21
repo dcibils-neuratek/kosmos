@@ -6058,3 +6058,27 @@ sound, the sky and the frame rate don't change.
 **Visible.** The strip at the bottom says TIME X 2x (or 3x, 4x) while
 time is faster. The map tiles are fetched further ahead, since the
 ground arrives sooner.
+
+## 21 November 2026 - An aircraft is a file
+
+**In short:** the Cessna isn't written into Flight any more. It's a
+file of its own, and a new aircraft will be another file beside it.
+
+**What's in the file.** How heavy it is, the wing's size, how much lift
+and drag it makes, its engine, which 3D model it looks like and which
+parts of that model move, and what its engine sounds like.
+
+**Why it matters.** Diego wants to add more aircraft, a 747 among them.
+Now that's a matter of writing a file, not changing Flight. The pause
+sheet lists whatever files are in the folder, under Aircraft.
+
+**Careful with what a file can do.** An aircraft file is read as plain
+numbers: it can't reach the disk, the network or anything else, only
+arithmetic. Flight checks every number it needs before flying on it. A
+file that leaves one out is refused with that number named, so a typo
+doesn't surface as a strange crash in mid-air.
+
+**Next.** A jet engine behaves differently from a propeller: it pushes
+harder at speed, weakens in thin air, and takes seconds to spool up.
+That goes into the flight model next, and then the 747 can be written
+as its file.

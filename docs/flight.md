@@ -792,6 +792,30 @@ ends on the M700:
   aircraft is a file added and nothing in Flight changed. The Cessna
   becomes the first file, and a 747 the second, which needs a jet engine
   model in the flight model and a 747's glTF.
+  - **F12a, built in 0.12.56** (`testing.md` 18.976). The Cessna is
+    `Aircraft/cessna172.lua`, and nothing of it is left in `flight.lua`:
+    the airframe's numbers, the engine (`kind = "propeller"`, its power,
+    static thrust, idle drag and rpm range), the model's file and the
+    names of its moving parts, and the sound's note. Flight reads a file
+    as data: `load` in text mode, with only `math` in its environment.
+    It then checks every field the flight model, the 3D Kit and the
+    sound read, and refuses a file by the name of the first one missing
+    ("nomass refused: no mass"). The sheet has an Aircraft row, read
+    once each time the sheet opens. Choosing another aircraft loads its
+    model in place of the old one and starts again, still paused. A
+    file that won't fly leaves the current one flying.
+    `tools/installed.py`'s `aircraft()` is the one list of the files,
+    used by the install, Flight's suite and the gallery.
+  - **F12b, next**: a jet engine in the flight model, as
+    `kind = "jet"` - thrust that falls with the air's density and a
+    little with speed, and spools up over seconds rather than at once.
+    Then the 747 as a file: its numbers, a glTF of it under a licence
+    that lets it be carried, and a jet's sound. The model found is Miha
+    Lunar's low-poly Boeing 747 (Poly Pizza `49CLof4tP2V`, about 2,000
+    triangles, OBJ/glTF, CC BY), to go in `assets/models/b747/` with its
+    licence beside it. It has no moving parts, so an aircraft file's
+    `moving` becomes optional, each part named only if its model has
+    one.
 - **F7 - a game controller's sticks and triggers.** Today a pad reaches a
   program as keys only. The driver already keeps the analogue values
   (`pad_decode.h`); F7 hands them on: the pad's state - two sticks, two

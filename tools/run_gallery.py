@@ -214,7 +214,7 @@ def flight_disk(apps):
              (os.path.join(root, "assets/models/cessna172/cessna_172.glb"),
               FLIGHT + "/cessna_172.glb")]
     import installed                                         # noqa: E402
-    files += [(here, FLIGHT + "/" + inside) for here, inside in installed.airports()]
+    files += [(here, FLIGHT + "/" + inside) for here, inside in installed.flight_made()]
     disk = os.path.join(work, "home.img")
     subprocess.run([os.path.join(root, "build/host/lua"), os.path.join(root, "tools/kfs.lua"),
                     "create", disk, str(os.path.getsize(image) // (1 << 20) + 80)]
