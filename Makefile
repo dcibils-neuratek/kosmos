@@ -4770,7 +4770,7 @@ KVK_OBJS := $(UBUILD)/user/kits/vulkan/kvk.c.o
 K3D_VK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk.c.o $(UBUILD)/user/kits/3d/k3d_terrain.c.o \
                $(UBUILD)/user/kits/3d/k3d_island.c.o $(UBUILD)/user/kits/3d/k3d_glb.c.o \
                $(UBUILD)/user/kits/3d/k3d_extrude.c.o
-K3D_VK_SPV := $(foreach s,mesh sky ground model overlay,$(foreach k,vert frag,$(UBUILD)/gen/k3d/k3d_$(s)_$(k).h))
+K3D_VK_SPV := $(foreach s,mesh sky ground model overlay shadow,$(foreach k,vert frag,$(UBUILD)/gen/k3d/k3d_$(s)_$(k).h))
 VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o $(KVK_OBJS) $(K3D_VK_OBJS)
 VULKANTEST_SPV := $(foreach s,triangle cube,$(foreach k,vert frag,$(UBUILD)/gen/vulkantest/$(s)_$(k).h))
 
@@ -4793,7 +4793,7 @@ $(UBUILD)/user/kits/vulkan/kvk.c.o: user/kits/vulkan/kvk.c user/kits/vulkan/kvk.
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -c $< -o $@
 
-$(UBUILD)/gen/k3d/k3d_mesh_%.h: user/kits/3d/k3d_mesh.%
+$(UBUILD)/gen/k3d/k3d_mesh_%.h: user/kits/3d/k3d_mesh.% user/kits/3d/k3d_view.glsl
 	@mkdir -p $(dir $@)
 	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_mesh_$* -o $@ $<
 
@@ -4801,17 +4801,21 @@ $(UBUILD)/gen/k3d/k3d_sky_%.h: user/kits/3d/k3d_sky.%
 	@mkdir -p $(dir $@)
 	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_sky_$* -o $@ $<
 
-$(UBUILD)/gen/k3d/k3d_ground_%.h: user/kits/3d/k3d_ground.%
+$(UBUILD)/gen/k3d/k3d_ground_%.h: user/kits/3d/k3d_ground.% user/kits/3d/k3d_view.glsl
 	@mkdir -p $(dir $@)
 	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_ground_$* -o $@ $<
 
-$(UBUILD)/gen/k3d/k3d_model_%.h: user/kits/3d/k3d_model.%
+$(UBUILD)/gen/k3d/k3d_model_%.h: user/kits/3d/k3d_model.% user/kits/3d/k3d_view.glsl
 	@mkdir -p $(dir $@)
 	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_model_$* -o $@ $<
 
 $(UBUILD)/gen/k3d/k3d_overlay_%.h: user/kits/3d/k3d_overlay.%
 	@mkdir -p $(dir $@)
 	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_overlay_$* -o $@ $<
+
+$(UBUILD)/gen/k3d/k3d_shadow_%.h: user/kits/3d/k3d_shadow.%
+	@mkdir -p $(dir $@)
+	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_shadow_$* -o $@ $<
 
 $(UBUILD)/user/kits/3d/k3d_vk.c.o: user/kits/3d/k3d_vk.c user/kits/3d/k3d_vk.h $(K3D_VK_SPV) \
         user/kits/3d/k3d_terrain.h \

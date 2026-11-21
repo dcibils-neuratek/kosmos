@@ -59,11 +59,19 @@ WRONG_LAYER = "--wrong-layer" in sys.argv
 # roofs' pieces - is refused, so the roofs are the walls' concrete, no
 # tile's wears a photograph, and the suite must fail.
 NO_ROOFS = "--no-roofs" in sys.argv
-sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer", "--no-roofs")]
+# `--no-shadows` (S2) is the shadows' control: Flight's `shadows` setting
+# off, so nothing is drawn into the sun's map and the suite must fail.
+NO_SHADOWS = "--no-shadows" in sys.argv
+sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer", "--no-roofs",
+                                             "--no-shadows")]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
     ROOT, "build", "user-x86_64-test" if X86 else "user-test", "apps")
+# Where a failing check's screen is kept: under build/, since WORK goes
+# when the suite ends.
+KEPT = os.path.join(ROOT, "build", "flight-failed")
+os.makedirs(KEPT, exist_ok=True)
 WORK = scratch.directory("flight-island" if ISLAND else "flight-land" if LAND else "flight")
 HOME_DISK = os.path.join(WORK, "home.img")
 LUA = os.path.join(ROOT, "build", "host", "lua")
@@ -202,7 +210,7 @@ local prefs = use("/Kosmos/Libraries/prefs.lua")
 prefs.open("flight", {}):set{
   imagery = "%(base)s/img/{z}/{y}/{x}", imagery_format = "jpg",
   elevation = "%(base)s/elev/{z}/{x}/{y}.png",
-  vector = "%(base)s/vec/{z}/{x}/{y}.pbf", buildings = true,
+  vector = "%(base)s/vec/{z}/{x}/{y}.pbf", buildings = true, shadows = %(shadows)s,
   lon = %(lon)r, lat = %(lat)r, width = %(width)d, height = %(height)d,
   report = 2, frames = 0, finder = "%(base)s/search",
 }
@@ -229,14 +237,20 @@ def states(text):
     return out
 
 
-def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None):
+def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None, left_near=None):
     """The strip on the screen: a stack of 34 to 46 rows each holding a
     stretch as wide as Flight's window, `across`, that is at least half dark
     - the band laid over the ground by its alpha - starting at the same x to
     four pixels, with words in it. Every stack is found and a strip-shaped
     one kept, so a taller dark panel elsewhere - the Log's - is not taken
     for it. (left, top, rows, white pixels) of the one kept, or else of the
-    tallest; None when there is no stack at all."""
+    tallest; None when there is no stack at all.
+
+    `left_near`, where wm said Flight's window is: a strip-shaped stack
+    starting there is the one kept. Without it the stack with the most
+    words was, and with shadows Flight loads the processor enough that the
+    Monitor's two graphs and their labels made a stack of that shape with
+    more white in it than the strip's (21 November)."""
     width, height, px = R.parse_ppm(data)
     if inside is None:
         inside = lambda r, g, b: max(r, g, b) < 90
@@ -284,6 +298,8 @@ def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None):
         return None
     shaped = [(k, t, r, words(k, t, r)) for k, t, r in stacks if tall[0] <= r <= tall[1]]
     shaped = [b for b in shaped if b[3] >= white_least]
+    if left_near is not None and any(abs(b[0] - left_near) <= 6 for b in shaped):
+        shaped = [b for b in shaped if abs(b[0] - left_near) <= 6]
     if shaped:
         return max(shaped, key=lambda b: b[3])
     k, t, r = max(stacks, key=lambda b: b[2])
@@ -437,7 +453,8 @@ def main():
     base = "http://10.0.2.2:%d" % httpd.server_address[1]
     with open(os.path.join(WORK, "setup.lua"), "w") as f:
         f.write(SETUP % dict(base="http://10.0.2.2:9" if ISLAND else base, lon=LON, lat=LAT,
-                             width=WIDTH, height=HEIGHT))
+                             width=WIDTH, height=HEIGHT,
+                             shadows="false" if NO_SHADOWS else "true"))
         if ISLAND:
             # Begun on Rio's runway, as the M700 was: going offline has to
             # take the flight off a field that is not there.
@@ -490,6 +507,7 @@ def main():
     fails = []
     screen = None
     noon_screen = dusk_screen = None
+    flight_left = None
     seen = ""
 
     def latest(after=0):
@@ -559,6 +577,7 @@ def main():
         # it - which took the panels' pictures and the keys both. A click
         # inside its picture, clear of the view chip, raises and focuses it.
         win = re.search(r"wm: window Flight at (\d+),(\d+) (\d+)x(\d+)", guest.seen[mark:])
+        flight_left = int(win.group(1)) if win else None
         if win:
             wx, wy, ww, wh = (int(v) for v in win.groups())
             guest.mouse_to((wx + ww * 0.8) * 32767 / 1919, (wy + wh * 0.7) * 32767 / 1079)
@@ -566,6 +585,12 @@ def main():
             guest.mouse_button(True)
             time.sleep(0.1)
             guest.mouse_button(False)
+            # And the pointer taken off the window: left on its strip, the
+            # arrow is drawn into the frame over the strip's words, which
+            # the panels' checks find the window by, and they looked in the
+            # wrong place (21 November, its screen kept).
+            time.sleep(0.1)
+            guest.mouse_to(32767, 32767)
             wait_frames(2, "Flight raised")
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):
             # A picture for a person: the ground built first.
@@ -737,6 +762,14 @@ def main():
         if asked["roof"] < 16 or pieces < 16 or roofed < 1:
             fails.append("no tile's roofs wear the photograph: %d pieces asked, %d tiles roofed"
                          % (asked["roof"], roofed))
+    # The shadows (S2): the sun's map drawn - the aircraft and the
+    # buildings cast into it - over a box between 400 m and 2 km.
+    sh = re.search(r"flight shadows radius=(\d+) texel=([\d.]+) triangles=(\d+)", seen)
+    print("flight: %s" % (sh.group(0) if sh else "no shadows line"))
+    if not sh:
+        fails.append("nothing was drawn into the sun's map: %r" % re.findall(r"flight shadows.*", seen))
+    elif not 400 <= int(sh.group(1)) <= 2000 or int(sh.group(3)) < 1000:
+        fails.append("the sun's map is not the aircraft's and the buildings': %r" % sh.group(0))
     if asked["elev"] == 0 or asked["img"] == 0 or viewed["tiles"] == 0:
         fails.append("tiles were not fetched and handed: %d elevation, %d imagery asked, %d handed"
                      % (asked["elev"], asked["img"], viewed["tiles"]))
@@ -759,7 +792,7 @@ def main():
     elif abs(int(s.group(1)) - before["v"] * 1.94384) > 15:
         fails.append("the strip's speed, %s kt, is not the flight's %.0f" % (s.group(1),
                                                                              before["v"] * 1.94384))
-    band = strip_band(R, chase, WIDTH)
+    band = strip_band(R, chase, WIDTH, left_near=flight_left)
     print("flight: the strip on the screen %r (left, top row, rows, white pixels)" % (band,))
     # At the gate's size the window stands clear of the desktop's dark
     # panels; a larger one for a picture (KOSMOS_FLIGHT_SIZE) may touch the
@@ -824,7 +857,7 @@ def main():
         if os.environ.get("KOSMOS_FLIGHT_SIZE"):
             pass
         elif block is None or block[0] < 0.3 or block[1] < 12 or block[2] < 0.5:
-            kept = os.path.join(WORK, "panel-failed.png")
+            kept = os.path.join(KEPT, "panel-failed.png")
             R.write_png(kept, screen)
             fails.append("no panel on the cockpit's screen - a near-black block %dx%d with "
                          "dials in it: %r (the screen: %s)" % (pw, ph, block, kept))
@@ -861,7 +894,7 @@ def main():
         if os.environ.get("KOSMOS_FLIGHT_SIZE"):
             pass
         elif box is None or box[0] < 0.3 or box[1] < 8:
-            kept = os.path.join(WORK, "graphics-failed.png")
+            kept = os.path.join(KEPT, "graphics-failed.png")
             R.write_png(kept, chase)
             fails.append("no graphics panel on the chase view's screen - a near-black box "
                          "%dx%d at %d,%d with words in it: %r (the screen: %s)"

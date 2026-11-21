@@ -5849,3 +5849,38 @@ took them. Its control refuses every piece and has to fail, and it does.
 Two of the suite's checks had been reading their numbers at the wrong
 moment and are fixed. On the M700 all 18 tiles over London wore their
 photograph.
+
+## 21 November 2026 - Flight's shadows
+
+**In short:** the aircraft and the buildings now cast shadows from the
+sun. They fall on the ground, on each other and on themselves, and H in
+Flight turns them on and off.
+
+**What changed.** Before each frame, the 3D Kit draws the scene once more,
+as the sun sees it, keeping only how far away each surface is. That
+picture is the shadow map. When the frame is drawn, each point of the
+ground or a building asks the map whether something stands between it
+and the sun. If something does, the sun's share of the light is taken
+away and the sky's stays. In Flight the map covers a square from 400 m
+across on a runway to 2 km in the air, centred just ahead of the
+aircraft, so it is fine where you look.
+
+**What you see.** In the morning or the afternoon the aircraft's shadow
+lies on the runway beside it, and the streets have shadow on one side.
+At dusk the sun is three degrees up. A level runway then gets almost
+none of its light, so a shadow on it is hardly darker than the ground
+around it, which is how a real dusk looks. Dusk's shadows are on the
+walls that face the sun. The first build on the M700 showed the
+runway shadow in visible steps, one 0.4 m square of the map at a time.
+The map is now read blended between its squares, and the steps are
+gone.
+
+**Measured.** On the M700 over London, shadows took the graphics card
+from 9.5 ms a frame to 12.6 ms, about 31 frames a second to 27.
+
+**Checked.** The 3D Kit's suite draws a cube on a slab under a low sun
+and works out, pixel by pixel, which should be in shadow. Its control
+holds the picture to a version with no shadows, and it has to fail, and
+it does. The panel check in Flight's suite that had failed now and then
+is explained: under load, the Monitor's graphs look like Flight's window
+to it. It now finds the window by its real place on the screen.

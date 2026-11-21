@@ -62,6 +62,22 @@ SCENE = dict(
     ],
 )
 
+# **The shadowed scene** (`docs/flight.md`, *Shadows*): the same boxes
+# under a low sun from the left and in front, so the near box's shadow lies
+# on the ground to its right and behind it, where the eye sees it, with the
+# sun's map over a box 10 m either side of the target.
+SHADOWED = dict(SCENE, sun=(-0.8, 0.6, 0.5), shadow_centre=(0.0, 0.0, 0.0), shadow_radius=10.0)
+# The shadow map's texel, `k3d_vk.h`'s K3D_VK_SHADOW over the box: a pixel
+# whose surface is within EDGE texels of a shadow's edge, across the light,
+# is left out - the nine taps soften an edge over two, and the box's centre
+# is held to whole texels.
+SHADOW_TEXELS = 2048
+EDGE = 4
+# `--no-shadow-reference` is the shadows' control: the shadowed picture is
+# held to a reference that casts no shadows, and the run must fail.
+NO_SHADOW_REFERENCE = "--no-shadow-reference" in sys.argv
+sys.argv = [a for a in sys.argv if a != "--no-shadow-reference"]
+
 # The window's side, and its frames: STEP radians round the target each.
 WINDOW = 96
 FRAMES, STEP = 30, 0.04
@@ -96,7 +112,10 @@ end
 local said, bytes = kit.scene(%s)
 tell("scene", said)
 tell("pixels", (bytes:gsub(".", function(c) return ("%%02x"):format(c:byte()) end)))
-""" % lua_table(dict(SCENE, size=SIZE))
+said, bytes = kit.scene(%s)
+tell("shadow", said)
+tell("spixels", (bytes:gsub(".", function(c) return ("%%02x"):format(c:byte()) end)))
+""" % (lua_table(dict(SCENE, size=SIZE)), lua_table(dict(SHADOWED, size=SIZE)))
 
 WINDOW_PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The 3D Kit on Vulkan in a window (`tools/run_k3dvk.py`, F3c).
@@ -134,26 +153,74 @@ def unit(a):
     return [x / n for x in a]
 
 
-def frame():
-    f = unit(sub(SCENE["target"], SCENE["eye"]))
+def frame(sc=SCENE):
+    f = unit(sub(sc["target"], sc["eye"]))
     r = unit(cross(f, [0.0, 1.0, 0.0]))
     return f, r, cross(r, f)
 
 
-def ray(px, py, size):
+def ray(px, py, size, sc=SCENE):
     """The direction through (px, py) of the picture, `k3d_vk.h`'s rule."""
-    f, r, u = frame()
+    f, r, u = frame(sc)
     x = (px / size) * 2.0 - 1.0
     y = (py / size) * 2.0 - 1.0
-    focal = SCENE["focal"]
+    focal = sc["focal"]
     return [f[i] + r[i] * x / focal - u[i] * y / focal for i in range(3)]
 
 
-def hit(origin, d):
+def box_meets(box, origin, d):
+    """Where a ray enters `box`: (t in, t out, the normal it enters by)."""
+    lo, hi = box[0:3], box[3:6]
+    t0, t1, n0 = -math.inf, math.inf, None
+    for a in range(3):
+        if abs(d[a]) < 1e-12:
+            if origin[a] < lo[a] or origin[a] > hi[a]:
+                t0 = math.inf
+            continue
+        ta, tb = (lo[a] - origin[a]) / d[a], (hi[a] - origin[a]) / d[a]
+        sign = -1.0
+        if ta > tb:
+            ta, tb, sign = tb, ta, 1.0
+        if ta > t0:
+            t0, n0 = ta, [sign if k == a else 0.0 for k in range(3)]
+        t1 = min(t1, tb)
+    return t0, t1, n0
+
+
+def in_shadow(where, sc):
+    """Whether a box stands between a point and the sun: the ray towards
+    the sun enters one ahead of the point. A point on its own box's lit
+    face leaves that box at once, and is not in its shadow."""
+    sun = unit(sc["sun"])
+    for box in sc["boxes"]:
+        t0, t1, _ = box_meets(box, where, sun)
+        if t0 <= t1 and t0 > 1e-6:
+            return True
+    return False
+
+
+def near_shadow_edge(where, sc):
+    """Whether moving the point EDGE texels across the sun's light, any of
+    four ways, changes whether it is in shadow."""
+    sun = unit(sc["sun"])
+    up = [0.0, 1.0, 0.0] if abs(sun[1]) <= 0.99 else [1.0, 0.0, 0.0]
+    across = unit(cross(up, sun))
+    above = cross(sun, across)
+    step = EDGE * 2.0 * sc["shadow_radius"] / SHADOW_TEXELS
+    here = in_shadow(where, sc)
+    for axis in (across, above):
+        for k in (-step, step):
+            moved = [where[i] + axis[i] * k for i in range(3)]
+            if in_shadow(moved, sc) != here:
+                return True
+    return False
+
+
+def hit(origin, d, sc=SCENE):
     """The first box the ray meets past the near plane: (t, box, normal)."""
-    f, _, _ = frame()
+    f, _, _ = frame(sc)
     best = None
-    for b, box in enumerate(SCENE["boxes"]):
+    for b, box in enumerate(sc["boxes"]):
         lo, hi = box[0:3], box[3:6]
         t0, t1, n0 = -math.inf, math.inf, None
         for a in range(3):
@@ -175,40 +242,49 @@ def hit(origin, d):
     return best
 
 
-def shade(px, py, size):
-    """The colour a pixel's centre must be, 0 to 1 a channel, and what it
-    met (a box's number, or -1 for the sky)."""
-    eye = SCENE["eye"]
-    d = ray(px, py, size)
-    h = hit(eye, d)
+def shade(px, py, size, sc=SCENE, shadows=False):
+    """The colour a pixel's centre must be, 0 to 1 a channel, what it met
+    (a box's number, or -1 for the sky), whether the sun is hidden there,
+    and whether that point is near a shadow's edge."""
+    eye = sc["eye"]
+    d = ray(px, py, size, sc)
+    h = hit(eye, d, sc)
     if h is None:
         look = unit(d)
         t = min(max(look[1], 0.0), 1.0)
-        return [SCENE["horizon"][i] + (SCENE["zenith"][i] - SCENE["horizon"][i]) * t
-                for i in range(3)], -1
+        return [sc["horizon"][i] + (sc["zenith"][i] - sc["horizon"][i]) * t
+                for i in range(3)], -1, False, False
     t, b, n = h
-    box = SCENE["boxes"][b]
-    sun = unit(SCENE["sun"])
-    lit = SCENE["ambient"] + (1.0 - SCENE["ambient"]) * max(dot(n, sun), 0.0)
+    box = sc["boxes"][b]
+    sun = unit(sc["sun"])
     where = [eye[i] + d[i] * t for i in range(3)]
+    towards = max(dot(n, sun), 0.0)
+    hidden = edge = False
+    if shadows and towards > 0:
+        hidden = in_shadow(where, sc)
+        edge = near_shadow_edge(where, sc)
+    lit = sc["ambient"] + (1.0 - sc["ambient"]) * (0.0 if hidden else towards)
     far = math.sqrt(dot(sub(where, eye), sub(where, eye)))
-    hz = min(max((far - SCENE["haze_start"]) / (SCENE["haze_end"] - SCENE["haze_start"]), 0.0),
-             1.0)
-    return [(box[6 + i] / 255.0) * lit * (1 - hz) + SCENE["haze"][i] * hz for i in range(3)], b
+    hz = min(max((far - sc["haze_start"]) / (sc["haze_end"] - sc["haze_start"]), 0.0), 1.0)
+    return ([(box[6 + i] / 255.0) * lit * (1 - hz) + sc["haze"][i] * hz for i in range(3)],
+            b, hidden, edge)
 
 
-def reference(size):
-    """Per pixel: the bytes it must be, or None where a silhouette passes
-    within a third of a pixel of its centre."""
+def reference(size, sc=SCENE, shadows=False):
+    """Per pixel: (the bytes it must be, what it met, whether in shadow),
+    or None where a silhouette passes within a third of a pixel of its
+    centre, or its surface is near a shadow's edge."""
     want = []
     for py in range(size):
         row = []
         for px in range(size):
-            colour, what = shade(px + 0.5, py + 0.5, size)
-            near_edge = any(shade(px + 0.5 + dx, py + 0.5 + dy, size)[1] != what
-                            for dx, dy in ((-0.34, 0), (0.34, 0), (0, -0.34), (0, 0.34)))
+            colour, what, hidden, edge = shade(px + 0.5, py + 0.5, size, sc, shadows)
+            near_edge = edge or any(
+                shade(px + 0.5 + dx, py + 0.5 + dy, size, sc)[1] != what
+                for dx, dy in ((-0.34, 0), (0.34, 0), (0, -0.34), (0, 0.34)))
             row.append(None if near_edge else
-                       (tuple(round(min(max(c, 0.0), 1.0) * 255) for c in colour), what))
+                       (tuple(round(min(max(c, 0.0), 1.0) * 255) for c in colour), what,
+                        hidden))
         want.append(row)
     return want
 
@@ -302,15 +378,15 @@ def main():
         mark = len(guest.seen)
         started = time.monotonic()
         guest.type("run /Home/apps/vulkan/k3dvk.lua")
-        while time.monotonic() < started + 240 and len(said) < 2:
-            said.update(gather(guest.seen[mark:], ("scene", "pixels")))
-            if len(said) < 2:
+        while time.monotonic() < started + 240 and len(said) < 4:
+            said.update(gather(guest.seen[mark:], ("scene", "pixels", "shadow", "spixels")))
+            if len(said) < 4:
                 time.sleep(0.2)
                 guest._read_available()
         took = time.monotonic() - started
 
         # The window, on a desktop started for it.
-        if len(said) == 2:
+        if len(said) == 4:
             mark = len(guest.seen)
             guest.type("wm /Home/apps/vulkan/k3dwin.lua")
             until = time.monotonic() + 180
@@ -359,11 +435,47 @@ def main():
                  if missing else "", ", ".join(wrong[:8])))
         return 1
 
+    # The shadowed scene: every judged pixel to the reference that casts
+    # shadows, and enough of the ground both in the near box's shadow and
+    # out of it that the comparison means something.
+    sm = re.match(r"vulkan device=llvmpipe/1\.\d+ scene=(\d+)x(\d+) boxes=(\d+)$",
+                  said.get("shadow", ""))
+    spixels = said.get("spixels", "")
+    if not sm or len(spixels) != SIZE * SIZE * 6:
+        print("FAIL: the 3D Kit on Vulkan drew no shadowed scene: %r, %d hex digits of %d"
+              % (said.get("shadow"), len(spixels), SIZE * SIZE * 6))
+        return 1
+    sgot = bytes.fromhex(spixels)
+    swant = reference(SIZE, SHADOWED, shadows=not NO_SHADOW_REFERENCE)
+    swrong, sjudged, shaded, sunlit = [], 0, 0, 0
+    for py in range(SIZE):
+        for px in range(SIZE):
+            w = swant[py][px]
+            if w is None:
+                continue
+            sjudged += 1
+            if w[1] == 0:
+                shaded += w[2]
+                sunlit += not w[2]
+            rgb = tuple(sgot[(py * SIZE + px) * 3: (py * SIZE + px) * 3 + 3])
+            if any(abs(rgb[i] - w[0][i]) > TOLERANCE for i in range(3)):
+                swrong.append("(%d,%d) %s for %s%s" % (px, py, rgb, w[0],
+                                                        " in shadow" if w[2] else ""))
+    if swrong or (not NO_SHADOW_REFERENCE and (shaded < 20 or sunlit < 20)):
+        print("FAIL: the shadowed scene is wrong: %d of %d pixels, %d of the ground in shadow "
+              "and %d in the sun: %s" % (len(swrong), sjudged, shaded, sunlit,
+                                         ", ".join(swrong[:8])))
+        return 1
+
     print("PASS: the 3D Kit on Vulkan, in %.1f s: a %dx%d scene of %s boxes under a sun, a "
           "sky and haze, %d pixels each within %d of a ray cast through its centre (sky %d, "
           "ground %d, near box %d, far box %d; %d on a silhouette left out)"
           % (took, SIZE, SIZE, m.group(3), judged, TOLERANCE, seen.get(-1, 0), seen.get(0, 0),
              seen.get(1, 0), seen.get(2, 0), SIZE * SIZE - judged))
+    print("PASS: and in the sun's shadow: the same boxes under a low sun, %d pixels each within "
+          "%d of a ray cast to the surface and on to the sun - %d of the ground in the near "
+          "box's shadow and %d in the sun; %d near an edge left out"
+          % (sjudged, TOLERANCE, shaded, sunlit, SIZE * SIZE - sjudged))
 
     w = re.match(r"vulkan device=llvmpipe/1\.\d+ extent=(\d+)x(\d+) images=(\d+)"
                  r" scene=(\d+)x(\d+) boxes=(\d+) frames=(\d+) ms=(\d+)$",

@@ -458,6 +458,83 @@ ends on the M700:
       imagery at zoom 16, sixteen pieces a tile in one 1024 picture, and
       a piece that does not come is the walls' concrete. Over London the
       M700's 18 tiles were all roofed.
+  - **Shadows, S1 and S2 built in 0.12.47** (`testing.md` 18.967;
+    written 21 November, before the code). One shadow map from the sun,
+    in the 3D Kit, so Cafesa3D's Solid view can have the same shadows by
+    naming a radius:
+    - *The map*: a 2048 by 2048 depth image, drawn from the sun before
+      the frame. It is an orthographic box `shadow_radius` metres around
+      a point the view names (`shadow_centre`), with a depth range deep
+      enough to hold the tallest building. A view with no radius has no
+      shadows, so every picture drawn before is drawn the same.
+    - *What casts*: meshes and models, which means the aircraft and the
+      buildings. The terrain does not cast at first. A hill's sunward and
+      shaded sides are already lit by its normal, and a hill's shadow
+      across a valley is a later step.
+    - *What receives*: the ground, meshes and models. Each looks itself up
+      in the map through a comparing sampler, nine taps, so an edge is
+      soft over a texel or two. In shadow, the sun's part of the light
+      goes and the ambient stays.
+    - *Room*: the view's push constants gain the map's matrix as three
+      rows (it is affine), so they are 192 bytes. A model's own matrix
+      goes as three rows too. That keeps a model's push at 256, the most
+      anv and lavapipe give.
+    - *Flight*: the box is centred on the aircraft. Its radius grows
+      with height above the ground, from 400 m on a runway to 2 km, so a
+      2048 map is 0.4 to 2 m a texel. A graphics-panel switch turns
+      shadows off, so their cost is seen.
+    - *Checked*: `run_k3dvk.py` draws a shadowed scene. Its reference
+      casts one more ray, from each pixel's surface towards the sun, and
+      a pixel near a shadow's edge is left out as a silhouette's is.
+    - Steps: **S1** the 3D Kit's map and its test; **S2** Flight's box,
+      the switch and the M700's cost. Both built. On the M700 over
+      London at dusk, the GPU went from 9.5 to 12.6 ms a frame. Where
+      the device filters a depth format, the map is read linearly, which
+      the runway's 0.4 m texels needed.
+    - What a low sun does, seen on the M700: at dusk the sun is 3
+      degrees up, so a level runway takes almost none of its light, and a
+      shadow on it is barely darker than the ambient. That is right.
+      Dusk's shadows are on the walls that face the sun, and a level
+      shadow shows from morning to afternoon.
+    - Later: the terrain casting (a hill across a valley), and cascades,
+      so the buildings far off keep their shadows as well.
+  - **Weather and wind, as they will be built** (written 21 November,
+    before the code; the feature set's item 9). Two rows in the pause
+    sheet, remembered like the time of day:
+    - *Weather*: **Clear**, **Haze** or **Low cloud**.
+      - Clear is the sky as it is now.
+      - Haze brings the haze in from 4-40 km to 1.5-12 km, greys its
+        colour, and takes a fifth of the sun's share.
+      - Low cloud is an overcast deck 600 m over the field. Under it the
+        sun's share is a quarter, so shadows go and the ambient rises. The
+        sky is grey and the haze is 3-20 km. Above it the sky is clear,
+        the sun lights the deck's top, and the ground is hidden.
+      - The deck is a mesh, one grid 40 km wide that follows the aircraft
+        in whole kilometres so it does not swim. Its points are lifted and
+        shaded by a hash of where they stand, so the deck has lumps and
+        lighter and darker patches. That is vertex data, not pixels, so it
+        stays in the 3D Kit's existing mesh shape. The haze hides its edge.
+      - Inside the deck, within 60 m of it, the haze closes to 80 m:
+        flying through cloud is white.
+    - *Wind*: **Calm**, **10 kt** or **25 kt**, from **N**, **E**, **S**
+      or **W**.
+      - The flight model's speed is airspeed already. The wind is added
+        to the ground track, so the aircraft drifts and crabs into the
+        wind on final.
+      - On the runway, the headwind's share is added to the airspeed the
+        wings see, so a take-off into the wind is shorter.
+      - Gusts are a slow sum of two sines on the strength, at ±20%.
+      - The wind sound follows the airspeed, as it does now. The panel's
+        line gains "wind 270/25".
+    - *What supplies it*: nothing new below Flight. The haze, the sun's
+      share and the ambient are the view's existing fields. The deck is a
+      mesh (`w:shape`). The wind is Flight's own physics.
+    - *Checked*: `run_flight.py` starts in Low cloud with 25 kt from the
+      W. It reads the log's `weather cloud deck=%d m` line and the
+      `wind from %d at %d kt` line, and that the ground track drifts east
+      of the heading over twenty seconds. The control, `--no-wind`, flies
+      calm and must fail the drift check.
+    - Steps: **W1** the weather row (haze and the deck); **W2** the wind.
 - **Diego's evening list, 20 November 2026**, taken before the rest of F6
   and in this order: "Make sure we can takeoff and land in real airport
   locations", "Also don't know how to change cockpit to chase view",

@@ -1,16 +1,15 @@
 // Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-// The ground (`k3d_vk.c`): its imagery, lit by the sun and the ambient
-// share and hazed by distance as a mesh's colour is (`k3d_mesh.frag`).
+// The ground (`k3d_vk.c`): its imagery, lit by the sun where the sun
+// reaches it and by the ambient share, and hazed by distance as a mesh's
+// colour is (`k3d_view.glsl`).
 #version 450
+#extension GL_GOOGLE_include_directive : require
+#include "k3d_view.glsl"
 
-layout(push_constant) uniform View {
-    mat4 clip;
-    vec4 eye;
-    vec4 sun;
-    vec4 haze;
-    vec4 range;
-    vec4 light;         // rgb: the sun's colour (F6a)
-} v;
+layout(push_constant) uniform View { K3D_VIEW_MEMBERS } v;
+
+#define K3D_LIT
+#include "k3d_view.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D imagery;
 
@@ -22,11 +21,7 @@ layout(location = 0) out vec4 colour;
 
 void main()
 {
-    // The ambient share white, the sun's in the sun's colour.
-    vec3 lit = vec3(v.sun.w) + (1.0 - v.sun.w) *
-               max(dot(normalize(facing), v.sun.xyz), 0.0) * v.light.rgb;
-    float far = clamp((distance(world, v.eye.xyz) - v.range.x) / (v.range.y - v.range.x),
-                      0.0, 1.0);
+    vec3 n = normalize(facing);
 
-    colour = vec4(mix(texture(imagery, across).rgb * lit, v.haze.rgb, far), 1.0);
+    colour = vec4(k3d_hazed(world, texture(imagery, across).rgb * k3d_light(world, n)), 1.0);
 }

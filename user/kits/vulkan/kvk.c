@@ -84,6 +84,17 @@ int kvk_open(struct kvk *v, const char *program, int windowed)
     VkPhysicalDeviceProperties props;
     properties(v->physical, &props);
     memory(v->physical, &v->memory);
+    {
+        PFN_vkGetPhysicalDeviceFormatProperties formats =
+            (PFN_vkGetPhysicalDeviceFormatProperties)gipa(v->instance,
+                                                          "vkGetPhysicalDeviceFormatProperties");
+        VkFormatProperties fp = { 0 };
+        if (formats) {
+            formats(v->physical, VK_FORMAT_D32_SFLOAT, &fp);
+        }
+        v->depth_filters = (fp.optimalTilingFeatures &
+                            VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+    }
     /* "llvmpipe (LLVM 23.1.2, 256 bits)": the name to its first space. */
     {
         char name[48];
@@ -502,6 +513,9 @@ int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = shape->cull,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable = shape->bias_constant != 0.0f || shape->bias_slope != 0.0f,
+        .depthBiasConstantFactor = shape->bias_constant,
+        .depthBiasSlopeFactor = shape->bias_slope,
         .lineWidth = 1.0f,
     };
     VkPipelineMultisampleStateCreateInfo multisample = {
@@ -527,13 +541,15 @@ int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };
+    /* No colour attachment at all when the picture is depth alone. */
+    uint32_t colours = format != VK_FORMAT_UNDEFINED ? 1 : 0;
     VkPipelineColorBlendStateCreateInfo blending = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1, .pAttachments = &blend,
+        .attachmentCount = colours, .pAttachments = &blend,
     };
     VkPipelineRenderingCreateInfo rendering = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = 1,
+        .colorAttachmentCount = colours,
         .pColorAttachmentFormats = &format,
         .depthAttachmentFormat = shape->depth,
     };

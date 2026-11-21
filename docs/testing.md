@@ -40545,3 +40545,72 @@ suite now keeps the screen it judged when either check fails
 (`panel-failed.png` and `graphics-failed.png` in its work directory), so
 the next failure can be looked at. The final gate passed all five suites
 (`x86-flight`, `-land`, `-island`, `x86-flightpath`, `host`) in 3:08.
+
+## 18.967 Flight's shadows from the sun (0.12.47)
+
+**In short:** the 3D Kit draws a shadow map from the sun before each
+frame, and the aircraft and the buildings cast shadows. They fall on the
+ground, on each other and on themselves. In Flight, H turns them on and
+off and the graphics panel shows what they cost. On the M700 over the
+City of London at dusk, shadows took the GPU from 9.5 ms a frame to
+12.6 ms (31.3 frames a second to 26.9), for 486,000 more triangles drawn
+from the sun. On Heathrow's runway it was 7.8 ms with them on. The
+panel-check failure 18.966 left unexplained was the suite reading the
+Monitor's CPU graphs as Flight's window, and that is fixed.
+
+- **S1, the map** (`k3d_vk.c`, `k3d_view.glsl`, `k3d_shadow.vert/.frag`).
+  - The map is a 2048 by 2048 D32 image, drawn first in every frame
+    whose view names a `shadow_radius` and whose sun is up.
+  - The sun's box is orthographic and `shadow_radius` around
+    `shadow_centre`. Its centre is held to whole texels, so a shadow does
+    not crawl as the eye moves, and it is `radius + 1000` m deep.
+  - Meshes and models cast and the terrain does not. The pass draws
+    positions only, with a raster depth bias of 1.25 constant and 1.75
+    slope.
+  - Every lit surface looks itself up through a comparing sampler: nine
+    taps a texel apart, with the surface pushed one texel along its
+    normal and a receiver bias of two texels of depth. In shadow, the
+    sun's share of the light goes and the ambient stays.
+  - Linear filtering where the device filters D32 (`kvk.depth_filters`),
+    so each tap blends four texels. On the M700 the first build used
+    nearest, and an aircraft's shadow on the runway showed its 0.4 m
+    texels as steps a dozen pixels wide.
+  - The view's push block is 192 bytes: three affine rows for the map,
+    and a texel and the two biases in spare lanes. A model's matrix went
+    to three rows as well, so a model's push stays 256 bytes, the most
+    anv and lavapipe give.
+  - The shaders share one include, `k3d_view.glsl`, for the view's
+    members and the light. Before it, three copies of the lighting
+    existed.
+- **S2, Flight** (`flight.lua`).
+  - The box's radius is 400 m plus the height above the ground, from
+    400 m to 2 km. Its centre is on the ground half a radius ahead of
+    the aircraft, and on the aircraft in the tower's view.
+  - H switches shadows and is remembered. The graphics panel's
+    "Shadows" row gives the triangles drawn from the sun and the texel
+    in metres.
+  - The log says `shadows radius=%.0f texel=%.2f triangles=%d` once
+    shadows have been drawn.
+
+**Checked by `x86-k3d-vulkan`.** It draws a second scene, a cube and a
+slab under a low sun, and holds every pixel to a reference. The
+reference casts one more ray, from the pixel's surface towards the sun,
+through the box the kit drew. A pixel within four texels of a shadow's
+edge is left out, as a silhouette's pixels are, since nine taps and the
+filter soften an edge over two. **Control:** `--no-shadow-reference`
+holds the picture to a reference with no shadows, and the suite fails on
+the shadowed pixels.
+
+**Checked by `x86-flight`.** Over the city it reads
+`shadows radius=857 texel=0.84 triangles=77705`, and it holds the radius
+to 400-2,000 m and the triangles to at least 1,000. **Control:**
+`--no-shadows` starts Flight with shadows off, and the suite fails with
+no shadows line.
+
+**The panel checks' failure, explained.** `strip_band` finds Flight's
+window by the tallest stack of light bands. Under the gate's load, the
+Monitor's CPU graphs at the right of the screen make the same shape and
+can win. The suite now takes Flight's left edge from the window
+manager's list, and prefers stacks within 6 px of it. After the raise
+click the pointer is moved to the corner, since that was the first
+suspect, though it was not the cause. Three runs alone then passed.

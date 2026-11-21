@@ -1,20 +1,20 @@
 // Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 // A model's surface (`k3d_vk.c`): its texture times its tint, lit by the
-// sun and the ambient share and hazed by distance exactly as a mesh's
-// colour is (`k3d_mesh.frag`), so an aircraft sits in the same light as
-// the ground under it.
+// sun where the sun reaches it and by the ambient share, and hazed by
+// distance exactly as a mesh's colour is (`k3d_view.glsl`), so an aircraft
+// sits in the same light as the ground under it.
 #version 450
+#extension GL_GOOGLE_include_directive : require
+#include "k3d_view.glsl"
 
 layout(push_constant) uniform Model {
-    mat4 clip;
-    vec4 eye;
-    vec4 sun;
-    vec4 haze;
-    vec4 range;
-    vec4 light;         // rgb: the sun's colour (F6a)
-    mat4 model;
+    K3D_VIEW_MEMBERS
+    vec4 model[3];
     vec4 tint;
 } v;
+
+#define K3D_LIT
+#include "k3d_view.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D skin;
 
@@ -40,11 +40,5 @@ void main()
     if (!gl_FrontFacing) {
         n = -n;
     }
-    // The ambient share white, the sun's in the sun's colour.
-    vec3 lit = vec3(v.sun.w) + (1.0 - v.sun.w) *
-               max(dot(n, v.sun.xyz), 0.0) * v.light.rgb;
-    float far = clamp((distance(world, v.eye.xyz) - v.range.x) / (v.range.y - v.range.x),
-                      0.0, 1.0);
-
-    colour = vec4(mix(albedo.rgb * lit, v.haze.rgb, far), 1.0);
+    colour = vec4(k3d_hazed(world, albedo.rgb * k3d_light(world, n)), 1.0);
 }

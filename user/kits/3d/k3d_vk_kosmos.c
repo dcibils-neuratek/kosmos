@@ -1275,6 +1275,7 @@ struct window {
      * renderer recorded, and the device's own time for the frame. */
     uint32_t draws;
     uint64_t triangles;
+    uint64_t shadow_triangles;      /* of them, into the sun's map */
     double gpu_ms;                  /* < 0: the device keeps no time */
 };
 
@@ -1540,9 +1541,10 @@ static int l_window_overlay(lua_State *L)
     return 1;
 }
 
-/* w:stats() -> draws, triangles, gpu_ms, presented: what the last frame
- * recorded, the device's time for it (nil where the device keeps none),
- * and how a frame reaches the screen. Numbers only, so a frame that asks
+/* w:stats() -> draws, triangles, gpu_ms, presented, shadow_triangles: what
+ * the last frame recorded, the device's time for it (nil where the device
+ * keeps none), how a frame reaches the screen, and of the triangles those
+ * drawn into the sun's map. Numbers only, so a frame that asks
  * allocates nothing. */
 static int l_window_stats(lua_State *L)
 {
@@ -1558,7 +1560,9 @@ static int l_window_stats(lua_State *L)
     /* VK_KOSMOS_surface: the swapchain's image copied into the window's
      * shared surface, which the window manager composes. */
     lua_pushliteral(L, "a copy to the window");
-    return 4;
+    /* Of the triangles, the ones drawn into the sun's map (*Shadows*). */
+    lua_pushinteger(L, (lua_Integer)w->shadow_triangles);
+    return 5;
 }
 
 static int l_window_closed(lua_State *L)
@@ -2024,6 +2028,17 @@ static int l_window_draw(lua_State *L)
     lua_getfield(L, 3, "glow");
     view.glow = lua_isnil(L, -1) ? 0.0f : (float)luaL_checknumber(L, -1);
     lua_pop(L, 1);
+    /* Shadows, when the view names their box (`docs/flight.md`,
+     * *Shadows*): `shadow_radius` metres around `shadow_centre`; none
+     * without. */
+    lua_getfield(L, 3, "shadow_radius");
+    if (!lua_isnil(L, -1)) {
+        view.shadow_radius = (float)luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+        numbers(L, 3, "shadow_centre", view.shadow_centre, 3);
+    } else {
+        lua_pop(L, 1);
+    }
     /* The camera's up, when it rolls - the cockpit's; the world's without. */
     lua_getfield(L, 3, "up");
     if (!lua_isnil(L, -1)) {
@@ -2194,7 +2209,8 @@ static int l_window_draw(lua_State *L)
         return 2;
     }
     w->draws = w->renderer.draws;
-    w->triangles = w->renderer.triangles;
+    w->triangles = w->renderer.triangles + w->renderer.shadow_triangles;
+    w->shadow_triangles = w->renderer.shadow_triangles;
     w->gpu_ms = kvk_time_ms(v);
     give_back(w, g);
 

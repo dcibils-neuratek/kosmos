@@ -21,27 +21,51 @@
 #include "k3d_model_frag.h"
 #include "k3d_overlay_vert.h"
 #include "k3d_overlay_frag.h"
+#include "k3d_shadow_vert.h"
+#include "k3d_shadow_frag.h"
 
-/* The shaders' push constants, as they declare them (std430: vec4s). */
+/* The shaders' push constants, as `k3d_view.glsl` declares them (std430:
+ * vec4s), 192 bytes. */
 struct mesh_push {
     float clip[16];
-    float eye[4];
+    float eye[4];       /* w: a shadow-map texel in uv; 0, no shadows */
     float sun[4];       /* w: ambient */
     float haze[4];
-    float range[4];     /* start, end */
+    float range[4];     /* the haze's start and end; the shadow's depth
+                         * bias, and its offset along the normal */
     float light[4];     /* rgb: the sun's colour */
+    float shadow[12];   /* the world to the sun's map: three affine rows */
 };
 
-/* A model's: the view's, then its own matrix and tint, 224 bytes. That is
- * past the 128 Vulkan 1.3 promises and inside the 256 that 1.4 does and
- * that lavapipe and anv give; the view is pushed once and only the last 80
- * bytes for each model. The view alone is 144 since the sun had a colour
- * (F6a), past 128 for the same reason. */
+/* A model's: the view's, then its own matrix as three affine rows and its
+ * tint - 256 bytes, the most lavapipe and anv give and what Vulkan 1.4
+ * promises (1.3 promises 128). The view is pushed once and only the last
+ * 64 bytes for each model. Its matrix went as a whole mat4 until the
+ * shadows' rows made the view 192 (`docs/flight.md`, *Shadows*). */
 struct model_push {
     struct mesh_push view;
-    float model[16];
+    float model[12];
     float tint[4];
 };
+
+/* A caster's, into the sun's map: the map's rows and its own, 96 bytes. */
+struct shadow_push {
+    float sun[12];
+    float model[12];
+};
+
+/* Column-major and affine, as a model's draw gives it, into three rows. */
+static void affine_rows(const float m[16], float rows[12])
+{
+    for (int i = 0; i < 3; i++) {
+        rows[4 * i + 0] = m[i];
+        rows[4 * i + 1] = m[4 + i];
+        rows[4 * i + 2] = m[8 + i];
+        rows[4 * i + 3] = m[12 + i];
+    }
+}
+
+static const float identity_rows[12] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0 };
 
 struct sky_push {
     float unclip[16];
@@ -58,16 +82,18 @@ static void refuse(struct kvk *v, const char *why)
     v->why[sizeof(v->why) - 1] = '\0';
 }
 
-/* A pipeline's layout: its push constants, and a set of `set`'s layout
- * when there is one. */
+/* A pipeline's layout: its push constants, and up to two sets of `set`'s
+ * layout - a lit surface's own picture, then the sun's map. */
 static int pipeline_layout(struct kvk *v, VkPipelineLayout *out, uint32_t bytes,
-                           VkShaderStageFlags stages, VkDescriptorSetLayout set)
+                           VkShaderStageFlags stages, VkDescriptorSetLayout set,
+                           uint32_t sets)
 {
     VkPushConstantRange range = { stages, 0, bytes };
+    VkDescriptorSetLayout layouts[2] = { set, set };
     VkPipelineLayoutCreateInfo plci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = set != VK_NULL_HANDLE ? 1 : 0,
-        .pSetLayouts = &set,
+        .setLayoutCount = set != VK_NULL_HANDLE ? sets : 0,
+        .pSetLayouts = layouts,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &range,
     };
@@ -90,19 +116,27 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
     r->height = height;
     r->format = format;
 
+    /* Every lit surface's layout has two sets: its own picture - white
+     * for a mesh, which has none - and the sun's map. */
     if (!kvk_image_make(v, &r->depth, VK_FORMAT_D32_SFLOAT, width, height,
                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT,
                         "depth") ||
-        !pipeline_layout(v, &r->mesh_layout, sizeof(struct mesh_push), both, VK_NULL_HANDLE) ||
-        !pipeline_layout(v, &r->sky_layout, sizeof(struct sky_push),
-                         VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE) ||
+        !kvk_image_make(v, &r->sunmap, VK_FORMAT_D32_SFLOAT, K3D_VK_SHADOW, K3D_VK_SHADOW,
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                        VK_IMAGE_ASPECT_DEPTH_BIT, "sun-map") ||
         !kvk_sampled_layout(v, &r->imagery_layout) ||
+        !pipeline_layout(v, &r->mesh_layout, sizeof(struct mesh_push), both,
+                         r->imagery_layout, 2) ||
+        !pipeline_layout(v, &r->sky_layout, sizeof(struct sky_push),
+                         VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE, 0) ||
         !pipeline_layout(v, &r->ground_layout, sizeof(struct mesh_push), both,
-                         r->imagery_layout) ||
+                         r->imagery_layout, 2) ||
         !pipeline_layout(v, &r->model_layout, sizeof(struct model_push), both,
-                         r->imagery_layout) ||
+                         r->imagery_layout, 2) ||
         !pipeline_layout(v, &r->overlay_layout, 4 * sizeof(float), VK_SHADER_STAGE_VERTEX_BIT,
-                         r->imagery_layout)) {
+                         r->imagery_layout, 1) ||
+        !pipeline_layout(v, &r->shadow_layout, sizeof(struct shadow_push),
+                         VK_SHADER_STAGE_VERTEX_BIT, VK_NULL_HANDLE, 0)) {
         return 0;
     }
 
@@ -122,6 +156,32 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
      * tiled across a fuselage counts on. */
     sci.addressModeU = sci.addressModeV = sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     KVK_STEP(v, v->vkCreateSampler(v->device, &sci, NULL, &r->skin), "sampler");
+    /* The sun's map, compared as it is read: a tap is 1 where the surface
+     * is no further from the sun than what the map holds. Linear where the
+     * device filters a depth format, so each tap blends the four texels
+     * around it and a texel's step is not seen - on the M700 a texel near
+     * the ground is 0.4 m, a dozen pixels of an aircraft's shadow; nearest
+     * where it does not, which a depth format need not. The shader's nine
+     * taps soften the edge either way. Past the map's edge, depth 1 - the
+     * sun. */
+    VkFilter sunmap_filter = v->depth_filters ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+    VkSamplerCreateInfo cci = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = sunmap_filter,
+        .minFilter = sunmap_filter,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .compareEnable = VK_TRUE,
+        .compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+        .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+    };
+    KVK_STEP(v, v->vkCreateSampler(v->device, &cci, NULL, &r->compare), "sampler");
+    if (!kvk_sampled_set(v, r->imagery_layout, r->compare, r->sunmap.view, &r->sunmap_pool,
+                         &r->sunmap_set)) {
+        return 0;
+    }
 
     VkVertexInputBindingDescription stream = { 0, sizeof(struct k3d_vk_vertex),
                                                VK_VERTEX_INPUT_RATE_VERTEX };
@@ -145,12 +205,12 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
      * behind its front ones in the depth buffer anyway. */
     struct kvk_pipeline_shape mesh = {
         k3d_mesh_vert, sizeof(k3d_mesh_vert), k3d_mesh_frag, sizeof(k3d_mesh_frag), &input,
-        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
+        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0, 0, 0,
     };
     /* The sky: no depth test, drawn first, under everything. */
     struct kvk_pipeline_shape sky = {
         k3d_sky_vert, sizeof(k3d_sky_vert), k3d_sky_frag, sizeof(k3d_sky_frag), &none,
-        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1, 0,
+        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1, 0, 0, 0,
     };
 
     VkVertexInputBindingDescription ground_stream = { 0, sizeof(struct k3d_terrain_vertex),
@@ -169,7 +229,7 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
     };
     struct kvk_pipeline_shape ground = {
         k3d_ground_vert, sizeof(k3d_ground_vert), k3d_ground_frag, sizeof(k3d_ground_frag),
-        &ground_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
+        &ground_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0, 0, 0,
     };
 
     VkVertexInputBindingDescription model_stream = { 0, sizeof(struct k3d_vk_model_vertex),
@@ -191,20 +251,59 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
      * side the eye is on. */
     struct kvk_pipeline_shape model = {
         k3d_model_vert, sizeof(k3d_model_vert), k3d_model_frag, sizeof(k3d_model_frag),
-        &model_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
+        &model_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0, 0, 0,
     };
 
     /* An overlay: over everything, untested, blended by its alpha. */
     struct kvk_pipeline_shape overlay = {
         k3d_overlay_vert, sizeof(k3d_overlay_vert), k3d_overlay_frag, sizeof(k3d_overlay_frag),
-        &none, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1, 1,
+        &none, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1, 1, 0, 0,
     };
+
+    /* The casters into the sun's map: their corners alone, from either
+     * layout, depth alone and pushed back as it is drawn, so a lit face
+     * does not find itself in its own shadow. */
+    VkVertexInputAttributeDescription where = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 };
+    VkVertexInputBindingDescription mesh_corners = { 0, sizeof(struct k3d_vk_vertex),
+                                                     VK_VERTEX_INPUT_RATE_VERTEX };
+    VkVertexInputBindingDescription model_corners = { 0, sizeof(struct k3d_vk_model_vertex),
+                                                      VK_VERTEX_INPUT_RATE_VERTEX };
+    VkPipelineVertexInputStateCreateInfo mesh_casts = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &mesh_corners,
+        .vertexAttributeDescriptionCount = 1,
+        .pVertexAttributeDescriptions = &where,
+    };
+    VkPipelineVertexInputStateCreateInfo model_casts = mesh_casts;
+    model_casts.pVertexBindingDescriptions = &model_corners;
+    struct kvk_pipeline_shape caster = {
+        k3d_shadow_vert, sizeof(k3d_shadow_vert), k3d_shadow_frag, sizeof(k3d_shadow_frag),
+        &mesh_casts, K3D_VK_SHADOW, K3D_VK_SHADOW, VK_FORMAT_UNDEFINED, VK_FORMAT_D32_SFLOAT,
+        VK_CULL_MODE_NONE, 0, 0, 1.25f, 1.75f,
+    };
+    struct kvk_pipeline_shape model_caster = caster;
+    model_caster.input = &model_casts;
 
     if (!kvk_pipeline(v, &r->mesh, r->mesh_layout, &mesh) ||
         !kvk_pipeline(v, &r->sky, r->sky_layout, &sky) ||
         !kvk_pipeline(v, &r->ground, r->ground_layout, &ground) ||
         !kvk_pipeline(v, &r->model, r->model_layout, &model) ||
-        !kvk_pipeline(v, &r->overlay, r->overlay_layout, &overlay)) {
+        !kvk_pipeline(v, &r->overlay, r->overlay_layout, &overlay) ||
+        !kvk_pipeline(v, &r->shadow_mesh, r->shadow_layout, &caster) ||
+        !kvk_pipeline(v, &r->shadow_model, r->shadow_layout, &model_caster)) {
+        return 0;
+    }
+
+    /* The sun's map starts as a picture to read, as every frame without
+     * shadows leaves it: in the sun everywhere until it is drawn. */
+    if (!kvk_begin(v)) {
+        return 0;
+    }
+    kvk_barrier(v, r->sunmap.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+    if (!kvk_submit(v)) {
         return 0;
     }
 
@@ -225,6 +324,22 @@ void k3d_vk_close(struct k3d_vk *r)
         return;
     }
     k3d_vk_texture_free(r, &r->white);
+    if (r->shadow_mesh != VK_NULL_HANDLE) {
+        v->vkDestroyPipeline(v->device, r->shadow_mesh, NULL);
+    }
+    if (r->shadow_model != VK_NULL_HANDLE) {
+        v->vkDestroyPipeline(v->device, r->shadow_model, NULL);
+    }
+    if (r->shadow_layout != VK_NULL_HANDLE) {
+        v->vkDestroyPipelineLayout(v->device, r->shadow_layout, NULL);
+    }
+    if (r->sunmap_pool != VK_NULL_HANDLE) {
+        v->vkDestroyDescriptorPool(v->device, r->sunmap_pool, NULL);
+    }
+    if (r->compare != VK_NULL_HANDLE) {
+        v->vkDestroySampler(v->device, r->compare, NULL);
+    }
+    kvk_image_free(v, &r->sunmap);
     if (r->overlay != VK_NULL_HANDLE) {
         v->vkDestroyPipeline(v->device, r->overlay, NULL);
     }
@@ -649,6 +764,125 @@ int k3d_vk_clip(const struct k3d_vk_view *view, uint32_t width, uint32_t height,
     return 1;
 }
 
+/*
+ * **The sun's box** (`docs/flight.md`, *Shadows*): the world into the
+ * sun's map, as three affine rows - x and y across the sun's light, from
+ * -1 to 1 over `radius` metres either side of `centre`, and depth along it
+ * from 0 nearest the sun to 1, over `radius` and a kilometre more either
+ * side, so the tallest tower and the aircraft above the ground both fit.
+ * The centre is held to whole texels across the light, so the map's texels
+ * stay where they are on the ground as the centre moves and an edge does
+ * not crawl. Out, the size of a texel in metres.
+ */
+static double sun_box(const double sun[3], const float centre[3], double radius,
+                      float rows[12])
+{
+    double up[3] = { 0, 1, 0 }, across[3], above[3], c[3];
+    double texel = 2 * radius / K3D_VK_SHADOW, deep = radius + 1000.0;
+
+    if (fabs(sun[1]) > 0.99) {
+        up[0] = 1, up[1] = 0;
+    }
+    cross(up, sun, across);
+    unit(across);
+    cross(sun, across, above);
+    for (int i = 0; i < 3; i++) {
+        c[i] = centre[i];
+    }
+    double ac = floor((across[0] * c[0] + across[1] * c[1] + across[2] * c[2]) / texel) * texel;
+    double uc = floor((above[0] * c[0] + above[1] * c[1] + above[2] * c[2]) / texel) * texel;
+    double sc = sun[0] * c[0] + sun[1] * c[1] + sun[2] * c[2];
+
+    for (int i = 0; i < 3; i++) {
+        rows[i] = (float)(across[i] / radius);
+        rows[4 + i] = (float)(above[i] / radius);
+        rows[8 + i] = (float)(-sun[i] / (2 * deep));
+    }
+    rows[3] = (float)(-ac / radius);
+    rows[7] = (float)(-uc / radius);
+    rows[11] = (float)((deep + sc) / (2 * deep));
+    return texel;
+}
+
+/* The casters drawn into the sun's map, from `rows`: every mesh, and every
+ * model by its own matrix. */
+static void draw_sunmap(struct k3d_vk *r, const float rows[12], const struct k3d_vk_mesh *meshes,
+                        uint32_t count, const struct k3d_vk_model_draw *models,
+                        uint32_t models_count)
+{
+    struct kvk *v = r->v;
+    struct shadow_push sp;
+
+    kvk_barrier(v, r->sunmap.image, VK_IMAGE_ASPECT_DEPTH_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
+                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+    VkRenderingAttachmentInfo depth = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = r->sunmap.view,
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = { .depthStencil = { 1.0f, 0 } },
+    };
+    VkRenderingInfo ri = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = { { 0, 0 }, { K3D_VK_SHADOW, K3D_VK_SHADOW } },
+        .layerCount = 1,
+        .pDepthAttachment = &depth,
+    };
+    v->vkCmdBeginRendering(v->cmd, &ri);
+    memcpy(sp.sun, rows, sizeof(sp.sun));
+    memcpy(sp.model, identity_rows, sizeof(sp.model));
+    if (count > 0) {
+        v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->shadow_mesh);
+        v->vkCmdPushConstants(v->cmd, r->shadow_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                              sizeof(sp), &sp);
+        for (uint32_t i = 0; i < count; i++) {
+            VkDeviceSize at = 0;
+
+            v->vkCmdBindVertexBuffers(v->cmd, 0, 1, &meshes[i].buffer.buffer, &at);
+            v->vkCmdBindIndexBuffer(v->cmd, meshes[i].buffer.buffer, meshes[i].indices_at,
+                                    VK_INDEX_TYPE_UINT32);
+            v->vkCmdDrawIndexed(v->cmd, meshes[i].count, 1, 0, 0, 0);
+            r->draws++;
+            r->shadow_triangles += meshes[i].count / 3;
+        }
+    }
+    if (models_count > 0) {
+        v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->shadow_model);
+        v->vkCmdPushConstants(v->cmd, r->shadow_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                              sizeof(sp.sun), sp.sun);
+        for (uint32_t i = 0; i < models_count; i++) {
+            const struct k3d_vk_model_draw *d = &models[i];
+            float own[12];
+            VkDeviceSize at = 0;
+
+            if (d->model == NULL || d->model->count == 0) {
+                continue;
+            }
+            affine_rows(d->matrix, own);
+            v->vkCmdPushConstants(v->cmd, r->shadow_layout, VK_SHADER_STAGE_VERTEX_BIT,
+                                  offsetof(struct shadow_push, model), sizeof(own), own);
+            v->vkCmdBindVertexBuffers(v->cmd, 0, 1, &d->model->buffer.buffer, &at);
+            v->vkCmdBindIndexBuffer(v->cmd, d->model->buffer.buffer, d->model->indices_at,
+                                    VK_INDEX_TYPE_UINT32);
+            v->vkCmdDrawIndexed(v->cmd, d->model->count, 1, 0, 0, 0);
+            r->draws++;
+            r->shadow_triangles += d->model->count / 3;
+        }
+    }
+    v->vkCmdEndRendering(v->cmd);
+    kvk_barrier(v, r->sunmap.image, VK_IMAGE_ASPECT_DEPTH_BIT,
+                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+}
+
 int k3d_vk_draw(struct k3d_vk *r, VkImage target, VkImageView view_of,
                 const struct k3d_vk_view *view, const struct k3d_vk_mesh *meshes,
                 uint32_t count, const struct k3d_vk_ground *grounds, uint32_t grounds_count)
@@ -718,6 +952,24 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
     mp.range[0] = view->haze_start;
     mp.range[1] = view->haze_end;
 
+    /* The sun's map first, when the view asks for shadows, and what the
+     * surfaces need to read it: its rows, a texel's size in its own uv,
+     * and how far a surface is moved off itself before it looks - a texel
+     * along its normal, and two texels' depth towards the sun. */
+    r->draws = 0;
+    r->triangles = 0;
+    r->shadow_triangles = 0;
+    /* A sun below the horizon lights nothing from above, so casts nothing. */
+    if (view->shadow_radius > 0 && sun[1] > 0.0) {
+        double texel = sun_box(sun, view->shadow_centre, view->shadow_radius, mp.shadow);
+        double deep = view->shadow_radius + 1000.0;
+
+        mp.eye[3] = 1.0f / K3D_VK_SHADOW;
+        mp.range[2] = (float)(2 * texel / (2 * deep));
+        mp.range[3] = (float)texel;
+        draw_sunmap(r, mp.shadow, meshes, count, models, models_count);
+    }
+
     kvk_barrier(v, target, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -752,8 +1004,6 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
         .pDepthAttachment = &depth,
     };
     v->vkCmdBeginRendering(v->cmd, &ri);
-    r->draws = 0;
-    r->triangles = 0;
 
     v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->sky);
     v->vkCmdPushConstants(v->cmd, r->sky_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sp),
@@ -767,6 +1017,8 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
         v->vkCmdPushConstants(v->cmd, r->ground_layout,
                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                               sizeof(mp), &mp);
+        v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->ground_layout,
+                                   1, 1, &r->sunmap_set, 0, NULL);
         for (uint32_t i = 0; i < grounds_count; i++) {
             VkDeviceSize at = 0;
 
@@ -786,6 +1038,12 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
     v->vkCmdPushConstants(v->cmd, r->mesh_layout,
                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                           sizeof(mp), &mp);
+    {
+        VkDescriptorSet sets[2] = { r->white.set, r->sunmap_set };
+
+        v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->mesh_layout, 0,
+                                   2, sets, 0, NULL);
+    }
     for (uint32_t i = 0; i < count; i++) {
         VkDeviceSize at = 0;
 
@@ -803,6 +1061,8 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
     if (models_count > 0) {
         v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->model);
         v->vkCmdPushConstants(v->cmd, r->model_layout, both, 0, sizeof(mp), &mp);
+        v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->model_layout,
+                                   1, 1, &r->sunmap_set, 0, NULL);
         for (uint32_t i = 0; i < models_count; i++) {
             const struct k3d_vk_model_draw *d = &models[i];
             const struct k3d_vk_texture *skin = d->texture != NULL ? d->texture : &r->white;
@@ -812,7 +1072,7 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
             if (d->model == NULL || d->model->count == 0) {
                 continue;
             }
-            memcpy(own.model, d->matrix, sizeof(own.model));
+            affine_rows(d->matrix, own.model);
             memcpy(own.tint, d->tint, sizeof(own.tint));
             v->vkCmdPushConstants(v->cmd, r->model_layout, both,
                                   offsetof(struct model_push, model),

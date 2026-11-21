@@ -75,6 +75,14 @@ struct k3d_vk_view {
                                      * day, F6a) */
     float glow;                     /* the sky's glow around the sun and its
                                      * disc, in the sun's colour: 0 is none */
+    /* **Shadows** (`docs/flight.md`, *Shadows*): the sun's map is drawn
+     * over a box `shadow_radius` metres around `shadow_centre`, across the
+     * sun's light and as deep, and meshes and models cast into it. Where a
+     * surface is in shadow it keeps the ambient share and loses the sun's;
+     * outside the box everything is in the sun. A radius of 0, as a view
+     * that does not name one has, is no shadows. */
+    float shadow_centre[3];
+    float shadow_radius;
 };
 
 struct k3d_vk_mesh {
@@ -123,7 +131,9 @@ struct k3d_vk_model_draw {
                                      * glTF's base colour factor; a texel
                                      * whose alpha comes out under a half is
                                      * not drawn */
-    float matrix[16];               /* the world from the model, column-major */
+    float matrix[16];               /* the world from the model, column-major,
+                                     * and affine: its last row is (0, 0, 0,
+                                     * 1), which the shaders do not read */
 };
 
 /*
@@ -138,11 +148,23 @@ struct k3d_vk_overlay {
     uint32_t width, height;
 };
 
+/* The sun's map's side, in texels. */
+#define K3D_VK_SHADOW 2048
+
 struct k3d_vk {
     struct kvk *v;
     uint32_t width, height;
     VkFormat format;
     struct kvk_image depth;
+    /* The sun's map: depth alone, drawn by the shadow pipelines - one for
+     * a mesh's corners and one for a model's, which are laid out apart -
+     * and read by every lit surface through `sunmap_set`, compared. */
+    struct kvk_image sunmap;
+    VkSampler compare;
+    VkDescriptorPool sunmap_pool;
+    VkDescriptorSet sunmap_set;
+    VkPipelineLayout shadow_layout;
+    VkPipeline shadow_mesh, shadow_model;
     VkPipelineLayout mesh_layout, sky_layout, ground_layout, model_layout, overlay_layout;
     VkPipeline mesh, sky, ground, model, overlay;
     VkDescriptorSetLayout imagery_layout;
@@ -154,6 +176,7 @@ struct k3d_vk {
      * triangles they draw - a graphics panel's figures. */
     uint32_t draws;
     uint64_t triangles;
+    uint64_t shadow_triangles;      /* of them, the ones drawn into the map */
 };
 
 /* The renderer for pictures of `format`, `width` by `height`: 1, or 0 with

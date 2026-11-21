@@ -49,6 +49,7 @@ local settings = prefs.open("flight", {
   sound = true,                                  -- the engine and the wind heard (F6c, M)
   runways = true,                                -- the runways drawn over the imagery (F8b)
   buildings = true,                              -- the city's buildings stood up (F6, B3)
+  shadows = true,                                -- the sun's shadows (F6, S2, H)
   vector = "https://tiles.openfreemap.org/planet",   -- where their outlines come from, as Maps'
   place = false,                                 -- a place searched for: { name, note, lon, lat }
   recent = false,                                -- the sheet's Recent: { key } or places
@@ -58,7 +59,7 @@ local settings = prefs.open("flight", {
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
-              v = 47, p = 25, r = 19, f3 = 61, t = 20, m = 50, b = 48 }
+              v = 47, p = 25, r = 19, f3 = 61, t = 20, m = 50, b = 48, h = 35 }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local function now() return sys.ticks() / counter_hz end
@@ -158,6 +159,7 @@ local view = {
   zenith = { 0.22, 0.42, 0.80 }, horizon = { 0.78, 0.84, 0.92 },
   haze = { 0.72, 0.78, 0.86 }, haze_start = 4000, haze_end = 40000,
   light = { 1, 1, 1 }, glow = 0.3,
+  shadow_centre = { 0, 0, 0 },          -- with shadow_radius, set by look() (S2)
 }
 
 -- **The time of day** (F6a; Diego, 20 November 2026: "I love playing in
@@ -549,6 +551,21 @@ local function look(g)
     e[1], e[2], e[3] = S.x - sh * 28, S.y + 7, S.z + ch * 28
     t[1], t[2], t[3] = S.x + sh * 40, S.y + fy * 40, S.z - ch * 40
     u[1], u[2], u[3] = 0, 1, 0
+  end
+  -- **The sun's shadows** (S2): the 3D Kit's map over a box on the ground
+  -- under the aircraft, reaching further ahead than behind since that is
+  -- where the eye looks, and wider the higher it flies - 400 m a side on a
+  -- runway, 0.4 m a texel, to 2 km at 1,600 m above the ground. The
+  -- tower's box is the aircraft's own, since that is what it watches.
+  if settings.shadows then
+    local ground = g:height(S.x, S.z) or 0
+    local radius = math.max(400, math.min(2000, 400 + (S.y - ground)))
+    local ahead = S.view == 3 and 0 or radius * 0.5
+    local c = view.shadow_centre
+    c[1], c[2], c[3] = S.x + sh * ahead, ground, S.z - ch * ahead
+    view.shadow_radius = radius
+  else
+    view.shadow_radius = nil
   end
 end
 
@@ -1116,6 +1133,7 @@ local processor_ms = nil                           -- the frame less the device'
 for i = 1, TIMES do times[i] = 0 end
 local spark_xy = {}
 local graphics, graphics_said, graphics_next = nil, false, 0
+local shadows_said = false
 local face_big, face_small, face_mono
 local rate = { n = 0, since = 0, fps = 0 }
 
@@ -1131,7 +1149,7 @@ local function draw_graphics(w, said, took, t)
   times_n = math.min(TIMES, times_n + 1)
   -- The processor's part of a frame: the frame less the device's time,
   -- which it waits for, every frame - smoothed over about a second's worth.
-  local draws, triangles, gpu_ms, presented = w:stats()
+  local draws, triangles, gpu_ms, presented, shadowed = w:stats()
   local own = math.max(0, took * 1000 - (gpu_ms or 0))
   processor_ms = processor_ms and processor_ms + (own - processor_ms) * 0.1 or own
   rate.n = rate.n + 1
@@ -1152,7 +1170,7 @@ local function draw_graphics(w, said, took, t)
     face_big = gfx.face("ibmplexmono-medium", 26) or gfx.face("ibmplexmono", 26)
     face_mono = gfx.face("ibmplexmono", 13)
     if full then
-      graphics = gfx.surface{ w = 262, h = 266 }
+      graphics = gfx.surface{ w = 262, h = 286 }
     else
       graphics = gfx.surface{ w = math.min(settings.width - 8, 64), h = 18 }
     end
@@ -1202,6 +1220,8 @@ local function draw_graphics(w, said, took, t)
       { "Draw calls", tostring(draws) },
       { "Triangles", count_of(triangles) },
       { "Terrain tiles", ("%s of %s"):format(drawn or "?", chosen or "?") },
+      { "Shadows  H", view.shadow_radius
+          and ("%s, %.1f m"):format(count_of(shadowed or 0), view.shadow_radius / 1024) or "off" },
       { "Presented by", presented },
     }
     local y = 140
@@ -1222,6 +1242,14 @@ local function draw_graphics(w, said, took, t)
                 gpu_ms and ("%.2f"):format(gpu_ms) or "none", took * 1000, processor_ms,
                 presented))
     graphics_said = true
+  end
+  -- The shadows, once each time they are turned on, for the suite.
+  if view.shadow_radius and not shadows_said and (shadowed or 0) > 0 then
+    say(("shadows radius=%.0f texel=%.2f triangles=%d"):format(view.shadow_radius,
+        view.shadow_radius / 1024, shadowed))
+    shadows_said = true
+  elseif not view.shadow_radius then
+    shadows_said = false
   end
 end
 
@@ -1629,7 +1657,7 @@ local function draw_sheet(w)
       s:fill(18, y - 4, sw - 36, 1, LINE)
       s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z throttle \u{b7} B brakes \u{b7} F flaps",
              DIM, nil, sheet_face)
-      s:text(18, y + 22, "V view \u{b7} T time \u{b7} M sound \u{b7} P pause \u{b7} R again \u{b7} F3 graphics",
+      s:text(18, y + 22, "V view \u{b7} T time \u{b7} M sound \u{b7} H shadows \u{b7} P pause \u{b7} R again \u{b7} F3 graphics",
              DIM, nil, sheet_face)
       y = y + 44
       local x = sw - 18
@@ -1803,6 +1831,10 @@ while not w:closed(0) do
       graphics_next = 0
     end
     if f then S.flaps = (S.flaps + 0.5) % 1.5 end
+    if w:pressed(KEY.h) then
+      settings:set("shadows", not settings.shadows)
+      say("shadows " .. (settings.shadows and "on" or "off"))
+    end
     if w:pressed(KEY.m) then
       settings:set("sound", not settings.sound)
       say("sound " .. (settings.sound and "wanted" or "off"))

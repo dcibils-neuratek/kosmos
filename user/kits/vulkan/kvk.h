@@ -65,6 +65,8 @@ struct kvk {
     VkCommandPool pool;
     VkCommandBuffer cmd;
     char device_name[64];       /* "llvmpipe/1.4": to its first space, and the API */
+    int depth_filters;          /* a sampled D32_SFLOAT filters linearly: a shadow
+                                   map's compare then blends four texels */
     /* The device's clock, for a recording's time (`kvk_time_*`): two
      * timestamps, nanoseconds a tick, and the bits a stamp keeps - no pool
      * where the queue keeps no time. */
@@ -177,6 +179,10 @@ struct kvk_pipeline_shape {
                                      * drawn first, behind everything */
     int blend;                      /* laid over what is there by its alpha -
                                      * the 3D Kit's overlays; 0 replaces it */
+    float bias_constant, bias_slope;/* depth pushed away as it is drawn - the
+                                     * 3D Kit's shadow map, so a surface does
+                                     * not shadow itself; 0, none. A `format`
+                                     * of VK_FORMAT_UNDEFINED is depth alone */
 };
 
 int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,

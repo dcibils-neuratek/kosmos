@@ -3,15 +3,10 @@
 // through the view, where each is in the world, and where on the chunk's
 // imagery.
 #version 450
+#extension GL_GOOGLE_include_directive : require
+#include "k3d_view.glsl"
 
-layout(push_constant) uniform View {
-    mat4 clip;          // the world to clip space
-    vec4 eye;           // xyz: the eye, in the world
-    vec4 sun;           // xyz: towards the sun; w: the ambient share
-    vec4 haze;          // rgb: the haze's colour
-    vec4 range;         // x: where haze starts, y: where it is whole
-    vec4 light;         // rgb: the sun's colour (F6a)
-} v;
+layout(push_constant) uniform View { K3D_VIEW_MEMBERS } v;
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;

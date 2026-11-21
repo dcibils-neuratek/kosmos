@@ -184,7 +184,7 @@ static void triangle(const struct triangle *t, const uint8_t colour[3])
     };
     struct kvk_pipeline_shape shape = {
         triangle_vert, sizeof(triangle_vert), triangle_frag, sizeof(triangle_frag), &none,
-        TRIANGLE, TRIANGLE, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_CULL_MODE_NONE, 0, 0,
+        TRIANGLE, TRIANGLE, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_CULL_MODE_NONE, 0, 0, 0, 0,
     };
     if (!kvk_pipeline(&v, &pipeline, layout, &shape) ||
         !kvk_begin(&v)) {
@@ -448,7 +448,7 @@ static int scene_make(struct kvk *v, struct scene *s, VkFormat format, uint32_t 
     };
     struct kvk_pipeline_shape shape = {
         cube_vert, sizeof(cube_vert), cube_frag, sizeof(cube_frag), &input,
-        size, size, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
+        size, size, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0, 0, 0,
     };
     if (!kvk_pipeline(v, &s->pipeline, s->layout, &shape) ||
         !kvk_begin(v)) {
@@ -875,6 +875,16 @@ static void scene_args(lua_State *L, int arg, struct k3d_vk_view *view,
     numbers(L, arg, "haze", view->haze, 3);
     numbers(L, arg, "haze_start", &view->haze_start, 1);
     numbers(L, arg, "haze_end", &view->haze_end, 1);
+    /* Shadows, when the scene names their box (`docs/flight.md`,
+     * *Shadows*): none otherwise, so the scenes before them are drawn as
+     * they were. */
+    lua_getfield(L, arg, "shadow_radius");
+    int shadowed = !lua_isnil(L, -1);
+    lua_pop(L, 1);
+    if (shadowed) {
+        numbers(L, arg, "shadow_radius", &view->shadow_radius, 1);
+        numbers(L, arg, "shadow_centre", view->shadow_centre, 3);
+    }
     lua_getfield(L, arg, "boxes");
     luaL_checktype(L, -1, LUA_TTABLE);
     nboxes = (uint32_t)lua_rawlen(L, -1);
