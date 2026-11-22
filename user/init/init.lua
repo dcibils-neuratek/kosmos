@@ -6780,8 +6780,10 @@ if role == ROLE_INIT then
   --
   -- And the GPU's driver third (`xavier.md` X7), which answers that there
   -- is no GPU on a machine without one - so it is always there to ask.
-  start("the LLM server", ROLE_LLM, { APPFS_EP, MODELS_DISK_EP, CONSOLE_EP, GPU_EP,
-                                      MODELS_WORD and MODELS_EP or nil })
+  --
+  -- (The LLM server is started after the network's address, below: its
+  -- image is looked for on the disk, as the address's settings are.)
+  --
 
   --
   -- **The window server** (`docs/astra-display.md` D3b-2; Diego, 10 October:
@@ -6984,6 +6986,57 @@ if role == ROLE_INIT then
            .. tostring(why))
     end
   end
+
+  --
+  -- **On Vulkan where `/Home/System/LLM` has its image** (`xavier.md` X12,
+  -- V4): the same server with a Vulkan driver linked in, which hands a
+  -- loaded model's whole forward pass to the GPU - Intel's driver's image
+  -- on a machine with an Intel GPU, lavapipe's elsewhere. Where neither is
+  -- there, or one will not load, the server in this image, on the
+  -- processor, with a line saying why.
+  --
+  -- **Here, after the network's address, and not with the other servers**:
+  -- asking `/Home` waits on the disk server, which on a machine whose
+  -- `/Home` is a stick waits for the stick (`usb_home_late`). Asked up
+  -- there, every server after this one waited too, and the stick plugged
+  -- in late was never read. The address's settings are the first thing
+  -- init reads from `/Home`; this is the second.
+  --
+  local llm_caps = { APPFS_EP, MODELS_DISK_EP, CONSOLE_EP, GPU_EP,
+                     MODELS_WORD and MODELS_EP or nil }
+  local llm_id
+
+  if DISKFS_EP and sys.boot("opt/kosmos/llm") ~= "cpu" then
+    local mine = new_namespace()
+
+    mine.mount("/Home", DISKFS_EP, "/Home", "disk")
+
+    local names_here = has_gpu("intel-gpu") and { "llm-anv.elf", "llm-vk.elf" } or { "llm-vk.elf" }
+
+    for _, name in ipairs(names_here) do
+      local file = "/Home/System/LLM/" .. name
+      local attrs = mine.getattr(file)
+
+      if attrs then
+        local region, length = IMAGES.load(mine, file)
+        local why = length
+
+        if region then
+          llm_id, why = sys.spawn_image(region, length, ROLE_LLM, llm_caps, 0)
+        end
+
+        if llm_id then
+          names[llm_id] = "the LLM server"
+          line("init: the LLM server from " .. file)
+        else
+          line("init: the LLM server is the processor's: " .. tostring(why))
+        end
+        break
+      end
+    end
+  end
+
+  if not llm_id then start("the LLM server", ROLE_LLM, llm_caps) end
 
   local _ = audio
   local _net = net

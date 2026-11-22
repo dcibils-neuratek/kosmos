@@ -147,6 +147,14 @@ typedef int64_t llm_product_fn(void *ctx, const struct llm_tensor *w, const uint
                                float *out, size_t out_room);
 typedef int llm_product_done_fn(void *ctx);
 
+/* **A forward pass taken somewhere else** (`docs/xavier.md` X12, the GPU
+ * through Vulkan, `llm_vk.h`): one token through the whole model, its
+ * logits into `m->logits` and `n_past` a position on, as `llm_step` leaves
+ * them; 0, or -1. Given at `llm_forward`, every step is handed to it, a
+ * token at a time; the model's cache is then its own, and nothing the
+ * processor's pass records - a passage, the streams - is kept. */
+typedef int llm_forward_fn(void *ctx, int32_t token);
+
 struct llm_model {
   /* The file. */
   const uint8_t *file;
@@ -216,6 +224,9 @@ struct llm_model {
   /* A product taken somewhere else - the GPU (`llm_gpu.h`) - or NULL. */
   llm_product_fn *product;
   llm_product_done_fn *product_done;
+  /* The whole pass taken somewhere else, or NULL (`llm_forward`). */
+  llm_forward_fn *forward;
+  void *forward_ctx;
   void *product_ctx;
 
   /* Where each token's passage is recorded, `LLM_BATCH` of them, or NULL
@@ -341,6 +352,8 @@ void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t part
  * it begins some of a product's rows, the processor's do the rest, and
  * `done` finishes the ones it began. NULL for the processor alone. */
 void llm_offload(struct llm_model *m, llm_product_fn *product, llm_product_done_fn *done, void *ctx);
+/* Every step handed to `forward` (NULL: the processor's again). */
+void llm_forward(struct llm_model *m, llm_forward_fn *forward, void *ctx);
 
 /*
  * **Which loops multiply the weights** (`docs/xavier.md`, *Settings*). Every

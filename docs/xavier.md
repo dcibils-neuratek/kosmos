@@ -1388,8 +1388,11 @@ the hold changes, and it is decision 1 below:
    cache in F16, the logits read back. The tiny models' answers hold, on
    the Mac and in the gate (`x86-llm-vk`, booting `llm-vk.elf`). **The
    Mac's half built** (`llm_vk_step`; `testing.md` 18.989): Qwen 2.5 0.5B
-   and phi-2 answer as the processor does, every token; Kosmos's half,
-   `llm-vk.elf`, next.
+   and phi-2 answer as the processor does, every token. **Kosmos's half
+   built** (`testing.md` 18.990): `llm-vk.elf` and `llm-anv.elf`
+   installed in `/Home/System/LLM`, init starting the server from the
+   one for the machine's GPU, and `opt/kosmos/llm=cpu` to keep it on the
+   processor; `x86-llm-vk` holds the tiny F16 model's answers there.
 5. **V5, the question in `mul_mm`**: batches of the question's tokens.
    Time to the first word reported in Compare and the Monitor.
 6. **V6, the M700**: `llm-anv.elf` installed, init choosing it, and the

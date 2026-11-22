@@ -43,6 +43,9 @@
 #include "kits/llm/llm_gpu.h"
 #include "kits/compute/compute_core.h"
 #include "gpuproto.h"
+#ifdef LLM_VK
+#include "kits/llm/llm_vk.h"
+#endif
 
 void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep,
                 long gpu_ep);
@@ -385,10 +388,12 @@ static void wake_waiters(bool all)
 
 static void gpu_unload(void);
 static void streams_forget(void);
+static void vk_unload(void);
 
 static void unload(void)
 {
     gpu_unload();                       /* the GPU let go of the weights first */
+    vk_unload();
     for (unsigned i = 0; i < n_blocks; i++) region_drop(&blocks[i]);
 
     n_blocks = 0;
@@ -751,6 +756,76 @@ static void gpu_unload(void)
     if (gpu_began) llm_gpu_forget(&gpu);
 }
 
+/*
+ * **The whole pass on Vulkan** (`docs/xavier.md` X12): in `llm-vk.elf`,
+ * with lavapipe, and `llm-anv.elf`, with Intel's driver, this file is
+ * compiled with `LLM_VK`, and a loaded model's weights and cache go to
+ * the device and every step is handed to `llm_vk_step`. Where the device
+ * will not open or the model will not go up, the processor's pass, and a
+ * line saying why. The plain server, in the system's image, has neither.
+ */
+#ifdef LLM_VK
+static struct kvk vk_dev;
+static struct llm_vk vk_ops;
+static struct llm_vk_model vk_model;
+static int vk_state;                    /* 0 not tried, 1 open, -1 refused */
+static bool vk_holding;
+
+/* The POSIX layer's console (`runtime/posix/fd.c`): Mesa's standard error,
+ * and a panic's last words, are this server's console's lines. */
+void posix_console(long capability);
+
+static int vk_forward(void *ctx, int32_t token)
+{
+    return llm_vk_step(ctx, token);
+}
+
+static void vk_offer(void)
+{
+    if (vk_state == 0) {
+        posix_console(console);
+        if (!kvk_open(&vk_dev, "llm", KVK_COMPUTE)) {
+            say(console, "llm: no Vulkan device: ");
+            say(console, vk_dev.why);
+            say(console, "\n");
+            vk_state = -1;
+            return;
+        }
+        if (!llm_vk_open(&vk_ops, &vk_dev)) {
+            say(console, "llm: Vulkan's pipelines: ");
+            say(console, vk_ops.why);
+            say(console, "\n");
+            kvk_close(&vk_dev);
+            vk_state = -1;
+            return;
+        }
+        vk_state = 1;
+    }
+    if (vk_state != 1) return;
+
+    if (!llm_vk_model_open(&vk_model, &vk_ops, &model.m)) {
+        say(console, "llm: the model stays on the processor: ");
+        say(console, vk_model.why);
+        say(console, "\n");
+        return;
+    }
+    llm_forward(&model.m, vk_forward, &vk_model);
+    vk_holding = true;
+    say(console, "llm: the model on Vulkan, ");
+    say(console, vk_dev.device_name);
+    say(console, "\n");
+}
+
+static void vk_unload(void)
+{
+    if (vk_holding) llm_vk_model_close(&vk_model);
+    vk_holding = false;
+}
+#else
+static void vk_offer(void) {}
+static void vk_unload(void) {}
+#endif
+
 /* One piece of the file; then, when it is all in, the kit's turn. */
 static void load_step(void)
 {
@@ -801,6 +876,7 @@ static void load_step(void)
 
     llm_held_reset(&model.m, &held);
     gpu_offer();
+    vk_offer();
 
     load_done(LLM_OK);
 }

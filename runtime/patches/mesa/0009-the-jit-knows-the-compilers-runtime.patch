@@ -1,0 +1,74 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+The JIT knows the compiler's runtime (testing.md 18.990, 22 November 2026)
+
+0003 turned off LLJIT's search of the process for symbols, since nothing
+on Kosmos is loaded, and said a shader's calls were "defined to it
+(gallivm_kosmos_symbols, below)" - and nothing was ever written below. A
+shader that converts a half float on a processor without F16C (QEMU's
+qemu64) calls libgcc's __extendhfsf2, and the LLM server on lavapipe
+stopped on its first token: "JIT session error: Symbols not found:
+[ __extendhfsf2 ]", then exit(). So the process-symbols JITDylib LLJIT
+links every other one against is Kosmos's own: the half-float
+conversions and the memory calls, from this image.
+
+--- a/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
++++ b/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
+@@ -62,6 +62,45 @@
+ #endif
+ /* else use old RTDyldObjectLinkingLayer (RuntimeDyld backend) */
+ 
++#if defined(__kosmos__)
++/* What a shader may call that is not in it: the compiler's runtime, which
++ * LLVM calls where the processor has no instruction - a half float to a
++ * float and back without F16C - and the memory calls a loop of copies or
++ * stores becomes. This image's own, from libgcc and Kosmos's C library. */
++extern "C" {
++void __extendhfsf2(void);
++void __extendhfdf2(void);
++void __truncsfhf2(void);
++void __truncdfhf2(void);
++}
++
++namespace {
++llvm::Expected<llvm::orc::JITDylibSP>
++kosmos_runtime_symbols(llvm::orc::LLJIT &J)
++{
++   struct { const char *name; void *at; } const runtime[] = {
++      { "__extendhfsf2", (void *)__extendhfsf2 },
++      { "__extendhfdf2", (void *)__extendhfdf2 },
++      { "__truncsfhf2", (void *)__truncsfhf2 },
++      { "__truncdfhf2", (void *)__truncdfhf2 },
++      { "memcpy", (void *)memcpy },
++      { "memmove", (void *)memmove },
++      { "memset", (void *)memset },
++   };
++   auto &ES = J.getExecutionSession();
++   auto &JD = ES.createBareJITDylib("<Kosmos runtime>");
++   llvm::orc::SymbolMap map;
++
++   for (const auto &r : runtime)
++      map[J.mangleAndIntern(r.name)] = llvm::orc::ExecutorSymbolDef(
++         llvm::orc::ExecutorAddr::fromPtr(r.at), llvm::JITSymbolFlags::Exported);
++   if (auto err = JD.define(llvm::orc::absoluteSymbols(std::move(map))))
++      return std::move(err);
++   return &JD;
++}
++}
++#endif
++
+ namespace {
+ 
+ class LPObjectCacheORC : public llvm::ObjectCache {
+@@ -346,8 +385,9 @@
+ #if defined(__kosmos__)
+          /* Nothing on Kosmos is loaded, so there is no process to search
+           * for symbols and no platform's runtime to set up: what a shader
+-          * calls is defined to it (gallivm_kosmos_symbols, below). */
+-         .setLinkProcessSymbolsByDefault(false)
++          * calls outside itself is defined to every JITDylib by the one
++          * linked in their place (kosmos_runtime_symbols, above). */
++         .setProcessSymbolsJITDylibSetup(kosmos_runtime_symbols)
+          .setPlatformSetUp(setUpInactivePlatform)
+ #endif
+ #ifdef USE_JITLINK

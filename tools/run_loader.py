@@ -502,6 +502,7 @@ def main():
         said = None
 
         if CXX:
+            posix_at = len(guest.seen)
             said, _ = run("posixtest", "posixtest:", 180)
 
         posix_said[0] = said if CXX else "not in TinyCC's images"
@@ -520,7 +521,8 @@ def main():
                                 "positioned, scanned, given back, getline, r+, appended, wx "
                                 "refused, ten thousand bytes, fdopen, tmpfile gone, a "
                                 "provided file, the console"),
-              "the POSIX layer's checks in posixtest.elf did not all hold: %r" % said)
+              "the POSIX layer's checks in posixtest.elf did not all hold: %r%s" %
+              (said, "" if said else "; heard after it:\n" + guest.seen[posix_at:][-1500:]))
 
         said = None
 

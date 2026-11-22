@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """What the build installs into /Home/Apps, /Home/System/Apps,
-/Home/System/WebKit, /Home/Fonts and /Home/Developer, as `host:/Home/path`
+/Home/System/WebKit, /Home/System/LLM, /Home/Fonts and /Home/Developer, as `host:/Home/path`
 pairs.
 
     python3 tools/installed.py aarch64 ~/Kosmos/home
@@ -55,6 +55,14 @@ SYSTEM_APPS = "/Home/System/Apps"
 # so it is not looked for beside the program. A `system` package of its own.
 WEBKIT = "/Home/System/WebKit"
 SYSTEM_IMAGES = {"webkit": "webkit.elf"}
+
+# **The LLM server on Vulkan** (`docs/xavier.md` X12, V4): the server's two
+# images with a Vulkan driver linked in - lavapipe's and Intel's - in a
+# folder of their own, which init reads when it starts the server: Intel's on
+# a machine with an Intel GPU, lavapipe's elsewhere, and the system's own
+# server, on the processor, when neither is there. A `system` package.
+LLM = "/Home/System/LLM"
+LLM_IMAGES = ["llm-vk.elf", "llm-anv.elf"]
 
 DATA = {
     "Doom": [("doom1.wad", "doom1.wad")],
@@ -149,6 +157,24 @@ def webkit(arch, apps, staged, objcopy):
     return ["%s:%s/%s" % (here, WEBKIT, inside) for here, inside in mine]
 
 
+def llm(arch, apps, staged, objcopy):
+    """/Home/System/LLM's pairs: the images and the folder's `package.txt`.
+    x86-64 only, as the Vulkan drivers are."""
+    if arch != "x86_64":
+        return []
+
+    import packages
+
+    mine = [(stripped(image, apps, staged, objcopy), image) for image in LLM_IMAGES]
+    manifest = os.path.join(staged, "LLM.package.txt")
+
+    with open(manifest, "w") as f:
+        f.write(packages.manifest(packages.llm_facts(), mine))
+
+    mine.append((manifest, "package.txt"))
+    return ["%s:%s/%s" % (here, LLM, inside) for here, inside in mine]
+
+
 def images_of(program):
     """The images a program's header names: its plain one first, then any
     a GPU has (`-- kosmos: image on intel-gpu k3dvk-anv.elf`, which init
@@ -233,7 +259,7 @@ def pairs(arch, home, apps=None):
 
         out.extend("%s:%s/%s" % (here, guest, inside) for here, inside in mine)
 
-    return out + webkit(arch, apps, staged, objcopy)
+    return out + webkit(arch, apps, staged, objcopy) + llm(arch, apps, staged, objcopy)
 
 
 def fonts():

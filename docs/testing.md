@@ -41619,3 +41619,119 @@ the distances between tokens, and it moved phi-2's logits from 0.058 to
 
 **The gate** (`make test`, what the LLM Kit reaches): 159 of 159 in
 824 s. `host-llmvk` is 24 s of it, run beside the rest.
+
+## 18.990 The LLM server on Vulkan in Kosmos (Xavier on Vulkan, V4, Kosmos's half)
+
+**In short:** the LLM server can now run a model's whole forward pass on a
+Vulkan device inside Kosmos. `llm.c` is compiled a second time with
+`LLM_VK` into two installed images in `/Home/System/LLM`: `llm-vk.elf`
+with lavapipe, `llm-anv.elf` with Intel's driver. init starts the server
+from one of them when it is there, and the processor's server when it is
+not. In QEMU, the tiny phi-2's F16 answers on lavapipe are the processor's
+byte for byte. Two faults turned up on the way, neither of them the
+LLM's, and the gate's choice of what to run had a hole.
+
+**What was built.**
+
+- `user/servers/llm.c`, under `LLM_VK`: a loaded model goes to the
+  device (`llm_vk_model_open`), and the LLM Kit's new hook,
+  `llm_forward`, hands every step of `llm_step_batch` to `llm_vk_step`.
+  If the device will not open, or the model will not go up, the model
+  stays on the processor and the console says why.
+- `Makefile`: `llm-vk.elf` and `llm-anv.elf`, linked as Quake III's two
+  images are, each checked to hold `llm_vk_step`. The system's image is
+  checked not to hold it.
+- `tools/installed.py` and `tools/packages.py`: `/Home/System/LLM`, a
+  `system` package of its own (`llm`).
+- `user/init/init.lua`: starting the LLM server reads `/Home/System/LLM`.
+  It takes `llm-anv.elf` on a machine with an Intel GPU, and `llm-vk.elf`
+  otherwise. Where neither is there, it starts the server in its own
+  image. `opt/kosmos/llm=cpu` forces the processor, as a way out. It
+  does this after the network's address, not with the other servers
+  (the third fault, below).
+
+**The suite, `x86-llm-vk`** (`tools/run_llmvk.py`). It puts `llm-vk.elf`
+in `/Home/System/LLM`, and the tiny phi-2 in F16 and Q4_0 in
+`/Home/Models`, then asks `/Running/llm` through `llm.lua`:
+
+- init starts the server from the image and says so;
+- a loaded model goes onto llvmpipe;
+- every F16 answer, four prompts of 12 tokens, is the kit's own on the
+  Mac byte for byte (`llm_answer`);
+- every Q4_0 answer is a full answer, and ready. Q4_0 is not held byte
+  for byte: the processor quantises a product's input to Q8_0 and the
+  GPU does not, and the tiny model's near ties fall the other way at
+  steps 14 and 17 (18.989);
+- ten answers give their regions back.
+
+**Its control** boots the same disk with `opt/kosmos/llm=cpu`. init must
+not start the server from the image, and no model may say it is on
+Vulkan. The F16 answers must still be the kit's, so the first boot's
+lines are the image's doing. 20 checks pass, in 128 s alone. Q4_0 is
+asked one prompt, and the regions five answers: with four Q4_0 prompts
+and ten, the suite ran past 300 s under the gate's load.
+
+**The first fault: a panic nobody heard.** On the first token the server
+ended with code 70, which is `panic()`, and said nothing. A panic's last
+words go through the POSIX layer when an image links it
+(`posix_last_words`), and the POSIX layer had been given no console. The
+server now hands it its own (`posix_console`) before Vulkan opens. Mesa's
+standard error goes to the same console.
+
+**The second fault: the JIT did not know the compiler's runtime.** Heard,
+it said:
+
+```
+JIT session error: Symbols not found: [ __extendhfsf2 ]
+Failed to materialize symbols: { (cs1_variant0_17, { cs_co_variant, cs_variant }) }
+panic: exit() was called: there is nothing to exit to
+```
+
+QEMU's `qemu64` has no F16C, so LLVM turns each half-float conversion in
+the cache's shaders into a call to libgcc. Mesa's patch 0003 had turned
+off LLJIT's search of the process for symbols, and said a shader's calls
+were "defined to it (gallivm_kosmos_symbols, below)". Nothing was ever
+written below. Quake III and the 3D Kit had never needed a call. Patch
+0009 gives LLJIT a process-symbols JITDylib that every other one links
+against: libgcc's four half-float conversions, and `memcpy`, `memmove`
+and `memset`.
+
+**The third fault, mine: init waited on the disk at boot.** init first
+looked for the image where it starts the other servers. Asking `/Home`
+waits on the disk server, and with `opt/kosmos/home=usb` the disk server
+waits for its stick. So every server init starts after that point waited
+too, and in `x86-usb-1`'s `usb_home_late` a stick plugged in five seconds
+after the driver started was named and never read. That failed in the
+gate and failed again on its own. The look now comes after the network's
+address, which already reads its settings from `/Home` at boot, so it
+adds no wait in front of anything. `usb_home_late` passes, 4 checks.
+
+**The gate's hole.** `owned()` in `tools/gate.py` takes the paths only a
+library suite stands on out of the whole tree's fingerprint. It took
+every path a watching suite named, which included `user/lib`,
+`user/drivers`, `user/kits/gfx`, `user/kits/window`, the window manager,
+`net.c`, `audio.c` and `tiles.c`. So a change to `ui.lua` ran only the
+few suites that named `user/lib`, and none of the suites that watch
+nothing. Its comment promised only "its test kit and its `run_*.py`". It
+now takes only what no system image carries: `tools/`, installed
+applications' folders, the models the suites draw, and the test kits
+(`only_tested`). `x86-llm-vk` watches nothing, for the same reason: the
+server and the LLM Kit are the system image's too.
+
+**The gate** (`make test`, the whole tree, as the LLM Kit, init and the
+gate's own choice reach everything). First run: 157 of 162 in 864 s.
+`x86-llm-vk` ran past its 300 s and was trimmed. `rebuilds` found two
+objects a stray build of mine had left with the wrong flags; they were
+deleted and rebuilt. `x86-usb-1` was the third fault above.
+`x86-flight-land` and `x86-jetski` (398 Hz heard for 440) passed alone.
+Second run: 159 of 162 in 989 s. `x86-quicklook` and `x86-display-4`
+passed alone. `x86-loader`'s posixtest gave no answer, beside the others
+twice, and passed alone, 24 checks: the flake of 18.903 and 18.983,
+still open on the roadmap. Its failure now says what the guest said
+after the command, rather than `None`.
+
+**The gate is past its ten minutes**, at 989 s, and this fix is why it
+runs more often: a change to `user/lib` or the window manager now runs
+the whole tree, as `CLAUDE.md` says it should. The slowest are Flight's,
+`x86-flight-747` 560 s and `x86-flight` 494 s, then `x86-cafesa3d-2`
+492 s; decision 6zp, the budget, is Diego's.

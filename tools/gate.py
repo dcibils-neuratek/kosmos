@@ -46,6 +46,7 @@ Usage: gate.py [--jobs N] [--at-once N] [--arm] [--all] [--only NAME,...]
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -156,13 +157,24 @@ def image_docs():
     raise SystemExit("FAIL: the Makefile names no IMAGE_DOCS - tools/gate.py reads it")
 
 
+def only_tested(path):
+    """Whether `path` is something no system image carries: a script on the
+    Mac, an installed application's folder, a model the suites draw, or a
+    test kit (`user/kits/<name>test`, `vkcts`)."""
+    return (path.startswith(("tools/", "user/installed/", "assets/models"))
+            or re.match(r"user/kits/(\w*test|vkcts)(/|$)", path) is not None)
+
+
 def owned(suites):
     """What only the libraries' suites stand on: each one's watch, less what
-    is shared, less any script a system suite runs itself."""
+    is shared, less any script a system suite runs itself - and only what no
+    system image carries. A watch naming `user/lib` or the window manager
+    used to take them out of the whole tree's fingerprint, so a change to
+    `ui.lua` ran only the few suites that named it (`testing.md` 18.990)."""
     shared = set(RUNTIME + WEBKIT + W5)
     run = {a for s in suites if not s.watch for a in s.cmd if a.startswith("tools/")}
     return sorted({p for s in suites if s.watch for p in s.watch
-                   if p not in shared and p not in run})
+                   if p not in shared and p not in run and only_tested(p)})
 
 
 def system_print(suites):
@@ -333,6 +345,13 @@ SUITES = [
     # forms, every answer from /Running/llm the kit's own byte for byte, the
     # refusals, a stop, and every answer's region given back.
     Suite("x86-llm", ["python3", "tools/run_llm.py", X86], x86=True),
+    # And on Vulkan (`docs/xavier.md` X12, V4): `llm-vk.elf` in
+    # /Home/System/LLM, started by init, every model on lavapipe, F16's
+    # answers the kit's own byte for byte; the control boots with llm=cpu.
+    # No `watch`: the server and the LLM Kit are the system image's too, and
+    # a watched path leaves the whole tree's fingerprint (`owned`).
+    Suite("x86-llm-vk", ["python3", "tools/run_llmvk.py", X86,
+                         "build/user-x86_64-test/apps"], x86=True),
     # Xavier's window (`docs/xavier.md` X4): a conversation asked as a person
     # would, its answers the kit's own across it, a follow-up kept.
     Suite("x86-xavier", ["python3", "tools/run_assistant.py", X86], x86=True),

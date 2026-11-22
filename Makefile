@@ -5125,6 +5125,54 @@ $(UBUILD)/apps/quake3-anv.elf: $(USER_OBJS) $(Q3E_OBJS) $(POSIX_OBJS) $(MESA_DIR
 	    || { echo "apps: quake3-anv.elf does not have Quake III"; rm -f $@; exit 1; }
 
 #
+# **The LLM server on Vulkan** (`docs/xavier.md` X12, V4): the same server,
+# `llm.c` compiled a second time with `LLM_VK`, so a loaded model's whole
+# forward pass is handed to `llm_vk.c` - llama.cpp's shaders - on a Vulkan
+# device. Two images, as Quake III's: `llm-vk.elf` with lavapipe, which QEMU
+# and a machine without an Intel GPU run, and `llm-anv.elf` with Intel's
+# driver. Installed in `/Home/System/LLM` (`tools/installed.py`), and chosen
+# by init when it starts the server; the system's image keeps the plain one.
+LLMVK_SERVER_OBJ := $(UBUILD)/user/servers/llm-vk.c.o
+LLMVK_KIT_OBJ := $(UBUILD)/user/kits/llm/llm_vk.c.o
+LLMVK_OBJS := $(filter-out $(UBUILD)/user/servers/llm.c.o,$(USER_OBJS)) $(LLMVK_SERVER_OBJ) \
+              $(LLMVK_KIT_OBJ) $(KVK_OBJS)
+LLMVK_IMAGES := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/llm-vk.elf $(UBUILD)/apps/llm-anv.elf)
+
+$(LLMVK_SERVER_OBJ): user/servers/llm.c user/kits/llm/llm_vk.h user/kits/vulkan/kvk.h \
+        $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -DLLM_VK -isystem build/mesa/tree/include -include lua/kosmos/kosmos_lua.h \
+	    -MMD -MP -c $< -o $@
+
+$(LLMVK_KIT_OBJ): user/kits/llm/llm_vk.c user/kits/llm/llm_vk.h user/kits/llm/llm_core.h \
+        user/kits/vulkan/kvk.h $(LLMVK_HEADER) $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -I $(dir $(LLMVK_HEADER)) \
+	    -c $< -o $@
+
+$(UBUILD)/apps/llm-vk.elf: $(LLMVK_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                           $(LLVM_DIR)/.built $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(LLMVK_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/lavapipe.txt $(LLVM_DIR)/lib/libLLVM*.a \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T llm_vk_step$$' \
+	    || { echo "apps: llm-vk.elf does not have the forward pass on Vulkan"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T llm_vk_step$$' \
+	    || { echo "apps: the system's image has the LLM's Vulkan pass in it"; rm -f $@; exit 1; }
+
+$(UBUILD)/apps/llm-anv.elf: $(LLMVK_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                            $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(LLMVK_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/anv.txt \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T llm_vk_step$$' \
+	    || { echo "apps: llm-anv.elf does not have the forward pass on Vulkan"; rm -f $@; exit 1; }
+
+#
 # **`anv`'s test image** (`docs/gpu3d.md` G7a): `anvtest.c` with Intel's
 # Vulkan driver linked in as `lavapipe` is in `vulkantest.elf` - its
 # object and archives the list `mesa_build.py` read from `anv`'s own link
@@ -5234,7 +5282,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
             $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
-            $(UBUILD)/apps/k3dvk.elf $(K3DVK_ANV_IMAGE) $(Q3E_IMAGES) \
+            $(UBUILD)/apps/k3dvk.elf $(K3DVK_ANV_IMAGE) $(Q3E_IMAGES) $(LLMVK_IMAGES) \
             $(WEBCORE_IMAGE) $(VKCTS_IMAGE) $(ANVTEST_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \

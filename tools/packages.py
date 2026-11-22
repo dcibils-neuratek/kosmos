@@ -153,6 +153,15 @@ def webkit_facts():
             "into": I.WEBKIT, "icon": "", "needs": "", "depends": ""}
 
 
+def llm_facts():
+    """The LLM server on Vulkan's facts (`installed.LLM`): images only, no
+    program, so no header to read them from."""
+    return {"version": version(), "build": build_name(), "protocols": stamp(),
+            "name": "llm", "title": "LLM on Vulkan", "kind": "system",
+            "about": "The language model server's forward pass on the GPU",
+            "into": I.LLM, "icon": "", "needs": "", "depends": ""}
+
+
 def manifest(facts, pairs):
     """`package.txt` for `pairs` of (here, path inside): the facts, and a
     line a file. The same text a package carries and a stick's folder does,
@@ -207,9 +216,17 @@ def main():
     # or /Home/System/Apps for Kosmos's own. Its `package.txt` is made again
     # by `make`, so the one a stick's folder carries is left out.
     webkit = []
+    llm = []
 
     for pair in I.pairs("x86_64", home):
         here, guest = pair.split(":", 1)
+
+        if guest.startswith(I.LLM + "/"):
+            inside = guest[len(I.LLM) + 1:]
+
+            if inside != "package.txt":
+                llm.append((here, inside))
+            continue
 
         # Kosmos's WebKit: its folder is the package's, with no folder above.
         if guest.startswith(I.WEBKIT + "/"):
@@ -233,6 +250,9 @@ def main():
 
     if webkit:
         made.append(make(webkit_facts(), "WebKit", webkit))
+
+    if llm:
+        made.append(make(llm_facts(), "LLM", llm))
 
     dev = [(p.split(":", 1)[0], p.split(":", 1)[1][len("/Home/Developer/"):])
            for p in I.developer("x86_64")]

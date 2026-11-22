@@ -1313,6 +1313,12 @@ static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct
   if (begun > 0 && m->product_done(m->product_ctx) != 0) product_rows(&p, 0, p.first);
 }
 
+void llm_forward(struct llm_model *m, llm_forward_fn *forward, void *ctx)
+{
+  m->forward = forward;
+  m->forward_ctx = ctx;
+}
+
 void llm_offload(struct llm_model *m, llm_product_fn *product, llm_product_done_fn *done, void *ctx)
 {
   m->product = product;
@@ -1785,6 +1791,12 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
   if (n == 0 || n > LLM_BATCH || m->n_past + n > m->n_ctx) return -1;
   for (uint32_t t = 0; t < n; t++)
     if (tokens[t] < 0 || (uint32_t)tokens[t] >= m->n_vocab) return -1;
+
+  if (m->forward) {
+    for (uint32_t t = 0; t < n; t++)
+      if (m->forward(m->forward_ctx, tokens[t]) != 0) return -1;
+    return 0;
+  }
 
   const uint32_t E = m->n_embd, D = m->head_dim, F = m->n_ff, KV = m->kv_dim;
   const int qwen = m->kind == LLM_ARCH_QWEN2;
