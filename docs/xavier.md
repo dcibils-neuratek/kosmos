@@ -1396,6 +1396,9 @@ the hold changes, and it is decision 1 below:
 
 ### Decisions that are Diego's (X12)
 
+**Taken on 22 November 2026**, all three as recommended - Diego: "ok with
+your recommendations on xaavier", then "go ahead".
+
 1. **The hold**: answers that agree with the processor's for 32 tokens,
    with each operation within llama.cpp's bounds *(recommended)*, instead
    of X7's to-the-bit. To the bit is not possible with shaders written for

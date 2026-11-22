@@ -778,8 +778,8 @@ Vulkan or OpenCL. It needs threads (`threads.md` 4-8), AVX2 through
 Diego's, at the end of the document. The mockup and the diagram follow
 them.
 
-**Xavier on Vulkan, X12 - ASKED on 22 November 2026, designed, waiting
-for Diego's three decisions** (Diego: "do Xavier with gpu support so llm
+**Xavier on Vulkan, X12 - AGREED on 22 November 2026, every recommendation
+taken ("ok with your recommendations on xaavier")** (Diego: "do Xavier with gpu support so llm
 will be much faster. Not sure if you can port llama cpp vulkan support or
 you can design and build your own"). Recommended: our own backend in the
 LLM Kit (`llm_vk.c`), with llama.cpp's MIT compute shaders compiled to
