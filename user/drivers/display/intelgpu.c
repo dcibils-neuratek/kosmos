@@ -49,6 +49,7 @@ static unsigned long irq_count;
 static long mocs_console;                   /* defined below, where it is set */
 static void irq_say(const char *what);
 static void rps_up(long console);
+static void mocs_program(long console);
 
 static uint32_t reg(uintptr_t regs, uint32_t offset)
 {
@@ -1079,7 +1080,6 @@ struct engine {
     bool              own_ran;
     int               own_tail_at, own_control_at;
     uint32_t          running;          /* whose context it was given: 0 the driver's, or a program's id */
-    uint32_t          last;             /* whose ran last - so whose state the engine holds - or ~0u */
     unsigned          turn;             /* the program's context looked at first next time */
 
     /* **The engine's default state** (G6e, i915's `engine->default_state`):
@@ -1166,6 +1166,8 @@ static bool el_enable(struct engine *e)
     }
 
     if (e->render) {
+        mocs_program(mocs_console);
+
         const unsigned listed = sizeof(intelgpu_wa_whitelist) / sizeof(intelgpu_wa_whitelist[0]);
 
         for (i = 0; i < IGPU_NONPRIV_SLOTS; i++) {
@@ -1230,7 +1232,6 @@ static uint32_t engine_start(struct engine *e)
      */
     e->sent = 0;
     e->open = false;
-    e->last = ~0u;
 
     if (!el_enable(e)) {
         return GPU_ERR_NO_RING;
@@ -1280,27 +1281,28 @@ static uint32_t engine_start(struct engine *e)
 
 /*
  * **A context's image, ready to be submitted** (G6d, G6e). The first time:
- * laid out afresh with its restore inhibited, as a context never run is -
- * or, for a program's, the engine's default state copied in and restored,
- * so it begins from nothing another context left. After that: the image
- * the engine saved when it went idle, with only its tail and its context
- * control written - restored when another context ran in between, and
- * inhibited when this one was the last, whose state the engine still holds
- * (`igpu_lrc_inhibit_control`). Only ever while the engine is idle: the
- * image is the engine's to write until it says it has gone idle, and
- * writing the tail into it while it is saving would lose the tail.
+ * the engine's default state copied in and restored - the driver's own and
+ * a program's alike - so it begins from nothing another context left and
+ * from nothing the GT lost; only the recording of that default is laid out
+ * with its restore inhibited, as i915's is. After that: the image the
+ * engine saved when it went idle, with its tail written and **always
+ * restored** (`igpu_lrc_again`). What the engine held is not trusted: a GT
+ * let go between two submissions comes back at its reset defaults, and an
+ * inhibited restore then saves those over the image for good - no L3, none
+ * of the workarounds (`testing.md` 18.994). Only ever while the engine is
+ * idle: the image is the engine's to write until it says it has gone idle,
+ * and writing the tail into it while it is saving would lose the tail.
  */
 static bool image_ready(struct engine *e, volatile uint32_t *image, bool *ran, int *tail_at,
-                        int *control_at, bool same, bool from_default, const struct igpu_lrc_init *in)
+                        int *control_at, bool from_default, const struct igpu_lrc_init *in)
 {
     static uint32_t state[1024];
     unsigned i, pages = e->render ? IGPU_LRC_PAGES_RENDER : IGPU_LRC_PAGES_OTHER;
     bool restore = from_default && e->golden != NULL;
 
     if (*ran) {
-        image[IGPU_LRC_STATE_PAGE * 1024u + (unsigned)*tail_at] = in->tail;
-        image[IGPU_LRC_STATE_PAGE * 1024u + (unsigned)*control_at] =
-            same ? igpu_lrc_inhibit_control() : igpu_lrc_restore_control();
+        igpu_lrc_again(image + IGPU_LRC_STATE_PAGE * 1024u, (unsigned)*tail_at, (unsigned)*control_at,
+                       in->tail);
         return true;
     }
 
@@ -1409,7 +1411,7 @@ static void golden_capture(struct engine *e)
     in.tail = n * 4u;
     in.pml4 = AP.pt.pml4_phys;
 
-    if (image_ready(e, image, &ran, &tail_at, &control_at, false, false, &in)) {
+    if (image_ready(e, image, &ran, &tail_at, &control_at, false, &in)) {
         el_submit(e, image_gtt, 3u);
         e->running = 0;
 
@@ -1424,7 +1426,6 @@ static void golden_capture(struct engine *e)
         }
 
         e->active = false;
-        e->last = ~0u;
     }
 
     if (idle && (e->golden = malloc(pages * 4096u)) != NULL) {
@@ -1470,15 +1471,14 @@ static void el_go(struct engine *e)
     in.tail = e->tail * 4u;
     in.pml4 = AP.pt.pml4_phys;
 
-    if (!image_ready(e, e->image, &e->own_ran, &e->own_tail_at, &e->own_control_at, e->last == 0,
-                     false, &in)) {
+    if (!image_ready(e, e->image, &e->own_ran, &e->own_tail_at, &e->own_control_at, true,
+                     &in)) {
         return;
     }
 
     el_submit(e, e->image_gtt, e->render ? 1u : 2u);
     e->own_ran = true;
     e->running = 0;
-    e->last = 0;
     e->sent = e->tail;
 }
 
@@ -1504,7 +1504,7 @@ static void hw_go(struct engine *e, uint32_t id)
 
     bool fresh = !h->ran;
 
-    if (!image_ready(e, h->image, &h->ran, &h->tail_at, &h->control_at, e->last == id, true, &in)) {
+    if (!image_ready(e, h->image, &h->ran, &h->tail_at, &h->control_at, true, &in)) {
         return;
     }
 
@@ -1522,7 +1522,6 @@ static void hw_go(struct engine *e, uint32_t id)
     h->ran = true;
     h->sent = h->tail;
     e->running = id;
-    e->last = id;
 }
 
 /* A program's context on this engine with work in its ring, the one after
@@ -1671,7 +1670,6 @@ static void engine_reset(struct engine *e)
     }
 
     e->resets++;
-    e->last = ~0u;                          /* the engine holds nobody's state now */
 
     (void)el_enable(e);
 
@@ -2984,14 +2982,14 @@ static bool run_surface(volatile uint32_t *ss, const struct buffer *b, uint32_t 
         ss[3] = b->pitch - 1u;
     }
 
-    /* MOCS index 2, write-back in the LLC and uncached in the GPU's L3
-     * (`surface_mocs`), where they had been uncached in both. The LLC is
+    /* The driver's own MOCS index, write-back in the LLC and uncached in
+     * the GPU's L3 (`surface_mocs`), where they had been uncached in both. The LLC is
      * kept in step with the processor's caches, so what it wrote is what
      * the kernel reads and what the kernel wrote is what it reads after the
      * fence. The L3 is not, and caching there as well bought Cafesa3D's
      * tracer nothing - 132 ms a pass either way - so it stays out
      * (`testing.md` 18.700). */
-    ss[1] = (2u << 1) << 24;
+    ss[1] = (IGPU_MOCS_OWN << 1) << 24;
     ss[7] = (4u << 25) | (5u << 22) | (6u << 19) | (7u << 16);   /* R, G, B, A */
     ss[8] = b->gtt;
     return true;
@@ -3007,8 +3005,6 @@ static bool run_surface(volatile uint32_t *ss, const struct buffer *b, uint32_t 
  * nothing while there is no work. Said once, with what the GT then reads.
  */
 static bool rps_asked;
-static bool mocs_done;
-static void mocs_program(long console);
 
 static void rps_up(long console)
 {
@@ -3087,13 +3083,6 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
     }
 
     rps_up(mocs_console);
-
-    /* The cache controls a run's surfaces name, programmed here too: the
-     * 3D path did it, and a machine that never drew had them as a reset
-     * leaves them. */
-    if (!mocs_done) {
-        mocs_program(mocs_console);
-    }
 
     if ((error = engine_start(&RCS)) != GPU_OK) {
         return error;
@@ -3295,10 +3284,6 @@ static uint32_t runs(const struct gpu_runs *q, struct gpu_reply *rep)
         return GPU_ERR_NO_WAKE;
     }
 
-    if (!mocs_done) {
-        mocs_program(mocs_console);
-    }
-
     rps_up(mocs_console);
 
     if ((error = engine_start(&RCS)) != GPU_OK) {
@@ -3472,38 +3457,28 @@ static volatile uint32_t *rs_batch;
 static uint32_t rs_batch_gtt;
 
 /*
- * **The render engine's cache controls, as i915 leaves them** (7d): every
- * MOCS field in the batches names index 1, "as the page table says", which
- * is what the blitter does without being told - and a reset does not leave
- * index 1 so. Said before and after, once.
+ * **The render engine's cache controls, as i915 leaves them** (7d), and
+ * index 3 the driver's own (`igpu_mocs_l3`): at every enable of the render
+ * engine, as i915's `intel_mocs_init_engine`, since a reset does not leave
+ * them so. They were programmed once, so a hung engine's reset left every
+ * program after it with the hardware's. Said before and after.
  */
-static bool mocs_done;
-
 static void mocs_program(long console)
 {
     struct say_line line;
     uint32_t i, before0 = reg(G.regs, IGPU_RCS_MOCS0), before1 = reg(G.regs, IGPU_RCS_MOCS0 + 4u),
              l3before = reg(G.regs, IGPU_LNCFCMOCS0);
 
-    for (i = 0; i < 62u; i++) {
-        uint32_t v = i == 0 ? IGPU_MOCS_UNCACHED : i == 2 ? IGPU_MOCS_CACHED : IGPU_MOCS_PTE;
-
-        wreg(IGPU_RCS_MOCS0 + i * 4u, v);
+    for (i = 0; i < IGPU_MOCS_ENTRIES; i++) {
+        wreg(IGPU_RCS_MOCS0 + i * 4u, igpu_mocs_llc(i));
     }
 
-    for (i = 0; i < 31u; i++) {
-        /* Entry 2's L3 half - the low half of the second register - kept
-         * out of the GPU's L3 (7d experiment): it is the sampler's, and the
-         * L3 is not kept in step with the processor's writes. */
-        uint32_t lo = i == 0 || i == 1 ? IGPU_L3_UC : IGPU_L3_WB;
-        uint32_t hi = IGPU_L3_WB;
-
-        wreg(IGPU_LNCFCMOCS0 + i * 4u, lo | hi << 16);
+    for (i = 0; i < IGPU_MOCS_ENTRIES / 2u; i++) {
+        wreg(IGPU_LNCFCMOCS0 + i * 4u, igpu_mocs_l3(2u * i) | igpu_mocs_l3(2u * i + 1u) << 16);
     }
 
-    mocs_done = true;
     say_begin(&line);
-    say_text(&line, "intelgpu: the render engine's MOCS programmed as i915's; index 0 was ");
+    say_text(&line, "intelgpu: the render engine's MOCS programmed; index 0 was ");
     say_hex(&line, before0, 8);
     say_text(&line, ", 1 ");
     say_hex(&line, before1, 8);
@@ -3515,6 +3490,8 @@ static void mocs_program(long console)
     say_hex(&line, reg(G.regs, IGPU_RCS_MOCS0 + 4u), 8);
     say_text(&line, ", L3 ");
     say_hex(&line, reg(G.regs, IGPU_LNCFCMOCS0), 8);
+    say_text(&line, " ");                   /* 2's and 3's */
+    say_hex(&line, reg(G.regs, IGPU_LNCFCMOCS0 + 4u), 8);
     say_send(console, &line);
 }
 
@@ -3527,10 +3504,6 @@ static uint32_t render_state(void)
 
     if (rs_done) {
         return GPU_OK;
-    }
-
-    if (!mocs_done) {
-        mocs_program(mocs_console);
     }
 
     if ((error = engine_start(&RCS)) != GPU_OK) {
@@ -3708,13 +3681,13 @@ struct gpu_picture {
  * not the LLC, and pixels the render engine left there were not shown -
  * nor seen by the window server, whose mapping of the screen is uncached,
  * which read 2% of a frame's pixels as the frame before. Anything else,
- * index 2 - write-back in the LLC, which the processor's caches are kept in
- * step with, so the sampler reads what the compositor wrote a moment ago
+ * the driver's own index - write-back in the LLC and out of the L3: the
+ * processor's caches are kept in step with the LLC and not the L3, so the sampler reads what the compositor wrote a moment ago
  * and the compositor what the render engine drew.
  */
 static uint32_t surface_mocs(const struct gpu_picture *p)
 {
-    return (p->scanout ? 0u : 2u) << 1;
+    return (p->scanout ? 0u : IGPU_MOCS_OWN) << 1;
 }
 
 static void put_float(volatile uint32_t *at, float f)

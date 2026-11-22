@@ -560,12 +560,14 @@ so `lavapipe` is built for both.
        ring, image, fence page and page table, taking turns after the
        driver's own work. Elsewhere, the **stand-in** runs a batch's `MI_`
        commands on the processor through the same page table.
-     - **Kept across runs**: an image is restored when another context ran
-       in between, and its restore is inhibited when the same one ran last,
-       since the engine still holds its state. Restoring the render
-       engine's 22 pages cost 88 us a submission.
-     - **The default state**: a new program's context begins from the
-       engine's default state, recorded once as the engine starts (i915's
+     - **Kept across runs**: an image is restored every time it runs
+       again. Until 18.994 its restore was inhibited when the same one ran
+       last, on the grounds that the engine still held its state, to save
+       what was measured as 88 us a submission. The engine does not hold it
+       across the GT's sleep, and saved its reset defaults over the image:
+       no L3 and none of the workarounds. The restore costs about 10 us.
+     - **The default state**: a new context, the driver's own included
+       (since 18.994), begins from the engine's default state, recorded once as the engine starts (i915's
        `default_state`). Without it, the M700 showed one program's
        registers in the next one's first run.
      - **The fence page** is write-back, so it can be handed read-only.

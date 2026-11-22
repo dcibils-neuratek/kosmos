@@ -38,6 +38,17 @@ void llm_trace(const char *name, uint32_t layer, const float *x, uint32_t n);
 #define TRACE(name, layer, x, n) ((void)0)
 #endif
 
+/*
+ * **The processor without its rounding**, compiled in only for the test
+ * that holds the GPU to it (`-DLLM_UNROUNDED`, `tools/test_llmvk.c`;
+ * `docs/xavier.md` X12's decision 1): the GPU's products take their input
+ * as floats, so what they are held to does too, and llama.cpp's arithmetic
+ * stays what every other build does. `llm_unrounded` is the test's switch.
+ */
+#ifdef LLM_UNROUNDED
+extern int llm_unrounded;
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Half precision                                                      */
 /* ------------------------------------------------------------------ */
@@ -1211,6 +1222,48 @@ struct product {
   uint64_t first;                /* the rows before it are another's (X7 G5) */
 };
 
+#ifdef LLM_UNROUNDED
+static void embedding_row(const struct llm_tensor *t, uint32_t row, float *out);
+
+#define UNROUNDED_COLS 32768
+
+typedef float f32x4 __attribute__((vector_size(16)));
+typedef double f64x4 __attribute__((vector_size(32)));
+
+/* The same rows, each as floats and met by the input as it is: in double,
+ * four lanes, the tail one at a time. */
+static void unrounded_rows(const struct product *p, uint64_t r0, uint64_t r1)
+{
+  const uint64_t cols = p->w->ne[0];
+  float row[UNROUNDED_COLS];
+
+  if (cols > UNROUNDED_COLS) __builtin_trap();
+
+  for (uint64_t r = r0; r < r1; r++) {
+    embedding_row(p->w, (uint32_t)r, row);
+
+    for (uint32_t t = 0; t < p->n; t++) {
+      const float *x = p->x + t * p->x_room;
+      f64x4 acc = { 0 };
+      uint64_t c = 0;
+
+      for (; c + 4 <= cols; c += 4) {
+        f32x4 a, b;
+
+        __builtin_memcpy(&a, row + c, 16);
+        __builtin_memcpy(&b, x + c, 16);
+        acc += __builtin_convertvector(a, f64x4) * __builtin_convertvector(b, f64x4);
+      }
+
+      double sum = acc[0] + acc[1] + acc[2] + acc[3];
+
+      for (; c < cols; c++) sum += (double)row[c] * x[c];
+      p->out[t * p->out_room + r] = p->b ? (float)sum + p->b[r] : (float)sum;
+    }
+  }
+}
+#endif
+
 /* Rows `r0` up to `r1` of a product, for every input. */
 static void product_rows(const struct product *p, uint64_t r0, uint64_t r1)
 {
@@ -1219,6 +1272,13 @@ static void product_rows(const struct product *p, uint64_t r0, uint64_t r1)
   const float *b = p->b;
   llm_dot4_fn *four = w->type == LLM_Q8_0 ? m->dot4_q8_0 : w->type == LLM_Q4_0 ? m->dot4_q4_0 : NULL;
   const uint64_t row_bytes = w->type == LLM_Q8_0 ? w->ne[0] / LLM_QK * 34 : w->ne[0] / LLM_QK * 18;
+
+#ifdef LLM_UNROUNDED
+  if (llm_unrounded && (w->type == LLM_Q6_K || w->type == LLM_Q4_0 || w->type == LLM_Q8_0)) {
+    unrounded_rows(p, r0, r1);
+    return;
+  }
+#endif
 
   /* Q6_K: each input's Q8_K, made by `matmul`. */
   if (w->type == LLM_Q6_K) {

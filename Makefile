@@ -2728,7 +2728,7 @@ $(LLMVK_HEADER): tools/vkshaders.py $(LLMVK_GOT)
 
 $(HOSTDIR)/test_llmvk: tools/test_llmvk.c user/kits/llm/llm_vk.c user/kits/llm/llm_vk.h user/kits/llm/llm_core.h user/kits/vulkan/kvk.c user/kits/vulkan/kvk.h $(LLMVK_HEADER) $(LLM_KIT_SRCS)
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $(LLM_HOST_FLAGS) -Iuser -Iuser/kits/llm -I$(dir $(LLMVK_HEADER)) \
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -DLLM_UNROUNDED -pthread $(LLM_HOST_FLAGS) -Iuser -Iuser/kits/llm -I$(dir $(LLMVK_HEADER)) \
 	        -isystem build/mesa/tree/include -o $@ tools/test_llmvk.c user/kits/llm/llm_vk.c \
 	        user/kits/vulkan/kvk.c $(LLM_KIT_SRCS) -L$(LVP_LIB) -lvulkan_lvp -Wl,-rpath,$(LVP_LIB) -lm
 
@@ -2752,6 +2752,9 @@ host-llmvk-check: $(HOSTDIR)/test_llmvk
 	$(HOSTDIR)/test_llmvk --batch 10 --model build/models/qwen2.5-0.5b-instruct-q4_0.gguf --whole
 	$(HOSTDIR)/test_llmvk --model build/models/qwen2.5-0.5b-instruct-q4_0.gguf --whole --control > $(HOSTDIR)/test_llmvk.control.txt || \
 	        { cat $(HOSTDIR)/test_llmvk.control.txt; echo "FAIL: Qwen's answer held with a token dropped"; exit 1; }
+	$(HOSTDIR)/test_llmvk --batch --model build/models/qwen2.5-0.5b-instruct-q4_0.gguf --whole --rounded > $(HOSTDIR)/test_llmvk.control.txt || \
+	        { cat $(HOSTDIR)/test_llmvk.control.txt; echo "FAIL: Qwen's answer held to the rounded pass"; exit 1; }
+	$(HOSTDIR)/test_llmvk --batch --model build/models/qwen2.5-1.5b-instruct-q4_0.gguf --whole
 	@echo "PASS: a token on the GPU, every step - the models' answers the processor's, and every control broke"
 
 LLAMA_CPP := build/downloads/llama.cpp-b12205

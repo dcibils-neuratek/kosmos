@@ -242,3 +242,17 @@ void igpu_slots_give(struct igpu_slots *s, unsigned long first, unsigned long co
     s->free[s->nfree].count = count;
     s->nfree++;
 }
+
+uint32_t igpu_mocs_llc(uint32_t index)
+{
+    if (index == 0u) {
+        return IGPU_MOCS_UNCACHED;
+    }
+
+    return index == IGPU_MOCS_INTERNAL || index == IGPU_MOCS_OWN ? IGPU_MOCS_CACHED : IGPU_MOCS_PTE;
+}
+
+uint32_t igpu_mocs_l3(uint32_t index)
+{
+    return index == 0u || index == IGPU_MOCS_OWN ? IGPU_L3_UC : IGPU_L3_WB;
+}

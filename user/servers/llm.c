@@ -809,8 +809,8 @@ static int vk_forward_batch(void *ctx, const int32_t *tokens, uint32_t n)
 }
 
 /* The device and its pipelines, once, at start, beside `gpu_look`: so that
- * Settings can say there is a GPU, and the model goes to it by default -
- * a file of settings kept says otherwise. */
+ * Settings can say there is a GPU, and where `llm_vk_by_default` says so
+ * the model goes to it unasked - a file of settings kept says otherwise. */
 static void vk_look(void)
 {
     if (vk_state == 0) {
@@ -841,7 +841,7 @@ static void vk_look(void)
             }
         }
         gpu_have |= LLM_GPU_READ | LLM_GPU_WRITE;
-        settings.gpu = LLM_GPU_READ | LLM_GPU_WRITE;
+        settings.gpu = llm_vk_by_default(vk_dev.device_name) ? LLM_GPU_READ | LLM_GPU_WRITE : 0;
     }
 }
 

@@ -150,6 +150,18 @@ int main(void)
     check(IGPU_MOCS_UNCACHED == 0x09u && IGPU_MOCS_PTE == 0x30u && IGPU_MOCS_CACHED == 0x3bu
           && IGPU_L3_UC == 0x10u && IGPU_L3_WB == 0x30u,
           "Skylake's MOCS entries as i915 programs them: uncached, page table, cached; L3 UC and WB");
+    {
+        uint32_t i, others = 1;
+
+        for (i = 4; i < IGPU_MOCS_ENTRIES; i++) {
+            others = others && igpu_mocs_llc(i) == IGPU_MOCS_PTE && igpu_mocs_l3(i) == IGPU_L3_WB;
+        }
+        check(igpu_mocs_llc(0) == 0x09u && igpu_mocs_l3(0) == 0x10u, "MOCS 0, Mesa's uncached: in neither cache");
+        check(igpu_mocs_llc(1) == 0x30u && igpu_mocs_l3(1) == 0x30u, "MOCS 1, Mesa's external: the page table's, and the L3");
+        check(igpu_mocs_llc(2) == 0x3bu && igpu_mocs_l3(2) == 0x30u, "MOCS 2, Mesa's internal: the LLC and the L3");
+        check(igpu_mocs_llc(3) == 0x3bu && igpu_mocs_l3(3) == 0x10u, "MOCS 3, the driver's own: the LLC and not the L3");
+        check(others, "MOCS 4 to 61: the page table's, as i915 fills them");
+    }
 
     /* The GTT's slots given back and used again (xavier.md X7 G2). */
     {

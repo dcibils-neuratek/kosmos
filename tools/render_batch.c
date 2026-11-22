@@ -85,8 +85,8 @@ uint64_t intel_bb_offset_reloc_with_delta(struct intel_bb *ibb, uint32_t handle,
 #define PITCH       (W * 4u)
 #define VERTEX_SIZE (3u * 4u)
 /* Every MOCS field: index 1, i915's "PTE" - caching as the GTT entry says.
- * genxml lets none of them be 0, and Kosmos programs no MOCS table, so the
- * index is only what the field requires. */
+ * genxml lets none of them be 0. The two surfaces' are written over by the
+ * driver as it fills a batch in (`surface_mocs`). */
 #define PTE_MOCS    2
 /* The source's: index 2, i915's "cached" - write-back in the LLC, which the
  * processor's caches are kept in step with, so the sampler reads what the

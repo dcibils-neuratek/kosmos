@@ -148,6 +148,14 @@
  * table says, 62 and 63 the hardware's - and a reset does not leave them
  * so. LLC: cacheability in bits 0-1, target cache 2-3, LRU 4-5; L3:
  * cacheability in bits 4-5.
+ *
+ * **0, 1 and 2 are a contract with Mesa**, which names them by number
+ * (`isl.c`: uncached, external, internal), and internal - every buffer a
+ * Vulkan program has - is write-back in the L3 as well. The driver's own
+ * surfaces want the LLC and not the L3, which its batches do not keep in
+ * step with the processor, so they have index 3, which Mesa never names on
+ * generation 9. They had index 2 with its L3 half taken away, and took the
+ * L3 from every Vulkan program with it (`testing.md` 18.993).
  */
 #define IGPU_RCS_MOCS0          0xc800u
 #define IGPU_LNCFCMOCS0         0xb020u
@@ -156,6 +164,13 @@
 #define IGPU_MOCS_CACHED        (3u | (2u << 2) | (3u << 4))    /* LE_3_WB, LLC/eLLC, LRUM(3) */
 #define IGPU_L3_UC              (1u << 4)
 #define IGPU_L3_WB              (3u << 4)
+#define IGPU_MOCS_INTERNAL      2u          /* Mesa's: the LLC and the L3 */
+#define IGPU_MOCS_OWN           3u          /* the driver's: the LLC alone */
+#define IGPU_MOCS_ENTRIES       62u
+
+/* Entry `index`'s LLC half and its L3 half. */
+uint32_t igpu_mocs_llc(uint32_t index);
+uint32_t igpu_mocs_l3(uint32_t index);
 /* A register's value stored to memory (`intel_gpu_commands.h`:
  * MI_STORE_REGISTER_MEM_GEN8, MI_SRM_LRM_GLOBAL_GTT): four dwords - itself,
  * the register's offset, the address low and high. The blitter's busy time

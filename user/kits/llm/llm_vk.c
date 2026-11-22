@@ -455,6 +455,16 @@ static int mmv_make(struct kvk *v, struct kvk_compute *c, int k, int sum, uint32
                           5, sizeof(struct mmv_push), spec, 3, "mmv");
 }
 
+static int is_intel(const char *device)
+{
+  return strncmp(device, "Intel", 5) == 0;
+}
+
+int llm_vk_by_default(const char *device)
+{
+  return !is_intel(device);
+}
+
 int llm_vk_open(struct llm_vk *g, struct kvk *v)
 {
   /* The products' pipelines, with the rows a workgroup makes that
@@ -467,7 +477,7 @@ int llm_vk_open(struct llm_vk *g, struct kvk *v)
    * 18.992). On an HD 530: Q4_0 by subgroups at 64 lanes by 8 rows, 10.5 ms
    * where 128 by 4 through shared memory took 17.0; Q8_0 at 16 by 8, 45.3
    * where 128 by 2 took 65.3; Q6_K at 16 by 8, 120 where 128 by 2 took 224. */
-  const uint32_t intel = strncmp(v->device_name, "Intel", 5) == 0;
+  const uint32_t intel = (uint32_t)is_intel(v->device_name);
   const uint32_t rm_stdq = intel ? 2 : 1;
   const uint32_t sub = v->subgroup_size;
   const uint32_t sub16 = sub < 16 ? 16 : sub;
@@ -1271,6 +1281,57 @@ static void tune_weight(struct llm_vk_model *vm, const struct llm_tensor **w, ui
   }
 }
 
+/* The width alone (V7): each layer's up, the same bytes of it read as a
+ * narrower matrix of more rows and as a wider one of fewer - the same
+ * arithmetic, and a longer input to keep in the GPU's caches. */
+static void tune_width(struct llm_vk_model *vm, const struct llm_tensor **w, uint32_t count,
+                       llm_vk_said_fn *said, void *ctx)
+{
+  static const uint32_t WIDTH[] = { 256, 512, 768, 896, 1024, 1152, 1280, 1536, 2048, 3072 };
+  struct kvk *v = vm->g->v;
+  const uint64_t values = w[0]->ne[0] * w[0]->ne[1];
+  char line[192];
+
+  if (llm_vk_mmv_kind(w[0]->type) != LLM_VK_MMV_Q4_0) {
+    return;
+  }
+  for (uint32_t i = 0; i < sizeof(WIDTH) / sizeof(WIDTH[0]); i++) {
+    const uint32_t rows = (uint32_t)(values / WIDTH[i]);
+    double ms = 0;
+    int ok = 1;
+
+    if (rows > vm->m->n_vocab || WIDTH[i] > LLM_BATCH * vm->m->n_embd) {
+      continue;                               /* no room for its input or its sums */
+    }
+    for (uint32_t c = 0; c < WIDTH[i]; c++) {
+      ((float *)vm->bx.bytes)[c] = (float)((c * 7919u) % 1000u) / 500.0f - 1.0f;
+    }
+    for (uint32_t pass = 0; pass < 2 && ok; pass++) {
+      ms = 0;                                 /* the first warms, as below */
+      for (uint32_t j = 0; j < count && ok; j++) {
+        ok = kvk_begin(v);
+        if (ok) {
+          kvk_time_start(v);
+          ok = llm_vk_mmv(vm->g, w[j]->type, whole(tensor_buffer(vm, w[j])), WIDTH[i], rows, whole(&vm->bx),
+                          whole(&vm->logits));
+          kvk_compute_barrier(v);
+          kvk_time_end(v);
+          ok = kvk_submit(v) && ok;
+          ms += kvk_time_ms(v);
+        }
+      }
+    }
+    if (ok) {
+      snprintf(line, sizeof(line), "width %u, %u rows of every layer's up: %llu us, %llu MB/s of weights", WIDTH[i],
+               rows, (unsigned long long)(ms * 1000),
+               (unsigned long long)(ms > 0 ? values * count * 18 / 32 / (ms * 1000) : 0));
+    } else {
+      snprintf(line, sizeof(line), "width %u: it would not run", WIDTH[i]);
+    }
+    said(ctx, line);
+  }
+}
+
 void llm_vk_tune(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx)
 {
   const struct llm_model *m = vm->m;
@@ -1290,6 +1351,7 @@ void llm_vk_tune(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx)
   for (uint32_t l = 0; l < layers; l++) {
     ff[l] = m->layers[l].up_w;
   }
+  tune_width(vm, ff, layers, said, ctx);
   tune_weight(vm, ff, layers, "every layer's up", whole(&vm->ff), vm->ff.bytes, want, said, ctx);
   tune_weight(vm, out, 3, "the logits thrice", whole(&vm->logits), vm->logits.bytes, want, said, ctx);
   free(want);

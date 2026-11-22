@@ -217,4 +217,9 @@ void llm_vk_tune(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx);
  * the cache `n` positions on, as `llm_step_batch` leaves them. 0, or -1. */
 int llm_vk_batch(struct llm_vk_model *vm, const int32_t *tokens, uint32_t n);
 
+/* Whether a model goes to this device unasked (`docs/xavier.md` X12's
+ * decision 2): on an Intel GPU it does not until V7 makes the GPU faster
+ * than the processor there; any other's does. */
+int llm_vk_by_default(const char *device);
+
 #endif

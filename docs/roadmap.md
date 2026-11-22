@@ -803,9 +803,65 @@ processor, 18.992 - not yet faster: 0.5B writes 13.95 tok/s against the
 processor's 21.92, 1.5B 6.90 against 12.54); V7, faster, next: the logits
 are 41% of 0.5B's token, gate, up and down 54% of 1.5B's.
 
+**V7 and two decisions - AGREED 22 November 2026** (Diego: "A A, go
+ahead with V7"). (1) The 32-token hold compares with an unrounded
+processor pass kept in the test, and Qwen 1.5B joins that check. (2) On
+an Intel GPU the processor is the default until V7 makes it faster. (3)
+V7 begins by measuring what bounds the HD 530 - its clock under load, the
+units a context is given, how its buffers are cached, memory's bandwidth -
+before another shader is changed. **Built so far** (0.12.74, `testing.md`
+18.993-18.994): (1) and (2); the L3 given back to every Vulkan program
+(anv's MOCS index 2 had been left uncached); and every context restored
+at every run, where 0.12.10 trusted the engine to hold it across the GT's
+sleep. 0.5B now writes 21.84 tok/s on the GPU against the processor's 22.0
+and reads 1.16 times sooner; 1.5B 10.33 against 12.77. Still to do: 1.5B,
+where gate, up and down are the work.
+
+*Found in V7, and open:*
+- **A hang reset leaves the GPU 3-5% slower** until a restart (0.5B 21.02
+  against 21.84, 1.5B 9.77 against 10.34): some register the reset
+  clears is not written again. The MOCS table is.
+- **The private PAT is never programmed** outside the video engine's
+  test (`0x40e0`/`0x40e4` read `03030303`) while the PPGTT entries use
+  i915's indices. Program it as i915's `gen8_setup_private_ppat` does,
+  and measure.
+- **`hw_give` sends no null `PIPE_CONTROL` before a VF invalidate**,
+  which i915 does on Gen9. Seen only in reading.
+
+**After Xavier on Vulkan - AGREED 22 November 2026** (Diego: "once the
+llm with vulkan support is ready", "I want to do usb audio so i can test my
+edifier usb speakers which they work with audio over usb", "also i wanto
+to build a resolution selector for the screen as i wan tot be able to
+switch resolutions and refresh rates available for the monitor"), in that
+order: (1) **USB audio**, the Edifier speakers its test on real hardware
+(*USB audio, and choosing the sound devices in Mixer*, below); (2) **a
+resolution and refresh-rate selector**, from the modes the monitor reports
+(*Resolution and refresh rate from what the monitor reports*, below). Each
+is drawn and its design agreed before its code.
+
+**System Monitor, every monitor in one place - AGREED 22 November 2026**
+(Diego: "one of the things i want to consolidate y a system monitor app
+that has gpu monitor, disk monitor, network monitor, cpu monitor, memory,
+processes and all that we have been building in different apps", "i want
+to have 1 place to see all the system complnents usage in a way i can see
+all at once, or specigic components with specific graphs the wey i can
+see the gpu now with each part and its clock, devuce name, power in
+watts, etc", "i dont want to loose any of the metrics we have now, but i
+do want to have a single place tthat consolidates all monitors and then i
+can expan on each one with specific metrics and history of consumption,
+usage, temperature, etc"): one application with an overview of every
+component at once and a page for each - CPU, memory, processes, GPU,
+disks, network, and whatever else a monitor shows today - with its
+device's name, its clocks, power, temperature and history. **No metric
+of today's monitors is lost**: the design opens with an inventory of
+each one's, and none of those applications goes before its every row has
+a place here. Feature set, mockup, architecture and diagram, agreed
+before code. After USB audio and the resolution selector, unless Diego
+puts it sooner.
+
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64
-of the processor's speed: what the default is there is Diego's. (b) The
+of the processor's speed: decided, (2) above. (b) The
 LLM server makes its pipelines before it serves, so on the M700
 `/Running/llm` is not there until 6.3 s of the boot, after the desktop:
 make them off the serving path. (c) The GPU's name reads "Intel(R)/1.4",
@@ -4586,7 +4642,9 @@ processors, and still what follows USB:
    and, for DisplayPort, the link trained again - the full mode change
    this entry already promised after the blitter, now with the EDID first
    so the list is the monitor's own. Today the firmware chooses (60 Hz,
-   and 3440x1440 or 1720x1440 by boot). **Cafesa3D's ray tracer on the
+   and 3440x1440 or 1720x1440 by boot). **Next after USB audio** (Diego,
+   22 November: "i wan tot be able to switch resolutions and refresh rates
+   available for the monitor"). **Cafesa3D's ray tracer on the
    GPU's 24 execution units** (Diego, the same day: "can we make cafesa3d
    use the gpu rendering for faster raytracing using the 24 Execution
    Units?"): GPU compute - the render engine's GPGPU pipeline, a context,
@@ -12966,7 +13024,9 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   24 or 32 bit), rate (44.1, 48, 96 kHz) and channels, and what else it
   can do. QEMU has a USB speaker (`-device usb-audio`, UAC1), so it is
   built and tested here before Diego's is plugged in. Mixer is drawn
-  again first, its chooser and the formats on the page.
+  again first, its chooser and the formats on the page. **Next after
+  Xavier on Vulkan** (Diego, 22 November: "I want to do usb audio so i can
+  test my edifier usb speakers which they work with audio over usb").
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
 - **Music, as VOX is**, Diego's, 14 September: "the music player is really

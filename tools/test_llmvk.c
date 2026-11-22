@@ -17,10 +17,15 @@
  * as its own, which must break every one: it passes, and exits 0, only
  * when each product is outside its bound.
  *
- * Usage: test_llmvk [--control]
+ * A model's whole answer is held to the processor's **unrounded** pass
+ * (`llm_core.c`, `LLM_UNROUNDED`; decision 1): `--rounded` holds it to
+ * llama.cpp's arithmetic instead, which must break it.
+ *
+ * Usage: test_llmvk [--control | --rounded]
  */
 #include <fcntl.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -756,6 +761,47 @@ static void *alloc(void *ctx, size_t bytes)
 
 #define ANSWER 32
 
+/* The processor's reference: unrounded, but for `--rounded`. */
+int llm_unrounded = 1;
+
+/* Its products cut across four threads, which changes no answer (X5). */
+#define PARTS 4
+
+struct part {
+  pthread_t thread;
+  llm_part_fn *work;
+  void *job;
+  uint32_t i;
+};
+
+static void *part_run(void *arg)
+{
+  struct part *p = arg;
+  p->work(p->job, p->i, PARTS);
+  return NULL;
+}
+
+static void parts_run(void *ctx, llm_part_fn *work, void *job, uint32_t parts)
+{
+  struct part p[PARTS];
+  int made[PARTS] = { 0 };
+  (void)ctx;
+  for (uint32_t i = 0; i < parts; i++) {
+    p[i] = (struct part){ .work = work, .job = job, .i = i };
+    made[i] = i > 0 && pthread_create(&p[i].thread, NULL, part_run, &p[i]) == 0;
+  }
+  for (uint32_t i = 0; i < parts; i++) {
+    if (!made[i]) {
+      part_run(&p[i]);
+    }
+  }
+  for (uint32_t i = 0; i < parts; i++) {
+    if (made[i]) {
+      pthread_join(p[i].thread, NULL);
+    }
+  }
+}
+
 /* The question and then ANSWER tokens, the likeliest after each: on the
  * processor, keeping each step's logits. */
 static int answer_cpu(struct llm_model *m, const int32_t *q, int nq, int32_t *out, float *logits)
@@ -789,12 +835,13 @@ static double nmse_f(const float *got, const float *want, size_t n)
 
 /* The model in `path` on the GPU, held to the processor at every step of
  * an answer, the GPU given the processor's tokens: every step's logits
- * within 1e-3 of NMSE of the processor's (its products take the input as
- * Q8_0 blocks, the GPU's as floats; `test-backend-ops` holds one product
- * to 5e-4, and a model is dozens of them), and the GPU's own likeliest
- * token counted beside the processor's. With `whole`, the GPU's answer
- * must also be the processor's, all ANSWER tokens: a real model, whose
- * likeliest token is clear; a random one's are near ties. The control
+ * within 1e-3 of NMSE of the processor's, which rounds nothing here, and
+ * the GPU's own likeliest token counted beside the processor's. With
+ * `whole`, within 1e-4 and the GPU's answer also the processor's, all
+ * ANSWER tokens: a real model, whose likeliest token is clear; a random
+ * one's are near ties. The rounded reference is some 6e-3 away
+ * (`testing.md` 18.992), so the bound is also what says the reference was
+ * the unrounded one. The control
  * gives the GPU the question less its last token, as a token dropped on
  * the way would, which must break what is held. (A cache started a
  * position on is not one: RoPE sees only the distances between tokens,
@@ -865,6 +912,7 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
   float *logits = malloc((size_t)m.n_vocab * 4 * ANSWER);
   int bad = 1;
 
+  llm_parallel(&m, parts_run, NULL, PARTS);
   if (nq <= 0 || !logits || answer_cpu(&m, q, nq, cpu, logits) != 0) {
     printf("FAIL: %s: the processor's answer\n", path);
     goto done;
@@ -926,14 +974,15 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
     one[n > 0 ? n : 0] = 0;
     strncat(said, one, sizeof(said) - strlen(said) - 1);
   }
-  /* A real model is held to its answer, as decision 1 has it; its logits
-   * are reported. A tiny one's answer is near ties, and its logits are
-   * held instead. */
-  int held = whole_answer ? agree == ANSWER && own == ANSWER : worst <= 1e-3;
-  int ok = control ? !held : held;
+  /* A real model is held to its answer, as decision 1 has it, and its
+   * logits. A tiny one's answer is near ties, and its logits are held
+   * alone. */
+  double bound = whole_answer ? 1e-4 : 1e-3;
+  int held = worst <= bound && (!whole_answer || (agree == ANSWER && own == ANSWER));
+  int ok = control || !llm_unrounded ? !held : held;
   printf("%s: %s, a %d-token question%s, %d answer tokens: every step's logits within %.3g of NMSE%s, "
          "the likeliest the processor's at %d of %d steps",
-         ok ? "PASS" : "FAIL", path, nq, batched ? (batched >= nq ? " in one batch" : " in batches") : "", ANSWER, worst, whole_answer ? "" : " (held to 1e-3)", agree, ANSWER);
+         ok ? "PASS" : "FAIL", path, nq, batched ? (batched >= nq ? " in one batch" : " in batches") : "", ANSWER, worst, whole_answer ? " (held to 1e-4)" : " (held to 1e-3)", agree, ANSWER);
   if (whole_answer && !control) {
     if (agree == ANSWER) {
       printf(", the GPU's own answer the processor's for %d of %d tokens", own, ANSWER);
@@ -943,6 +992,9 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
   }
   if (control) {
     printf(" - the control, which must not hold");
+  }
+  if (!llm_unrounded) {
+    printf(" - against the processor's rounded pass, which must not hold");
   }
   printf(" (the question in %.0f ms)", question_ms);
   printf("\n      \"%s\"\n", said);
@@ -964,6 +1016,8 @@ int main(int argc, char **argv)
       control = 1;
     } else if (strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
       model_path = argv[++i];
+    } else if (strcmp(argv[i], "--rounded") == 0) {
+      llm_unrounded = 0;
     } else if (strcmp(argv[i], "--whole") == 0) {
       whole_answer = 1;
     } else if (strcmp(argv[i], "--tune") == 0) {
@@ -1026,6 +1080,19 @@ int main(int argc, char **argv)
     matmul(&g, t, control ? OTHER[t] : t, MATMULS[i].cols, MATMULS[i].rows, MATMULS[i].n);
   }
   steps(&g, control);
+  /* Decision 2: the processor is an Intel GPU's default. */
+  if (!control) {
+    static const struct { const char *name; int gpu; } DEVICES[] = {
+      { "Intel(R) HD Graphics 530 (SKL GT2)", 0 },
+      { "llvmpipe (LLVM 20.1.0, 128 bits)", 1 },
+      { "AMD Radeon RX 570", 1 },
+    };
+    for (size_t i = 0; i < sizeof(DEVICES) / sizeof(DEVICES[0]); i++) {
+      int held = llm_vk_by_default(DEVICES[i].name) == DEVICES[i].gpu;
+      printf("%s: %s is %sthe default\n", held ? "PASS" : "FAIL", DEVICES[i].name, DEVICES[i].gpu ? "" : "not ");
+      failures += !held;
+    }
+  }
 
   llm_vk_close(&g);
   kvk_close(&v);

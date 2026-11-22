@@ -1408,9 +1408,16 @@ the hold changes, and it is decision 1 below:
    processor. **Not yet faster**: Qwen 0.5B writes 13.95 tokens a second
    against four cores' 21.92 and reads 1.39 times sooner; 1.5B writes 6.90
    against 12.54 and reads a tenth slower. So decision 3 keeps X7's path.
-7. **V7, faster**: what the M700's numbers point at. Flash attention, the
-   subgroup forms of the products, and the processor taking a share if
-   it still has memory to spare (G5's lesson says measure first).
+7. **V7, faster**: what the M700's numbers point at, measured before any
+   shader is changed. **First part built 22 November 2026** (0.12.74,
+   `testing.md` 18.993-18.994). The GPU had been running without its L3:
+   anv's cache entry was left uncached by the driver. And a context's
+   state was lost whenever the GT slept between two of its runs, because
+   the driver inhibited the restore. With both fixed, 0.5B writes 21.84
+   tokens a second against four cores' 22.0 and reads 1.16 times sooner;
+   1.5B writes 10.33 against 12.77. Next is 1.5B's gate, up and down, then
+   flash attention and the subgroup forms of the products (G5's lesson:
+   measure first).
 
 ### Decisions that are Diego's (X12)
 
@@ -1425,8 +1432,11 @@ your recommendations on xaavier", then "go ahead".
    meet this, on lavapipe (12 tokens, in 0.12.72 as committed) or on the
    M700 (29). The cause is measured: the processor rounds each product's
    input to 8 bits, and without that rounding the two agree for 32 of 32
-   (`testing.md` 18.992). Recommended: hold the GPU to an unrounded pass
-   kept in the test. The hold is unchanged until Diego says otherwise.
+   (`testing.md` 18.992). **Decided 22 November 2026, Diego: "A A, go
+   ahead with V7"** - the GPU is held, for the same 32 tokens, to an
+   unrounded processor pass kept in the test, and on an Intel GPU the
+   processor is Xavier's default until V7 makes the GPU faster, the
+   switch still in Settings.
 2. **Port or our own**: (b), our own backend on llama.cpp's shaders
    *(recommended)*, or (a), ggml-vulkan with llama.cpp around it.
 3. **X7's EU path**: kept beside Vulkan until V6 shows Vulkan faster on

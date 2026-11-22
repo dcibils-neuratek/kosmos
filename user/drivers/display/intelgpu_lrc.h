@@ -97,13 +97,15 @@ bool igpu_lrc_set_tail(uint32_t *state, uint32_t base, uint32_t tail);
 /*
  * **Kept across runs** (G6e). The context control an image the engine has
  * saved back is submitted with again - as a new one's, but its registers
- * restored from it - and the one that inhibits the restore, for an image
- * never run, or one whose state the engine still holds because it was the
- * last context there: restoring 22 pages of the render engine's state took
- * 88 us a submission on the M700 (`testing.md` 18.930).
+ * restored from it, every time. Until 18.994 the restore was inhibited when the
+ * same context ran last, to save 88 us of restoring 22 pages
+ * (`testing.md` 18.930): the engine does not hold that state across the
+ * GT's sleep, and saved its reset defaults over the image.
  */
 uint32_t igpu_lrc_restore_control(void);
-uint32_t igpu_lrc_inhibit_control(void);
+
+/* A saved image made ready to run again: its tail, and its restore. */
+void igpu_lrc_again(volatile uint32_t *state, unsigned tail_at, unsigned control_at, uint32_t tail);
 
 /* What a context's own image says - its control, restored or inhibited,
  * no batch, its page table, STOP_RING off and its ring - written over a

@@ -246,15 +246,6 @@ bool igpu_lrc_patch(uint32_t *state, const struct igpu_lrc_init *in, bool restor
     return igpu_lrc_set_tail(state, in->base, in->tail);
 }
 
-/* The context control a never-run image is given: its restore inhibited. */
-uint32_t igpu_lrc_inhibit_control(void)
-{
-    return MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH)
-         | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT)
-         | CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT
-         | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT | CTX_CTRL_RS_CTX_ENABLE);
-}
-
 uint32_t igpu_lrc_restore_control(void)
 {
     return MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH)
@@ -454,4 +445,10 @@ bool igpu_ppgtt_lookup(const struct igpu_ppgtt *pt, uint64_t gpu, uint64_t *phys
     *phys = (*entry & ADDRESS_MASK) | (gpu & 0xfffu);
     *pat = ((*entry & PAGE_PWT) ? 1u : 0) | ((*entry & PAGE_PCD) ? 2u : 0) | ((*entry & PAGE_PAT) ? 4u : 0);
     return true;
+}
+
+void igpu_lrc_again(volatile uint32_t *state, unsigned tail_at, unsigned control_at, uint32_t tail)
+{
+    state[tail_at] = tail;
+    state[control_at] = igpu_lrc_restore_control();
 }

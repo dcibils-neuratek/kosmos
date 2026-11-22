@@ -41954,3 +41954,160 @@ with is Diego's decision (`xavier.md` X12, decision 1); the test stays.
 says its size, speed and SHA-256: it is how the two models reached the
 M700's `/Home/Models`. A word of 2 in `opt/kosmos/llm_profile` runs the
 sweep as a model loads, and of 1 only the profile.
+
+## 18.993 The L3 back for every Vulkan program, and Diego's two decisions (Xavier on Vulkan, V7)
+
+**In short:** every Vulkan program on the M700 had been running without
+the GPU's L3 cache, because one of the driver's own experiments had left
+the cache entry Intel's Vulkan driver uses switched off. With it back on,
+Xavier on the GPU writes about half as fast again. Diego's two decisions
+are built: the GPU's answers are held to an unrounded processor pass, on
+both models, and on an Intel GPU the processor is Xavier's default.
+
+**Decision 1, the hold.** `test_llmvk` now builds the kit with
+`-DLLM_UNROUNDED`. Under `llm_unrounded`, `product_rows` dequantises each
+weight's row and takes the input as floats (`unrounded_rows`, Q4_0, Q8_0
+and Q6_K), so the processor's pass is the arithmetic the GPU's is. A whole
+model must then hold NMSE ≤ 1e-4, its first 32 tokens the same, and its
+own answer. Both Qwens are in `make host-llmvk-check`, on four threads
+(`llm_parallel`): 98 s of wall time, 471 s of processor.
+
+| | NMSE against unrounded | tokens the same |
+|---|---|---|
+| Qwen 0.5B | 0.0000047 | 32 of 32 |
+| Qwen 1.5B | 0.0000093 | 32 of 32 |
+| *control*: 0.5B against the rounded kit (`--rounded`) | 0.00662 | fails |
+
+**Decision 2, the default.** `llm_vk_by_default(device)` is false on
+Intel's devices, and the server's first settings say `GPU off` there. On
+the M700, with no settings file, the server came up "GPU off" with the
+GPU still offered in Settings. Three checks in `test_llmvk` cover the
+device names.
+
+**The L3.** Clock, units, caching and bandwidth were measured before any
+shader was touched. The clock under load is 1100 of 1150 MHz, 93-100%
+busy and never in RC6, at 15-18 W, so the clock is not what limits it.
+Weights were streaming at about 4.8 GB/s, where the processor reads them
+at about 12.9.
+
+anv gives every buffer it makes MOCS index 2 (isl.c, "TC=LLC/eLLC,
+LeCC=WB, LRUM=3, L3CC=WB"). The driver's table had index 2's L3 half
+uncached, from a 7d experiment, so every Vulkan program was missing the
+cache. The table now comes from `igpu_mocs_llc(i)` and `igpu_mocs_l3(i)`
+in `intelgpu_decode.c`: 0 and 3 are L3-uncached, every other index
+write-back, and the driver's own surfaces use index 3
+(`IGPU_MOCS_OWN`). `mocs_program` runs at every engine enable, so a
+reset writes it again. Five new checks in `test_intelgpu_decode`; the old
+table fails them.
+
+A written token of 0.5B went from 78.2 ms of GPU work to 50.3: the logits
+31.9 to 17.5, gate and up 16.6 to 11.9, down 9.0 to 6.5. The weights now
+stream at about 10 GB/s. The shapes were swept again with the L3, and
+those built are best or within 8% of best (0.5B's up: 64 by 4 at 5.96 ms,
+the built 64 by 8 at 6.5), so they stay.
+
+**What was misleading for a while.** The speed held only while the first
+model loaded stayed loaded: after a switch every product ran at the
+L3-less speed again, in either order. 18.994 is why. A shape sweep taken
+in that state, 1.5B's run second, is not evidence of anything.
+
+## 18.994 A context's state restored every time, not trusted to the engine
+
+**In short:** the GPU driver had a shortcut: when the same context ran
+twice in a row, it told the engine to keep what it held rather than
+reload the context's saved state. But the GPU forgets that state whenever
+it powers down between two runs. It then started from factory defaults
+(no L3, none of Skylake's workarounds) and saved them over the context
+for good. The driver now restores every time, as Linux's does. Xavier
+holds full speed through every model switch and idle, the desktop's big
+copy is 22 times faster, and the GPU sleeps when it has nothing to do.
+
+**How it was found.** The driver was made to log 48 registers every 2 s
+while the render engine had work. Right after a model switch, the L3
+table (`0xb024`), HDC chicken 0 (`0x7300`, 8830 to 0800), cache mode 1
+(`0x7004`, 2bd2 to 2980) and the row chicken (`0xe4f0`, 8120 to 0020) all
+read their reset defaults. The GT-wide registers, ECOCHK among them, did
+not change. Rewriting the MOCS table from that log brought full speed back
+through every switch, so the context was what had lost them.
+
+It was not the switch alone. The first snapshot of the boot showed the
+driver's own context at defaults too, 0.48 s after the line reading them
+right ("the render engine's workarounds: row chicken ffff8120, cache mode
+1 000029c2, hdc chicken0 00008830"). Neither 30 s idle nor `gpu engine 5`
+between answers lost them. A switch lost them every time.
+
+**Why.** `image_ready` (0.12.10, 18.930) inhibited the restore of a
+context whose id matched `e->last`, to save the 88 us that restoring the
+render engine's 22 pages took. That trusts the engine to hold the state.
+When the GT has slept in RC6 meanwhile, it does not, and with save left
+on the context then saves the defaults over its image. The driver's own
+context was worse: its first image was laid out with the restore
+inhibited (`igpu_lrc_fill`), so it began from whatever the engine had,
+which at boot was the defaults.
+
+**The change**, which is i915's shape:
+
+- A saved image always runs again restored: `igpu_lrc_again` writes its
+  tail and `igpu_lrc_restore_control`.
+- `igpu_lrc_inhibit_control`, `e->last` and the `same` argument are gone.
+- The driver's own context starts from the recorded default state, as a
+  program's does (`from_default` true in `el_go`). Only that recording is
+  laid out inhibited.
+
+`test_intelgpu_lrc` checks that an image saved inhibited runs again
+restored, on all three engines. *Control*: `igpu_lrc_again` writing the
+inhibit bit fails all three (control 0xf0009).
+
+**On the M700** (0.12.73 + this, network-booted, the same question, 64
+tokens):
+
+| | before (0.12.73; the costs below with 18.993's table) | after |
+|---|---|---|
+| 0.5B, writes | 14.06 tok/s | 21.84 tok/s, every time |
+| 1.5B, writes | 6.93 tok/s | 10.33 tok/s, every time |
+| 0.5B, 1.5B, 0.5B, 1.5B, 1.5B, 0.5B, then `gpu engine 5` and 20 s, 0.5B, 1.5B | slow from the first switch on | 21.84 / 10.33 / 21.84 / 10.33 / 10.33 / 21.84 / 21.86 / 10.34 |
+| `gpu draw big`, 1720x1440 | 61,624 us | 2,716-2,748 us |
+| `gpu engine render 200`, average | 3 us | 13 us |
+| `gpu engine 200` (blitter), average | 2 us | 3 us |
+| `gpu contexts` | 273 us | 251-273 us |
+| GT after an answer | 1100 MHz, 0% RC6 | asleep, 100% RC6, 0 W |
+| the cube in a window, 64 square, 300 frames | 3896 fps (0.12.16) | 4478 fps |
+
+So the restore costs about 10 us a submission on the render engine, not
+the 88 measured in 0.12.10, and a step of Xavier's is one submission.
+`gpu state`, `render`, `render blend`, `draw`, `read`, `runs`, `kernel`,
+`compute`, `contexts hang` and `contexts` all pass, as do the M700
+suite's nine Vulkan checks (anv's fill and dispatch, the cube's picture,
+the window presenting).
+
+**Against the processor**, the same 17-token question:
+
+| | reads | writes |
+|---|---|---|
+| 0.5B, GPU | 395-400 ms | 21.84 tok/s |
+| 0.5B, four cores | 463 ms | 22.01-22.06 tok/s |
+| 1.5B, GPU | 1212-1225 ms | 10.33 tok/s |
+| 1.5B, four cores | 827-833 ms | 12.76-12.77 tok/s |
+
+So the GPU writes 0.5B level with the processor and reads it 1.16 times
+sooner. On 1.5B it is still behind, at 0.81 of the processor's writes and
+0.68 of its reads. Decision 2's default stays the processor, and V7 goes
+on.
+
+**The gate**: 138 of 140 suites in 843 s, 22 skipped as unchanged.
+`x86-script` (the budget-stopped loop and the reopened scene's script)
+and `x86-display-4` (no replicant green) failed, and passed alone, 23 and
+76 checks, in 162 s. Neither runs on an Intel GPU or the LLM Kit; the
+failures are kept in `build/gate/failed/`.
+
+**Found, and open** (`roadmap.md`):
+
+- **After the hang reset** of `gpu contexts hang`, the models write 3-5%
+  slower (21.02 and 9.77) until a restart, which brings 21.84 and 10.34
+  back. So something the reset clears is not written again. The MOCS
+  table is (the log says so), so it is some other register.
+- **The private PAT is never programmed** outside the video engine's
+  test: `0x40e0` and `0x40e4` read `03030303`, while the PPGTT entries use
+  i915's indices.
+- **`hw_give` has no null `PIPE_CONTROL` before a VF invalidate**, which
+  i915 has on Gen9. Seen only in reading.

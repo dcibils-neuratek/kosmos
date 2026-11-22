@@ -108,8 +108,20 @@ static void image(enum igpu_lrc_kind kind, uint32_t base, const char *name)
     /* And run again (G6e): the same masks, the restore no longer inhibited. */
     CHECK(igpu_lrc_restore_control() == 0x000f0008u, "%s: a saved image's context control %#x", name,
           igpu_lrc_restore_control());
-    CHECK(igpu_lrc_inhibit_control() == 0x000f0009u, "%s: an inhibited context control %#x", name,
-          igpu_lrc_inhibit_control());
+    {
+        /* An image saved with its restore inhibited, as every first run's
+         * is, runs again restored whoever ran last (18.994). */
+        static uint32_t saved[1024];
+        unsigned i;
+
+        for (i = 0; i < 1024u; i++) {
+            saved[i] = state[i];
+        }
+        igpu_lrc_again(saved, CTX_RING_TAIL, CTX_CONTEXT_CONTROL, 0x40u);
+        CHECK(saved[CTX_CONTEXT_CONTROL] == 0x000f0008u && saved[CTX_RING_TAIL] == 0x40u,
+              "%s: run again with control %#x, tail %#x", name, saved[CTX_CONTEXT_CONTROL],
+              saved[CTX_RING_TAIL]);
+    }
     {
         /* Patched over a copy whose registers hold something else - the
          * engine's default state - it says what a new image says, but the
