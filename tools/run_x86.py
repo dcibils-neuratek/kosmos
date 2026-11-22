@@ -4712,6 +4712,104 @@ def usb_audio(image, check):
           "lsusb did not list QEMU's speaker (46f4:0002) driven as audio:\n    " + shown)
 
 
+def usb_audio_tone(image, check):
+    """**A USB speaker played** - `docs/usbaudio.md` U2.
+
+    QEMU's speaker again, its sound written to a WAV file at its own 48 kHz,
+    and the driver told `opt/kosmos/usbaudio=tone`: ten beeps of 440 Hz,
+    400 ms in each second, fed by the driver over isochronous OUT. The
+    driver says it started and that the beeps played - 480,000 frames - and
+    the WAV holds them: beeps of the length and pitch played, at a level,
+    and silence between. QEMU's clock is TCG's, so a beep may be cut short
+    by a missed interval; most of the ten must be whole.
+
+    Its control, `USBAUDIO_SILENT=1`, boots without the word, and every
+    check must fail.
+    """
+    import struct
+
+    wav = os.path.join(os.path.dirname(image), "usb-audio-tone.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    silent = os.environ.get("USBAUDIO_SILENT") is not None
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav,
+             "-device", "usb-audio,bus=usb0.0,audiodev=ua0")
+
+    if silent:
+        out = boot(image, None, 90.0, typed=("lsusb",), extra=extra,
+                   after="xhci: watching for devices plugged in and out",
+                   until="lsusb: ")
+    else:
+        extra += ("-fw_cfg", "name=opt/kosmos/usbaudio,string=tone")
+        out = boot(image, None, 150.0, extra=extra,
+                   until="speaker: the beeps played")
+
+    if out is None:
+        check(False, "the machine would not boot with a USB speaker")
+        return
+
+    out = out.replace("\r", "")
+    said = "\n    ".join(l for l in out.splitlines() if "speaker" in l) or "(nothing)"
+    started = re.search(r"port \d+: speaker: playing 10 beeps of 440 Hz on 1\.1 "
+                        r"at 48000 Hz, 192 bytes an interval at most$", out, re.M)
+    played = re.search(r"speaker: the beeps played - (\d+) frames in (\d+) "
+                       r"intervals; (\d+) missed, (\d+) lost, (\d+) ran dry, "
+                       r"(\d+) errors", out)
+
+    check(started is not None,
+          "the driver did not say it plays ten beeps on 1.1 at 48 kHz:\n    " + said)
+    check(played is not None and int(played.group(1)) >= 480000
+          and int(played.group(6)) == 0,
+          "the driver did not say the beeps played, 480000 frames, no errors:\n    "
+          + said)
+
+    # The WAV's samples, left channel: QEMU writes the header's sizes only
+    # when it closes, so the data is read from byte 44 whatever they say.
+    samples = []
+
+    if os.path.exists(wav):
+        with open(wav, "rb") as f:
+            data = f.read()[44:]
+        n = len(data) // 4
+        samples = [v for v in struct.unpack("<%dh" % (2 * n), data[:4 * n])][0::2]
+
+    # Beeps: runs of sound, a gap of 20 ms of quiet ending one.
+    beeps, start, quiet, peak = [], None, 0, 0
+
+    for i, v in enumerate(samples):
+        if abs(v) > 64:
+            if start is None:
+                start, crossings, last = i, 0, v
+            quiet = 0
+            peak = max(peak, abs(v))
+        elif start is not None:
+            quiet += 1
+            if quiet > 960:
+                beeps.append((start, i - quiet, crossings))
+                start = None
+        if start is not None:
+            if last < 0 <= v:
+                crossings += 1
+            last = v
+
+    whole = [b for b in beeps if 0.37 * 48000 <= b[1] - b[0] <= 0.43 * 48000]
+    pitched = [b for b in whole if abs(b[2] / ((b[1] - b[0]) / 48000.0) - 440) < 15]
+    shown = ", ".join("%.0f ms at %.0f Hz" % ((b[1] - b[0]) / 48.0,
+                                             b[2] / max((b[1] - b[0]) / 48000.0, 1e-9))
+                      for b in beeps[:12]) or "(no sound)"
+
+    check(len(whole) >= 7,
+          "the WAV did not hold seven or more whole 400 ms beeps of the ten (%d "
+          "samples): %s" % (len(samples), shown))
+    check(len(pitched) >= 7 and peak > 1000,
+          "the beeps were not 440 Hz at a level (peak %d): %s" % (peak, shown))
+
+
 def usb_list(image, check):
     """**Every USB device, driven or not, said to a program** - `docs/
     machine.md` M1, `usbproto.h`.
@@ -5892,7 +5990,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6004,6 +6102,8 @@ def main():
 
     if 'usb_audio' in wanted:
         usb_audio(image, check)
+    if 'usb_audio_tone' in wanted:
+        usb_audio_tone(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

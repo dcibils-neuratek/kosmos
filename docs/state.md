@@ -7,7 +7,7 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-22, at 0.12.77. Pushed to 0.11.507; 0.11.508 to
+Last updated: 2026-11-22, at 0.12.79. Pushed to 0.11.507; 0.11.508 to
 0.12.8 are committed on `main`, and go out with `make prepush`.
 
 ---
@@ -298,12 +298,19 @@ Edifier speakers plugged into the M700), display modes
 probably past the HD 530), and System Monitor (`docs/sysmonitor.md`,
 S1-S11, seven decisions). Built in that order once agreed. **USB audio U1 built in 0.12.77** (18.996): a
 speaker, headphones, a microphone or a headset named, and each setting
-said; U2 (isochronous OUT, a tone) next, and the Edifier speakers'
-descriptors when they are plugged into the M700. **Qwen2.5-3B** held to
+said. The Edifier M60 read on the M700 (0.12.78): UAC1, synchronous,
+48/96 kHz, 16 or 24 bits - a fixture now. **U2 built in 0.12.79**
+(18.998): the driver feeds a speaker's isochronous OUT endpoint, and under
+`opt/kosmos/usbaudio=tone` the M60 played ten 440 Hz beeps, 480,000
+frames, none missed. **U3 next**: the audio server's mix to a USB output
+through a ring, 44.1 to 48 kHz. **Qwen2.5-3B** held to
 llama.cpp in the same revision (18.997; Diego asked for Inkling-2-Mini,
 then DeepSeek V4 - neither fits 8 GB); to measure on the M700. **A video
 editor**, Kosmos Cut, designed by a lane the same day and agreed, every
 recommendation taken (`docs/videoedit.md`, V0-V15, after the three designs).
+**A photo editor**, Kosmos Paint, designed by a lane the same day for Diego
+to decide (`docs/photoedit.md`, thirteen decisions, P0-P15, after Cut's V1
+to V7), with nine changes it asks of Cut's design to make them a family.
 
 **Reordered on 21 November 2026** (Diego: "Quake 3e port so I can play
 tomorrow", "Then Xavier with gpu support with vulkan", "Then we need to

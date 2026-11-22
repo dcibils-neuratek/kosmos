@@ -42211,9 +42211,14 @@ says each setting. `USB_KIND_AUDIO`, 11, and `usb.lua` names it.
   `USBAUDIO_ABSENT=1`, boots without the speaker and fails 3 of 3.
   `usb_list` passes beside it.
 
-**Left of U1**: the Edifier speakers' own descriptors, read on the M700
-when they are plugged in, kept as a fixture of the test - which answers
-whether they are UAC1 or 2 and adaptive, synchronous or asynchronous.
+**The Edifier speakers, read** (0.12.78, the M700): EDIFIER M60,
+2d99:a094, full speed, UAC1 - a speaker with two settings, 1.1 at 16 bits
+and 1.2 at 24, both stereo at 48 or 96 kHz, **synchronous** on endpoint 3
+OUT, 384 and 576 bytes a frame, the rate set by SET_CUR to the endpoint;
+and a HID interface for its buttons. Synchronous needs no feedback, so U6
+is not on its path. The driver now says a speaker's whole configuration
+(187 bytes here) and the bytes are `M60` in `test_uacdecode.c`; QEMU's 113
+are checked by `usb_audio`.
 
 ## 18.997 Qwen2.5-3B held to llama.cpp, and the one-token bound by depth
 
@@ -42251,3 +42256,50 @@ and 1.25 out: ten times it. All three Qwen models pass 112 of 112;
 **Speed on the Mac**, scalar, one thread: 3.24 tokens a second; four
 parts, 10.3. On the M700 it is to be measured: about 2 GB read a token
 against 14 GB/s, so near 6-7 tokens a second.
+
+
+## 18.998 A USB speaker played: the M60's first sound (USB audio, U2)
+
+**In short**: Kosmos played sound through a USB speaker for the first time
+- ten beeps of 440 Hz from Diego's EDIFIER M60 on the M700, fed by the
+xHCI driver itself. On the machine: 480,000 frames in 10,000 intervals,
+none missed, none lost, no errors. The audio server does not reach it yet;
+that is U3.
+
+**What**: `user/drivers/usb/uac_stream.c` is the stream's arithmetic with
+no hardware in it - the frames each interval carries, kept with their
+remainder so a second is the rate to the frame (44.1 kHz at full speed is
+44 nine times and 45 the tenth), and a sine tone in integers (Bhaskara's,
+about 0.2%) laid out as 16, 24 or 32-bit little-endian samples. `xhci.c`
+gains a speaker beside the camera: SET_CONFIGURATION, Configure Endpoint
+with an isochronous OUT context, SET_INTERFACE, SET_CUR of the rate where
+the endpoint takes it (`sets_rate`, the class endpoint descriptor's bit 0,
+now read by the decoder - asked of QEMU's, which does not say it, it would
+stall), then 32 TDs of a millisecond on the ring, each refilled with the
+next interval and queued again when it comes back; on QEMU's controller by
+Frame ID one interval apart, elsewhere Start Isoch ASAP. Under
+`opt/kosmos/usbaudio=tone` it plays ten beeps of 400 ms, one a second, at
+-18 dB, and says so when the ring has run out.
+
+**Held by**:
+
+- `tools/test_uacdecode.c`, now 111 checks: the M60's 187 bytes (two
+  settings, synchronous, endpoint 3, its rate to be set; QEMU's not), and
+  a second of eight rates from 8 to 192 kHz at three intervals, each the
+  rate to the frame and no interval more than one off another; the tone's
+  peak within 0.2% and 440 rising crossings in a second; 16 and 24-bit
+  layouts byte for byte. **Its control** fails 49 of 105.
+- `usb_audio_tone` in `x86-usb-2`: QEMU's speaker writing to a WAV at 48
+  kHz. The driver says it plays on 1.1 at 48 kHz and that 480,000 frames
+  played with no errors; the WAV holds seven or more whole 400 ms beeps at
+  440 Hz within 15 and at a level. On the Mac it held all ten, peak 3854 -
+  QEMU's volume over the 4096 sent. **Its control**, `USBAUDIO_SILENT=1`,
+  boots without the word and fails 4 of 4.
+- `usb_audio` now also expects the dump of QEMU's 113 bytes, and its
+  control fails 4 of 4.
+
+**On the M700**, 0.12.79 netbooted with the word: the beeps from 1.02 s to
+11.03 s of the driver's log, "480000 frames in 10000 intervals; 0 missed,
+0 lost, 1 ran dry, 0 errors" - the one dry is the ring's end, which is how
+it stops.
+

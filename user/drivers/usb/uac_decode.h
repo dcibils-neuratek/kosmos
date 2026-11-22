@@ -49,6 +49,11 @@ struct uac_alt {
     uint16_t packet;            /* wMaxPacketSize 10:0 */
     uint8_t  extra;             /* wMaxPacketSize 12:11: more transactions */
     uint8_t  interval;          /* bInterval, as the device said it */
+    bool     sets_rate;         /* UAC1: its rate is chosen by SET_CUR of
+                                   the endpoint's sampling frequency (its
+                                   class endpoint descriptor's bit 0, 4.6.1.2);
+                                   asked of one that has not said so, it
+                                   would stall */
 
     /* An asynchronous output's feedback endpoint, IN, or 0 for none. */
     uint8_t  feedback;

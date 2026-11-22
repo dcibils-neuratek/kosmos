@@ -30,6 +30,7 @@
 #include <unistd.h>
 
 #include "../user/drivers/usb/uac_decode.h"
+#include "../user/drivers/usb/uac_stream.h"
 
 static int checks;
 static int fails;
@@ -153,6 +154,32 @@ static uint8_t HEADSET[] = {
 };
 
 /* ---- A MIDI keyboard: AudioControl, then MIDIStreaming (subclass 3). */
+/*
+ * **Diego's EDIFIER M60** (2d99:a094), byte for byte as the M700's xHCI
+ * driver said it on 22 November 2026 (`testing.md` 18.998): UAC1 at full
+ * speed, a speaker on interface 1 with two settings - 16 and 24 bits, both
+ * at 48 or 96 kHz, synchronous on endpoint 3 OUT - and its volume buttons
+ * on a HID interface 2 beside it.
+ */
+static uint8_t M60[] = {
+    0x09, 0x02, 0xbb, 0x00, 0x03, 0x01, 0x00, 0xa0, 0x32, 0x09, 0x04, 0x00,
+    0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x09, 0x24, 0x01, 0x00, 0x01, 0x2b,
+    0x00, 0x01, 0x01, 0x0c, 0x24, 0x02, 0x04, 0x01, 0x01, 0x00, 0x02, 0x03,
+    0x00, 0x00, 0x00, 0x0d, 0x24, 0x06, 0x05, 0x04, 0x02, 0x03, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x09, 0x24, 0x03, 0x06, 0x01, 0x03, 0x00, 0x05,
+    0x00, 0x09, 0x04, 0x01, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x09, 0x04,
+    0x01, 0x01, 0x01, 0x01, 0x02, 0x00, 0x00, 0x07, 0x24, 0x01, 0x04, 0x00,
+    0x01, 0x00, 0x0e, 0x24, 0x02, 0x01, 0x02, 0x02, 0x10, 0x02, 0x80, 0xbb,
+    0x00, 0x00, 0x77, 0x01, 0x09, 0x05, 0x03, 0x0d, 0x80, 0x01, 0x01, 0x00,
+    0x00, 0x07, 0x25, 0x01, 0x01, 0x00, 0x00, 0x00, 0x09, 0x04, 0x01, 0x02,
+    0x01, 0x01, 0x02, 0x00, 0x00, 0x07, 0x24, 0x01, 0x04, 0x00, 0x01, 0x00,
+    0x0e, 0x24, 0x02, 0x01, 0x02, 0x03, 0x18, 0x02, 0x80, 0xbb, 0x00, 0x00,
+    0x77, 0x01, 0x09, 0x05, 0x03, 0x0d, 0x40, 0x02, 0x01, 0x00, 0x00, 0x07,
+    0x25, 0x01, 0x01, 0x00, 0x00, 0x00, 0x09, 0x04, 0x02, 0x00, 0x01, 0x03,
+    0x00, 0x00, 0x00, 0x09, 0x21, 0x11, 0x01, 0x00, 0x01, 0x22, 0x51, 0x00,
+    0x07, 0x05, 0x84, 0x03, 0x03, 0x00, 0x04,
+};
+
 static uint8_t MIDI[] = {
     9, 0x02, U16(0), 2, 1, 0, 0x80, 0x32,
     9, 0x04, 0, 0, 0, 0x01, 0x01, 0x00, 0,
@@ -233,6 +260,7 @@ static void test_qemu(void)
     check(!a->continuous && a->nrates == 1 && a->rates[0] == 48000,
           "48 kHz, and only that");
     check(uac_takes(a, 48000) && !uac_takes(a, 44100), "takes 48 kHz, not 44.1");
+    check(!a->sets_rate, "and its rate is not to be set: it has one");
 
     i = uac_pick(&d, false, 44100, &rate);
     check(i == 0 && rate == 48000,
@@ -372,6 +400,127 @@ static void test_headset(void)
     check(i == 1 && rate == 44100, "records at 44.1 kHz, inside its range");
 }
 
+static void test_m60(void)
+{
+    struct uac_device d;
+    const struct uac_alt *a;
+    uint32_t rate = 0;
+    int i;
+
+    check(sizeof M60 == 187, "the M60 is the 187 bytes it says");
+    /* The control: its first setting's endpoint made bulk. */
+    corrupt(M60, sizeof M60, nth(M60, sizeof M60, 0x05, 0, 1) + 3, 0x02);
+
+    uac_decode_config(M60, sizeof M60, &d);
+
+    check(d.ok && !d.malformed, "the M60 is audio, well formed");
+    check(d.configuration == 1 && d.control == 0 && d.version == 1,
+          "configuration 1, control on interface 0, UAC1");
+    check(d.feature == 5 && d.output_type == 0x0301,
+          "feature unit 5, playing into a speaker");
+    check(d.plays && !d.records && strcmp(uac_kind(&d), "speaker") == 0,
+          "a speaker that does not record");
+    check(d.nalts == 2 && d.skipped == 0,
+          "two settings carry sound; the HID interface is not one");
+
+    a = &d.alts[0];
+    check(a->interface == 1 && a->alternate == 1 && !a->in && a->endpoint == 3,
+          "setting 1.1 plays on endpoint 3");
+    check(a->sync == UAC_SYNC_SYNC && a->feedback == 0,
+          "synchronous, so no feedback endpoint to follow");
+    check(a->packet == 384 && a->interval == 1,
+          "384 bytes a frame: 96 kHz of 16-bit stereo");
+    check(a->channels == 2 && a->subframe == 2 && a->bits == 16
+          && a->terminal == 4, "16-bit stereo, streaming to terminal 4");
+    check(a->nrates == 2 && uac_takes(a, 48000) && uac_takes(a, 96000)
+          && !uac_takes(a, 44100), "48 and 96 kHz, and not 44.1");
+    check(a->sets_rate, "its rate chosen by SET_CUR to endpoint 3");
+
+    a = &d.alts[1];
+    check(a->alternate == 2 && a->subframe == 3 && a->bits == 24
+          && a->packet == 576, "setting 1.2: 24 bits in 3 bytes, 576 a frame");
+
+    i = uac_pick(&d, false, 44100, &rate);
+    check(i == 0 && rate == 48000,
+          "a 44.1 kHz mix plays on 1.1, 16 bits, at 48 kHz");
+}
+
+/*
+ * **The stream's arithmetic** (`uac_stream.c`, U2): a second of every rate
+ * at full and high speed is the rate to the frame, no interval more than
+ * one off another; and the tone is a sine at its pitch, laid out as the
+ * setting lays samples out. The control asks for 1% less of each.
+ */
+static void test_stream(void)
+{
+    static const uint32_t RATES[] = { 8000, 22050, 32000, 44100, 48000,
+                                      88200, 96000, 192000 };
+    static const uint32_t UFRAMES[] = { 8, 1, 4 };
+    struct uac_clock k;
+    struct uac_tone t;
+    uint8_t buffer[48 * 2 * 4];
+    unsigned r, u, i, crossings = 0;
+    int32_t most = 0, least = 0, last = 0, v;
+    uint32_t cut = broken ? 100 : 0;
+
+    for (r = 0; r < sizeof RATES / sizeof RATES[0]; r++) {
+        for (u = 0; u < sizeof UFRAMES / sizeof UFRAMES[0]; u++) {
+            uint32_t rate = RATES[r], uframes = UFRAMES[u];
+            uint32_t intervals = 8000u / uframes, total = 0, f;
+            uint32_t low = 0xFFFFFFFFu, high = 0;
+            uint32_t top = uac_clock_most(rate, uframes);
+
+            uac_clock_init(&k, rate - rate / 100 * (cut != 0), uframes);
+
+            for (i = 0; i < intervals; i++) {
+                f = uac_clock_next(&k);
+                total += f;
+                low = f < low ? f : low;
+                high = f > high ? f : high;
+            }
+
+            check(total == rate && high - low <= 1 && high <= top,
+                  "a second of a rate is the rate, to the frame");
+        }
+    }
+
+    uac_clock_init(&k, 44100, 8);
+    for (i = 0; i < 9; i++) {
+        (void)uac_clock_next(&k);
+    }
+    check(uac_clock_next(&k) == 45 && uac_clock_most(44100, 8) == 45,
+          "44.1 kHz at full speed: 44 nine times, 45 the tenth");
+
+    uac_tone_init(&t, broken ? 436 : 440, 48000, 8192);
+    /* 48001 samples: the 440th turn ends on sample 48000. */
+    for (i = 0; i <= 48000; i++) {
+        v = uac_tone_next(&t);
+        most = v > most ? v : most;
+        least = v < least ? v : least;
+        crossings += (last < 0 && v >= 0) ? 1u : 0u;
+        last = v;
+    }
+    check(most >= 8170 && most <= 8192 && least <= -8170 && least >= -8192,
+          "the tone peaks at its level, within Bhaskara's 0.2%");
+    check(crossings == 440, "440 Hz is 440 rising crossings in a second");
+
+    uac_tone_init(&t, 1000, 48000, 16384);
+    check(uac_tone_fill(&t, buffer, 48, 2, 2) == 192,
+          "a millisecond of 16-bit stereo is 192 bytes");
+    check(buffer[0] == 0 && buffer[1] == 0 && buffer[4] == buffer[6]
+          && buffer[5] == buffer[7] && buffer[5] != 0,
+          "starting at nought, both channels the same, little-endian");
+    check(buffer[12 * 4 + 1] == 0x40 || buffer[12 * 4 + 1] == 0x3F,
+          "a quarter turn in, its peak: 16384 is 0x4000");
+
+    uac_tone_init(&t, 1000, 48000, 16384);
+    check(uac_tone_fill(&t, buffer, 48, 2, 3) == 288,
+          "a millisecond of 24-bit stereo is 288 bytes");
+    check(buffer[12 * 6 + 0] == 0 && (buffer[12 * 6 + 2] == 0x40
+                                      || buffer[12 * 6 + 2] == 0x3F),
+          "24 bits: the 16-bit sample in the high two bytes");
+}
+
 static void test_not_audio(void)
 {
     struct uac_device d;
@@ -448,6 +597,8 @@ int main(void)
     test_qemu_multi();
     test_dac();
     test_headset();
+    test_m60();
+    test_stream();
     test_not_audio();
 
     if (!broken) {
@@ -455,6 +606,7 @@ int main(void)
         cut_short("QEMU's multi-channel speaker", QEMU_MULTI, sizeof QEMU_MULTI);
         cut_short("the DAC", DAC, sizeof DAC);
         cut_short("the headset", HEADSET, sizeof HEADSET);
+        cut_short("the M60", M60, sizeof M60);
         cut_short("the MIDI keyboard", MIDI, sizeof MIDI);
     }
 
@@ -466,7 +618,7 @@ int main(void)
 
     printf("PASS: %d checks on USB Audio Class decoding (QEMU's speaker byte "
            "for byte and its 5.1 and 7.1, a UAC2 DAC and its clock's rates, "
-           "a UAC1 headset with feedback, a MIDI keyboard, every length cut "
+           "a UAC1 headset with feedback, Diego's EDIFIER M60, a second of every rate and the tone, a MIDI keyboard, every length cut "
            "short)\n", checks);
     return 0;
 }

@@ -843,6 +843,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/drivers/usb/pad_decode.c \
              user/drivers/usb/uvc_decode.c \
              user/drivers/usb/uac_decode.c \
+             user/drivers/usb/uac_stream.c \
              user/drivers/usb/midi_decode.c \
              user/drivers/usb/btusb_decode.c \
              user/drivers/bluetooth/hci_decode.c \
@@ -2344,11 +2345,13 @@ $(HOSTDIR)/test_uvcdecode: tools/test_uvcdecode.c tools/uvc_c920.h user/drivers/
 # every length of each cut short against a guard page. Its control,
 # UACTEST_BROKEN=1, breaks one field in each and must fail.
 #
-$(HOSTDIR)/test_uacdecode: tools/test_uacdecode.c user/drivers/usb/uac_decode.c user/drivers/usb/uac_decode.h
+$(HOSTDIR)/test_uacdecode: tools/test_uacdecode.c user/drivers/usb/uac_decode.c user/drivers/usb/uac_decode.h \
+                           user/drivers/usb/uac_stream.c user/drivers/usb/uac_stream.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -D_DARWIN_C_SOURCE -D_DEFAULT_SOURCE -Wall -Wextra \
 	        -Werror -O1 -g -fsanitize=undefined -fno-sanitize-recover=all \
-	        -o $@ tools/test_uacdecode.c user/drivers/usb/uac_decode.c
+	        -o $@ tools/test_uacdecode.c user/drivers/usb/uac_decode.c \
+	        user/drivers/usb/uac_stream.c
 
 # A USB MIDI device's descriptors and event packets (`roadmap.md` 6zg):
 # QEMU has none, so a Launchpad MK2's printed bytes and the Launchkey's

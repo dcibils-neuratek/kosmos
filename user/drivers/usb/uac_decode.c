@@ -17,6 +17,8 @@
 #define DT_INTERFACE        0x04u
 #define DT_ENDPOINT         0x05u
 #define DT_CS_INTERFACE     0x24u
+#define DT_CS_ENDPOINT      0x25u
+#define EP_GENERAL          0x01u
 
 #define CLASS_AUDIO         0x01u
 #define SUB_CONTROL         0x01u
@@ -49,6 +51,7 @@ struct pending {
     bool active;
     uint8_t version;            /* the streaming interface's: 1 or 2 */
     bool endpoint, pcm, type1;
+    bool after_data;            /* the last endpoint was the setting's own */
     struct uac_alt alt;
 };
 
@@ -223,6 +226,8 @@ static void endpoint(const uint8_t *d, unsigned len, struct pending *p)
     uint16_t size = get_le16(d + 4);
     bool in = (address & 0x80u) != 0;
 
+    p->after_data = false;
+
     if (len < 7 || (attributes & 0x3u) != 0x1u) {
         return;
     }
@@ -242,6 +247,7 @@ static void endpoint(const uint8_t *d, unsigned len, struct pending *p)
     }
 
     p->endpoint = true;
+    p->after_data = true;
     a->endpoint = address & 0x0Fu;
     a->in = in;
     a->sync = (attributes >> 2) & 0x3u;
@@ -327,6 +333,16 @@ void uac_decode_config(const uint8_t *bytes, unsigned length,
         case DT_ENDPOINT:
             if (p.active) {
                 endpoint(d, len, &p);
+            }
+            break;
+
+        case DT_CS_ENDPOINT:
+            /* UAC1's class endpoint descriptor (4.6.1.2), after the
+             * setting's own endpoint: bmAttributes bit 0 is its sampling
+             * frequency control. UAC2's rate is its clock's instead. */
+            if (p.active && p.after_data && p.version == 1 && len >= 7
+                && d[2] == EP_GENERAL) {
+                p.alt.sets_rate = (d[3] & 0x01u) != 0;
             }
             break;
 

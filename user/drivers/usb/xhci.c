@@ -87,6 +87,7 @@
 #include "usb_decode.h"
 #include "uvc_decode.h"
 #include "uac_decode.h"
+#include "uac_stream.h"
 #include "midi_decode.h"
 #include "btusb_decode.h"
 #include "../bluetooth/hci_decode.h"
@@ -1184,6 +1185,11 @@ static bool is_video(const struct controller *c, const uint32_t *event);
 static void take_video(struct controller *c, const uint32_t *event);
 static void camera_bells(const struct controller *c);
 
+/* A speaker's TDs coming back (`usbaudio.md` U2), and their doorbells. */
+static bool is_audio(const struct controller *c, const uint32_t *event);
+static void take_audio(struct controller *c, const uint32_t *event);
+static void speaker_bells(const struct controller *c);
+
 /* A MIDI device's events coming in (`usb.md` §12). */
 static bool is_midi(const struct controller *c, const uint32_t *event);
 static void take_midi(struct controller *c, const uint32_t *event);
@@ -1258,8 +1264,9 @@ static bool wait_serving(struct controller *c, unsigned long ms,
                 if (o == c && out != NULL && !is_report(o, event)
                     && !is_note(o, event) && !is_frame(o, event)
                     && !is_video(o, event) && !is_midi(o, event)
-                    && !is_bt(o, event)) {
+                    && !is_bt(o, event) && !is_audio(o, event)) {
                     camera_bells(o);
+                    speaker_bells(o);
                     memcpy(out, event, sizeof(event));
                     return true;
                 }
@@ -1270,9 +1277,11 @@ static bool wait_serving(struct controller *c, unsigned long ms,
                 take_video(o, event);
                 take_midi(o, event);
                 take_bt(o, event);
+                take_audio(o, event);
             }
 
             camera_bells(o);
+            speaker_bells(o);
         }
 
         passed = kosmos_ticks() - start;
@@ -6299,7 +6308,468 @@ static bool read_configuration(struct controller *c, struct device *d,
     return true;
 }
 
-/* Whether a configuration holds something `use_device` goes on to use. */
+/* --------------------------------------------------------------- a speaker */
+
+/*
+ * **A USB speaker played** (`docs/usbaudio.md` U2): the setting chosen, its
+ * rate set, and its isochronous OUT endpoint kept fed - the camera's ring
+ * turned round. A camera's TDs come back holding what arrived; a speaker's
+ * go out holding what is to be heard, and each one back is the next
+ * interval's, filled and queued again. `uac_stream.c` says how many frames
+ * each carries, so a second is the rate to the frame.
+ *
+ * U2 plays one thing: under `opt/kosmos/usbaudio=tone`, ten beeps of
+ * 440 Hz, 400 ms each a second, from the driver itself - which is how a
+ * speaker is heard before the audio server has a way to it (U3). Then the
+ * ring runs out, the endpoint says so, and it is left until U3.
+ *
+ * **Scheduled as the camera's are.** QEMU's controller is given a frame for
+ * each TD, one interval after the last - not seven eighths of one, as the
+ * camera's, since a speaker fed faster than it plays only overflows - and
+ * every other controller Start Isoch ASAP. The camera's rules about
+ * QEMU's wrap and lag hold the same.
+ */
+#define EP_TYPE_ISOCH_OUT   1u
+#define UAC1_SET_CUR_EP     (0x22u | (0x01u << 8))
+#define UAC1_SAM_FREQ       0x0100u     /* SAMPLING_FREQ_CONTROL << 8 */
+
+#define SPEAKERS_MAX        2u
+#define SPEAKER_TDS         32u         /* 32 ms in flight at full speed */
+#define SPEAKER_BELL_EVERY  8u
+#define SPEAKER_MIX_RATE    44100u      /* the audio server's, today */
+#define SPEAKER_TONE_HZ     440u
+#define SPEAKER_TONE_LEVEL  4096        /* -18 dB: a test tone, not a test */
+#define SPEAKER_BEEPS       10u
+#define SPEAKER_BEEP_TENTHS 4u          /* of each second */
+
+struct speaker {
+    bool          used;
+    bool          streaming;
+    bool          stopping;             /* no TD goes back on the ring */
+    struct controller *c;
+    unsigned      slot;
+    struct device dev;
+    struct uac_alt alt;
+    uint32_t      rate;
+    unsigned      dci;
+    unsigned      frame_bytes;          /* channels x subframe */
+    uint32_t      td_room;              /* the most one TD carries */
+    unsigned      uframes;
+
+    uint32_t      mfindex;              /* as the camera's */
+    uint32_t      sched;
+
+    struct ring   ring;
+    unsigned char td_of[RING_TRBS];
+    unsigned      oldest;
+    unsigned      out;                  /* TDs on the ring */
+    unsigned      queued;
+    bool          bell;
+
+    long          tds_cap;
+    uintptr_t     tds;
+    uint64_t      tds_bus;
+    unsigned long tds_pages;
+
+    struct uac_clock clock;
+    struct uac_tone  tone;
+    uint32_t      played;               /* frames, since the first */
+    uint32_t      tone_frames;          /* how many the beeps take */
+
+    unsigned long intervals, missed, errors, underruns, lost;
+};
+
+static struct speaker speakers[SPEAKERS_MAX];
+
+static struct speaker *speaker_on(const struct controller *c, unsigned slot)
+{
+    unsigned i;
+
+    for (i = 0; i < SPEAKERS_MAX; i++) {
+        if (speakers[i].used && speakers[i].c == c
+            && speakers[i].slot == slot) {
+            return &speakers[i];
+        }
+    }
+
+    return NULL;
+}
+
+static bool is_audio(const struct controller *c, const uint32_t *event)
+{
+    struct speaker *s;
+
+    if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER) {
+        return false;
+    }
+
+    s = speaker_on(c, TRB_SLOT_OF(event[3]));
+
+    return s != NULL && s->streaming && TRB_ENDPOINT_OF(event[3]) == s->dci;
+}
+
+/* An isochronous endpoint's interval as the slot context takes it
+ * (6.2.3.6): 2^(bInterval - 1) frames at full speed, microframes at high. */
+static unsigned iso_interval(unsigned speed, unsigned interval)
+{
+    interval = interval < 1u ? 1u : interval > 16u ? 16u : interval;
+    return (speed == 1u || speed == 2u) ? interval + 2u : interval - 1u;
+}
+
+/* The next interval's frames into buffer `which`: a beep's, or silence. */
+static uint32_t speaker_fill(struct speaker *s, unsigned which)
+{
+    uint8_t *at = (uint8_t *)(s->tds + (uintptr_t)which * s->td_room);
+    uint32_t frames = uac_clock_next(&s->clock), f;
+    uint32_t beep = s->rate / 10u * SPEAKER_BEEP_TENTHS;
+
+    for (f = 0; f < frames; f++, s->played++) {
+        if (s->played < s->tone_frames && s->played % s->rate < beep) {
+            (void)uac_tone_fill(&s->tone, at, 1, s->alt.channels,
+                                s->alt.subframe);
+        } else {
+            memset(at, 0, s->frame_bytes);
+            s->tone.phase = 0;          /* each beep begins at nought */
+        }
+
+        at += s->frame_bytes;
+    }
+
+    return frames * s->frame_bytes;
+}
+
+static void speaker_queue(struct speaker *s, unsigned which)
+{
+    unsigned packet = s->alt.packet != 0 ? s->alt.packet : 1u;
+    unsigned burst = s->alt.extra + 1u;
+    uint32_t bytes = speaker_fill(s, which);
+    unsigned packets = (bytes + packet - 1u) / packet;
+    unsigned bursts;
+    uint64_t at = s->tds_bus + (uint64_t)which * s->td_room;
+    uint32_t w3;
+
+    packets = packets == 0 ? 1u : packets;
+    bursts = (packets + burst - 1u) / burst;
+    w3 = TRB_TYPE(TRB_ISOCH) | TRB_IOC
+       | TRB_TBC(bursts - 1u) | TRB_TLBPC((packets - 1u) % burst);
+
+    if (s->c->frame_ids) {
+        uint32_t now = mmio_read32(s->c->rt + RT_MFINDEX) & 0x3FFFu, frame;
+
+        s->mfindex += (now - s->mfindex) & 0x3FFFu;
+        now = s->mfindex;
+        s->sched += s->uframes;
+
+        if ((int32_t)(s->sched - now) < 0) {
+            s->sched = now;             /* behind: never a frame passed */
+        }
+
+        frame = s->sched;
+
+        if ((frame & 0x3FFFu) >= 0x4000u - CAMERA_WRAP_GUARD) {
+            frame = (frame | 0x3FFFu) + 1u;
+            s->sched = frame;
+        }
+
+        w3 |= TRB_FRAME_ID(frame >> 3);
+    } else {
+        w3 |= TRB_SIA;
+    }
+
+    if (s->queued % SPEAKER_BELL_EVERY != SPEAKER_BELL_EVERY - 1u) {
+        w3 |= TRB_BEI;
+    }
+
+    s->td_of[s->ring.enqueue] = (unsigned char)which;
+    (void)ring_push(&s->ring, (uint32_t)at, (uint32_t)(at >> 32), bytes, w3);
+    s->queued++;
+    s->out++;
+    s->bell = true;
+}
+
+static void speaker_bells(const struct controller *c)
+{
+    unsigned i;
+
+    for (i = 0; i < SPEAKERS_MAX; i++) {
+        struct speaker *s = &speakers[i];
+
+        if (s->used && s->c == c && s->streaming && s->bell) {
+            s->bell = false;
+            mmio_write32(c->doorbells + 4u * s->slot, s->dci);
+        }
+    }
+}
+
+static void speaker_said(struct speaker *s, const char *what)
+{
+    struct say_line line;
+
+    about(&line, s->c);
+    say_text(&line, " port ");
+    say_dec(&line, s->dev.port);
+    say_text(&line, ": speaker: ");
+    say_text(&line, what);
+    say_dec(&line, s->played);
+    say_text(&line, " frames in ");
+    say_dec(&line, s->intervals);
+    say_text(&line, " intervals; ");
+    say_dec(&line, s->missed);
+    say_text(&line, " missed, ");
+    say_dec(&line, s->lost);
+    say_text(&line, " lost, ");
+    say_dec(&line, s->underruns);
+    say_text(&line, " ran dry, ");
+    say_dec(&line, s->errors);
+    say_text(&line, " errors");
+    say_send(console, &line);
+}
+
+/* A TD back off a speaker's ring: counted, and the next interval queued. */
+static void take_audio(struct controller *c, const uint32_t *event)
+{
+    struct speaker *s;
+    uint64_t at;
+    uint32_t code;
+    unsigned place;
+
+    if (!is_audio(c, event)) {
+        return;
+    }
+
+    s = speaker_on(c, TRB_SLOT_OF(event[3]));
+    code = TRB_CODE_OF(event[2]);
+    at = ((uint64_t)event[1] << 32) | event[0];
+
+    /* Ran out (4.10.3.1): every TD it had was played. The end of the
+     * beeps, or the ring not kept full in time. */
+    if (code == CC_RING_UNDERRUN || code == CC_RING_OVERRUN) {
+        s->underruns++;
+
+        if (s->stopping && s->out == 0) {
+            s->streaming = false;
+            speaker_said(s, "the beeps played - ");
+        }
+        return;
+    }
+
+    if (code >= CC_STOPPED && code <= CC_STOPPED + 2u) {
+        return;
+    }
+
+    if (at < s->ring.bus || at >= s->ring.bus + (uint64_t)RING_TRBS * 16u
+        || (at - s->ring.bus) % 16u != 0) {
+        s->errors++;
+        return;
+    }
+
+    place = (unsigned)((at - s->ring.bus) / 16u);
+
+    if ((place + (RING_TRBS - 1u) - s->oldest) % (RING_TRBS - 1u)
+        >= SPEAKER_TDS) {
+        s->errors++;
+        return;
+    }
+
+    /* Those before it are done too, their events dropped (take_video). */
+    while (s->oldest != place) {
+        s->lost++;
+        s->out--;
+
+        if (!s->stopping) {
+            speaker_queue(s, s->td_of[s->oldest]);
+        }
+
+        s->oldest = ring_next(s->oldest);
+    }
+
+    s->oldest = ring_next(place);
+    s->out--;
+    s->intervals++;
+
+    if (code == CC_MISSED_SERVICE) {
+        s->missed++;
+    } else if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
+        s->errors++;
+    }
+
+    if (!s->stopping && s->played >= s->tone_frames) {
+        s->stopping = true;
+    }
+
+    if (!s->stopping) {
+        speaker_queue(s, s->td_of[place]);
+    } else if (s->out == 0) {
+        s->streaming = false;
+        speaker_said(s, "the beeps played - ");
+    }
+}
+
+static void speaker_gone(struct controller *c, unsigned slot)
+{
+    struct speaker *s = speaker_on(c, slot);
+
+    if (s != NULL) {
+        if (s->tds != 0) {
+            (void)kosmos_share_unmap((unsigned long)s->tds, s->tds_pages);
+            (void)kosmos_cap_drop(s->tds_cap);
+        }
+
+        memset(s, 0, sizeof(*s));
+    }
+}
+
+/*
+ * **The stream started** (xHCI 4.6.6, UAC1 5.2.3.2.3.1): the setting's
+ * configuration, the endpoint's context by Configure Endpoint, then
+ * SET_INTERFACE - the order 4.6.6.1 gives, as the camera's - then its rate
+ * by SET_CUR to the endpoint where it takes one, and the ring full.
+ */
+static bool speaker_start(struct controller *c, struct device *d,
+                          const struct uac_device *info, int which,
+                          uint32_t rate, struct say_line *line)
+{
+    struct speaker *s = NULL;
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    uint32_t done[4], *icc, *slot, *ep, esit;
+    uint8_t rate_bytes[3];
+    unsigned i;
+
+    for (i = 0; i < SPEAKERS_MAX; i++) {
+        if (!speakers[i].used) {
+            s = &speakers[i];
+            break;
+        }
+    }
+
+    if (s == NULL) {
+        return false;
+    }
+
+    memset(s, 0, sizeof(*s));
+    s->c = c;
+    s->slot = d->slot;
+    s->dev = *d;
+    s->alt = info->alts[which];
+    s->rate = rate;
+    s->dci = 2u * s->alt.endpoint;
+    s->frame_bytes = (unsigned)s->alt.channels * s->alt.subframe;
+    s->uframes = 1u << iso_interval(d->speed, s->alt.interval);
+    s->td_room = uac_clock_most(rate, s->uframes) * s->frame_bytes;
+    esit = (uint32_t)s->alt.packet * (s->alt.extra + 1u);
+
+    if (s->frame_bytes == 0 || s->td_room > esit) {
+        say_failure(c, d->port, "a speaker's setting that carries its rate",
+                    "; it plays nothing", line);
+        return false;
+    }
+
+    s->tds_pages = ((unsigned long)SPEAKER_TDS * s->td_room + PAGE - 1u)
+                   / PAGE;
+
+    if (!control_nodata(c, &s->dev, SET_CONFIGURATION, info->configuration,
+                        0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION for the speaker",
+                    "; it plays nothing", line);
+        return false;
+    }
+
+    if (!camera_region(c, s->tds_pages, true, &s->tds_cap, &s->tds,
+                       &s->tds_bus)) {
+        c->last_code = CC_SUCCESS;
+        say_failure(c, d->port, "memory for the speaker's stream",
+                    " could not be had; it plays nothing", line);
+        return false;
+    }
+
+    s->used = true;
+
+    ring_start(&s->ring, (uint32_t *)(c->mem + (page + DEVICE_PAGE_RING) * PAGE),
+               c->bus + (page + DEVICE_PAGE_RING) * PAGE);
+
+    icc = context(c, s->dev.input, 0);
+    slot = context(c, s->dev.input, 1);
+    icc[0] = 0;
+    icc[1] = 1u | (1u << s->dci);
+    slot[0] = (slot[0] & ~(0x1Fu << 27)) | ((uint32_t)s->dci << 27);
+
+    /* As the camera's (6.2.3), OUT: no retries, its packet and bursts, the
+     * ring, and the average TD - the nominal interval's bytes. */
+    ep = context(c, s->dev.input, s->dci + 1u);
+    memset(ep, 0, c->context);
+    ep[0] = (iso_interval(d->speed, s->alt.interval) << 16)
+          | ((esit >> 16) << 24);
+    ep[1] = ((uint32_t)s->alt.packet << 16) | ((uint32_t)s->alt.extra << 8)
+          | (EP_TYPE_ISOCH_OUT << 3);
+    ep[2] = (uint32_t)s->ring.bus | 1u;
+    ep[3] = (uint32_t)(s->ring.bus >> 32);
+    ep[4] = ((esit & 0xFFFFu) << 16) | (s->td_room & 0xFFFFu);
+
+    if (!command(c, (uint32_t)s->dev.input_bus,
+                 (uint32_t)(s->dev.input_bus >> 32),
+                 TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(s->dev.slot), done)) {
+        speaker_gone(c, d->slot);
+        say_failure(c, d->port, "Configure Endpoint for the speaker's stream",
+                    "; it plays nothing", line);
+        return false;
+    }
+
+    if (!control_nodata(c, &s->dev, SET_INTERFACE, s->alt.alternate,
+                        s->alt.interface)) {
+        speaker_gone(c, d->slot);
+        say_failure(c, d->port, "SET_INTERFACE for the speaker's stream",
+                    "; it plays nothing", line);
+        return false;
+    }
+
+    rate_bytes[0] = (uint8_t)rate;
+    rate_bytes[1] = (uint8_t)(rate >> 8);
+    rate_bytes[2] = (uint8_t)(rate >> 16);
+
+    if (s->alt.sets_rate
+        && !control_out(c, &s->dev, UAC1_SET_CUR_EP, UAC1_SAM_FREQ,
+                        s->alt.endpoint, rate_bytes, 3u)) {
+        speaker_gone(c, d->slot);
+        say_failure(c, d->port, "SET_CUR of the speaker's rate",
+                    "; it plays nothing", line);
+        return false;
+    }
+
+    uac_clock_init(&s->clock, rate, s->uframes);
+    uac_tone_init(&s->tone, SPEAKER_TONE_HZ, rate, SPEAKER_TONE_LEVEL);
+    s->tone_frames = rate * SPEAKER_BEEPS;
+    s->mfindex = mmio_read32(c->rt + RT_MFINDEX) & 0x3FFFu;
+    s->sched = s->mfindex + 8u * s->uframes;   /* a little ahead to start */
+    s->oldest = s->ring.enqueue;
+    s->streaming = true;
+
+    for (i = 0; i < SPEAKER_TDS; i++) {
+        speaker_queue(s, i);
+    }
+
+    speaker_bells(c);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": speaker: playing ");
+    say_dec(line, SPEAKER_BEEPS);
+    say_text(line, " beeps of ");
+    say_dec(line, SPEAKER_TONE_HZ);
+    say_text(line, " Hz on ");
+    say_dec(line, s->alt.interface);
+    say_text(line, ".");
+    say_dec(line, s->alt.alternate);
+    say_text(line, " at ");
+    say_dec(line, rate);
+    say_text(line, " Hz, ");
+    say_dec(line, s->td_room);
+    say_text(line, " bytes an interval at most");
+    say_text(line, s->alt.sets_rate ? ", its rate set" : "");
+    say_send(console, line);
+    return true;
+}
+
 /*
  * **A speaker, headphones, a microphone or a headset** - USB Audio Class 1
  * or 2 (`docs/usbaudio.md` U1). Named, and each setting that carries sound
@@ -6307,7 +6777,8 @@ static bool read_configuration(struct controller *c, struct device *d,
  * keeps time and how much it carries a frame. A UAC2 device keeps its rates
  * behind its clock source, so they are asked for (GET RANGE of the clock's
  * sampling frequency, UAC2 5.2.3.3 and 5.2.5.1.1) - two bytes for how many
- * subranges, then the whole. Nothing is played yet: that is U2.
+ * subranges, then the whole. Under `opt/kosmos/usbaudio=tone` it is then
+ * played (U2, above).
  */
 #define UAC2_GET_RANGE      (0xA1u | (0x02u << 8))
 #define UAC2_SAM_FREQ       0x0100u     /* CS_SAM_FREQ_CONTROL << 8 */
@@ -6403,8 +6874,34 @@ static void use_audio(struct controller *c, struct device *d,
         say_text(line, " bytes an interval");
         say_send(console, line);
     }
+
+    {
+        char option[16] = { 0 };
+        uint32_t rate = 0;
+        int which;
+
+        if (kosmos_boot_option("opt/kosmos/usbaudio", option,
+                               sizeof(option)) != 4
+            || memcmp(option, "tone", 4) != 0) {
+            return;                     /* until the audio server has it: U3 */
+        }
+
+        which = uac_pick(info, false, SPEAKER_MIX_RATE, &rate);
+
+        if (which < 0 || rate == 0) {
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, d->port);
+            say_text(line, ": speaker: nothing it plays at a rate it said");
+            say_send(console, line);
+            return;
+        }
+
+        (void)speaker_start(c, d, info, which, rate, line);
+    }
 }
 
+/* Whether a configuration holds something `use_device` goes on to use. */
 static bool usable(enum usb_config_kind kind)
 {
     return kind == USB_CONFIG_BOOT_MOUSE || kind == USB_CONFIG_BULK_ONLY
@@ -7231,6 +7728,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
 
     if (slot != 0 && slot != PORT_FAILED) {
         camera_gone(c, slot);
+        speaker_gone(c, slot);
         midi_gone(c, slot, line);
         bluetooth_gone(c, slot, line);
         stick_release_buffer(&c->stick[slot]);
@@ -7385,9 +7883,11 @@ static void service(struct controller *c, struct say_line *line)
         take_video(c, trb);
         take_midi(c, trb);
         take_bt(c, trb);
+        take_audio(c, trb);
     }
 
     camera_bells(c);
+    speaker_bells(c);
 
     for (port = 1; port <= c->ports; port++) {
         uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));

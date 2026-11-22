@@ -253,6 +253,9 @@ Each is small enough to be checked by itself:
   with TDs from a buffer of its own, a tone made in the driver, behind
   `opt/kosmos/usbaudio=tone`, as the camera's pattern is. QEMU's WAV holds
   the tone.
+  **Built in 0.12.79, and played on the M60** (`testing.md` 18.998): ten
+  beeps of 440 Hz, 480,000 frames, none missed. The M60 is UAC1 and
+  synchronous, so U6 is not on its path.
 - **U3, the ring and the server.** The audio server holds a list of
   outputs, takes a USB one when it arrives, and writes its mix there
   through the ring, converted. Chosen by `opt/kosmos/audio=usb` until U4.
