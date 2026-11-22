@@ -23,6 +23,13 @@ into the window's buffer, the byte order (B8G8R8A8 into a word of
 window is: the cube is looked for in the whole screen.
 `KOSMOS_VULKAN_SHOT` keeps that screen as a PNG.
 
+**And compute** (`docs/xavier.md` X12 V1): the Vulkan Kit's compute
+pipelines, push descriptors, specialisation and push constants and the
+barrier between two dispatches, run over words this script can make too
+- twice, at two sizes and two workgroups, one of them not a whole number
+of groups - and every word of the second pass held here, by its hash.
+And the device must have what llama.cpp's shaders are written against.
+
 Usage: run_vulkan.py IMAGE [APPS]
 """
 
@@ -81,8 +88,50 @@ local function tell(name, s)
 end
 tell("triangle", kit.triangle(%s))
 tell("cube", kit.cube(%s))
+tell("compute", kit.compute(%s))
+tell("compute2", kit.compute(%s))
 """ % (arguments([c for p in CORNERS for c in p] + list(COLOUR)),
-       arguments([YAW, PITCH, DISTANCE, FOCAL] + list(COLOURS[0]) + list(COLOURS[1])))
+       arguments([YAW, PITCH, DISTANCE, FOCAL] + list(COLOURS[0]) + list(COLOURS[1])),
+       "%d, %d, %d, %d" % (100003, 31, 7, 64), "%d, %d, %d, %d" % (4096, 2654435769, 0, 256))
+
+# What the compute check runs (n, mul, add, lanes a workgroup), in the
+# order the program asks.
+COMPUTES = (("compute", (100003, 31, 7, 64)), ("compute2", (4096, 2654435769, 0, 256)))
+# What llama.cpp's shaders cannot do without: blocks of bytes and half
+# words read from storage, and small integers. Half-float arithmetic
+# (`f16`) is said but not asked for - lavapipe has it only where the
+# processor has F16C, and the shaders do without it (FLOAT16 unset).
+TENSORS = ("s16", "s8", "i8", "i16")
+
+
+def compute_words(n, mul, add):
+    """`compute.comp`'s two passes, worked out here (`vulkantest.c`'s
+    `word_at` and its bytes and half words)."""
+    m = 0xffffffff
+    word = [(i * 2654435761 + 12345) & m for i in range(max(n, 512))]
+    byte = [w >> 24 for w in word[:256]]
+    half = [(w >> 16) & 0xffff for w in word[256:512]]
+    first = [(word[i] * mul + add + byte[i % 256] + (half[i % 256] << 8)) & m for i in range(n)]
+    return [first[(i * 7 + 3) % n] ^ (first[i] >> 3) for i in range(n)]
+
+
+def compute_judge(said, n, mul, add):
+    """None if the device and every word are right, or what was wrong."""
+    m = re.match(r"compute device=llvmpipe/1\.\d+ tensors=([a-z0-9,]*) ms=[-\d.]+"
+                 r" words=(\d+) first=(\d+) last=(\d+) hash=(\d+)$", said)
+    if not m:
+        return "not an answer from llvmpipe: %s" % said
+    missing = [t for t in TENSORS if t not in m.group(1).split(",")]
+    if missing:
+        return "the device lacks %s" % ", ".join(missing)
+    out = compute_words(n, mul, add)
+    h = 2166136261
+    for w in out:
+        for k in range(0, 32, 8):
+            h = ((h ^ ((w >> k) & 0xff)) * 16777619) & 0xffffffff
+    got = tuple(int(m.group(k)) for k in (2, 3, 4, 5))
+    want = (n, out[0], out[-1], h)
+    return None if got == want else "words, first, last, hash %s, wanted %s" % (got, want)
 
 # The window: FRAMES frames, STEP further in yaw each, the last at YAW.
 FRAMES, STEP = 30, 0.05
@@ -358,15 +407,16 @@ def main():
         started = time.monotonic()
         guest.type("run /Home/apps/vulkan/vulkantest.lua")
 
-        while time.monotonic() < started + 240 and len(said) < 2:
-            said.update(gather(guest.seen[mark:], ("triangle", "cube")))
-            if len(said) < 2:
+        names = ("triangle", "cube") + tuple(n for n, _ in COMPUTES)
+        while time.monotonic() < started + 240 and len(said) < len(names):
+            said.update(gather(guest.seen[mark:], names))
+            if len(said) < len(names):
                 time.sleep(0.2)
                 guest._read_available()
         took = time.monotonic() - started
 
         # The window, on a desktop started for it.
-        if len(said) == 2:
+        if len(said) == len(names):
             mark = len(guest.seen)
             guest.type("wm /Home/apps/vulkan/vkwindow.lua")
             until = time.monotonic() + 180
@@ -395,6 +445,11 @@ def main():
             print("FAIL: Vulkan on Kosmos did not draw the %s: %s" % (name, wrong))
             print("  wanted:\n    " + "\n    ".join(want()))
             print("  said:   %s" % said.get(name))
+    for name, (n, mul, add, _) in COMPUTES:
+        wrong = compute_judge(said[name], n, mul, add) if name in said else "nothing said"
+        if wrong:
+            failed = True
+            print("FAIL: Vulkan on Kosmos, compute (%s): %s" % (name, wrong))
     if not failed:
         m = re.match(r"vulkan device=llvmpipe/1\.\d+ extent=(\d+)x(\d+) images=(\d+)"
                      r" frames=(\d+) ms=(\d+)$", said.get("window", ""))
@@ -407,7 +462,7 @@ def main():
             print("FAIL: Vulkan on Kosmos, the cube in a window: %s" % wrong)
             print("  said: %s" % said.get("window"))
     if failed:
-        if len(said) < 2:
+        if len(said) < 2 + len(COMPUTES):
             print("--- the guest's last words ---\n" + guest.seen[mark:][-1500:])
         return 1
 
@@ -425,6 +480,11 @@ def main():
     print("PASS: and in a window, through VK_KOSMOS_surface: %s frames presented from a"
           " swapchain of %s images in %.1f s, the last one on the screen, every pixel"
           " where it must be" % (m.group(2), m.group(1), int(m.group(3)) / 1000.0))
+    print("PASS: and compute, %s: two dispatches with a barrier between, over %s,"
+          " every word the second pass wrote the one worked out here; the device has %s"
+          % (", ".join("%d words in groups of %d" % (c[0], c[3]) for _, c in COMPUTES),
+             "push descriptors and specialisation and push constants",
+             said["compute"].split("tensors=")[1].split(" ")[0].rstrip(",")))
     return 0
 
 if __name__ == "__main__":

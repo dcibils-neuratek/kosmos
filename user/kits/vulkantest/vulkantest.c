@@ -21,6 +21,12 @@
  *         what it says is the surface's extent, the swapchain's images and
  *         how long the frames took, and what is on the screen at the end is
  *         the caller's to find;
+ *     compute(n, mul, add, group)
+ *         the Vulkan Kit's compute (`docs/xavier.md` X12 V1): `compute.comp`
+ *         over `n` words, twice, a barrier between, `group` lanes a
+ *         workgroup and `add` specialised in - what it says is the
+ *         device's tensor features, the time, and every word of the
+ *         second pass hashed (FNV-1a) with the first and the last;
  *     hold(seconds)
  *         that window kept, showing its last frame, for `seconds` or until
  *         it is closed: true if it was open to the end.
@@ -56,6 +62,7 @@
 #include "kits/vulkan/kvk.h"
 #include "kits/3d/k3d_vk.h"
 
+#include "compute_comp.h"
 #include "triangle_vert.h"
 #include "triangle_frag.h"
 #include "cube_vert.h"
@@ -619,7 +626,7 @@ static void window(double yaw, double pitch, double distance, double focal,
     if (shown.window != NULL) {
         window_close();
     }
-    if (!kvk_open(v, "vulkantest", 1)) {
+    if (!kvk_open(v, "vulkantest", KVK_WINDOWED)) {
         if (v->device_name[0]) {
             say(" device=%s", v->device_name);
         }
@@ -1037,7 +1044,7 @@ static int l_scene_window(lua_State *L)
     if (shown.window != NULL) {
         window_close();
     }
-    if (!kvk_open(v, "vulkantest", 1)) {
+    if (!kvk_open(v, "vulkantest", KVK_WINDOWED)) {
         if (v->device_name[0]) {
             say(" device=%s", v->device_name);
         }
@@ -1295,6 +1302,106 @@ finished:
     return 2;
 }
 
+/* --- compute (`docs/xavier.md` X12 V1) ------------------------------------ */
+
+/* The inputs: words the caller can make too, and 256 bytes and 256 half
+ * words, from the same rule. */
+static uint32_t word_at(uint32_t i)
+{
+    return i * 2654435761u + 12345u;
+}
+
+static int l_compute(lua_State *L)
+{
+    uint32_t n = (uint32_t)luaL_checkinteger(L, 1);
+    uint32_t mul = (uint32_t)luaL_checkinteger(L, 2);
+    uint32_t spec[2] = { (uint32_t)luaL_checkinteger(L, 4), (uint32_t)luaL_checkinteger(L, 3) };
+    struct kvk v;
+    struct kvk_compute c = { 0 };
+    struct kvk_buffer in = { 0 }, both = { 0 }, small = { 0 };
+    /* Both passes' outputs in one buffer, the second at an offset: a span
+     * is a run of a buffer, as a layer's tensors are. */
+    VkDeviceSize second = ((VkDeviceSize)n * 4 + 4095) & ~(VkDeviceSize)4095;
+
+    said[0] = '\0';
+    say("compute");
+    if (n == 0 || n > (1u << 24) || spec[0] == 0) {
+        say(" failed=arguments");
+        goto finished;
+    }
+    if (!kvk_open(&v, "vulkantest", KVK_COMPUTE)) {
+        if (v.device_name[0]) {
+            say(" device=%s", v.device_name);
+        }
+        goto done;
+    }
+    say(" device=%s tensors=%s%s%s%s%s%s", v.device_name,
+        v.tensors & KVK_HAS_STORAGE16 ? "s16," : "", v.tensors & KVK_HAS_STORAGE8 ? "s8," : "",
+        v.tensors & KVK_HAS_FLOAT16 ? "f16," : "", v.tensors & KVK_HAS_INT8 ? "i8," : "",
+        v.tensors & KVK_HAS_INT16 ? "i16," : "",
+        v.tensors & KVK_HAS_SUBGROUP_SIZE ? "subgroup," : "");
+    if (!kvk_compute_make(&v, &c, compute_comp, sizeof(compute_comp), 4, 12, spec, 2,
+                          "pipeline") ||
+        !kvk_buffer_make_storage(&v, &in, (VkDeviceSize)n * 4, "in") ||
+        !kvk_buffer_make_storage(&v, &both, second + (VkDeviceSize)n * 4, "out") ||
+        !kvk_buffer_make_storage(&v, &small, 1024, "small")) {
+        goto done;
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        ((uint32_t *)in.bytes)[i] = word_at(i);
+    }
+    for (uint32_t i = 0; i < 256; i++) {
+        ((uint8_t *)small.bytes)[i] = (uint8_t)(word_at(i) >> 24);
+        ((uint16_t *)((uint8_t *)small.bytes + 512))[i] = (uint16_t)(word_at(i + 256) >> 16);
+    }
+
+    uint32_t push[3] = { n, mul, 0 };
+    uint32_t groups = (n + spec[0] - 1) / spec[0];
+    struct kvk_span first[4] = {
+        { in.buffer, 0, 0 }, { both.buffer, 0, (VkDeviceSize)n * 4 },
+        { small.buffer, 0, 256 }, { small.buffer, 512, 512 },
+    };
+    struct kvk_span then[4] = {
+        { both.buffer, 0, (VkDeviceSize)n * 4 }, { both.buffer, second, (VkDeviceSize)n * 4 },
+        { small.buffer, 0, 256 }, { small.buffer, 512, 512 },
+    };
+    if (!kvk_begin(&v) || !kvk_time_start(&v)) {
+        goto done;
+    }
+    kvk_compute_dispatch(&v, &c, first, push, groups, 1, 1);
+    kvk_compute_barrier(&v);
+    push[2] = 1;
+    kvk_compute_dispatch(&v, &c, then, push, groups, 1, 1);
+    kvk_compute_barrier(&v);
+    kvk_time_end(&v);
+    if (!kvk_submit(&v)) {
+        goto done;
+    }
+
+    const uint32_t *out = (const uint32_t *)((const uint8_t *)both.bytes + second);
+    uint32_t hash = 2166136261u;
+    for (uint32_t i = 0; i < n; i++) {
+        for (int k = 0; k < 32; k += 8) {
+            hash = (hash ^ ((out[i] >> k) & 0xffu)) * 16777619u;
+        }
+    }
+    say(" ms=%.3f words=%u first=%u last=%u hash=%u", kvk_time_ms(&v), n, out[0], out[n - 1],
+        hash);
+
+done:
+    said_failure(&v);
+    if (v.device != VK_NULL_HANDLE) {
+        kvk_buffer_free(&v, &small);
+        kvk_buffer_free(&v, &both);
+        kvk_buffer_free(&v, &in);
+        kvk_compute_free(&v, &c);
+    }
+    kvk_close(&v);
+finished:
+    lua_pushstring(L, said);
+    return 1;
+}
+
 static int l_hold(lua_State *L)
 {
     lua_pushboolean(L, hold(luaL_checknumber(L, 1)));
@@ -1316,6 +1423,8 @@ void kosmos_vulkantest_kit(lua_State *L)
     lua_setfield(L, -2, "scene_window");
     lua_pushcfunction(L, l_terrain);
     lua_setfield(L, -2, "terrain");
+    lua_pushcfunction(L, l_compute);
+    lua_setfield(L, -2, "compute");
     lua_pushcfunction(L, l_hold);
     lua_setfield(L, -2, "hold");
     lua_pushinteger(L, TRIANGLE);

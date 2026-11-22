@@ -32,7 +32,7 @@ uint32_t kvk_memory_type(const struct kvk *v, uint32_t bits, VkMemoryPropertyFla
     return UINT32_MAX;
 }
 
-int kvk_open(struct kvk *v, const char *program, int windowed)
+int kvk_open(struct kvk *v, const char *program, int flags)
 {
     PFN_vkGetInstanceProcAddr gipa = vk_icdGetInstanceProcAddr;
     PFN_vkCreateInstance create_instance =
@@ -57,7 +57,7 @@ int kvk_open(struct kvk *v, const char *program, int windowed)
     static const char *const surfaces[] = {
         VK_KHR_SURFACE_EXTENSION_NAME, VK_KOSMOS_SURFACE_EXTENSION_NAME,
     };
-    if (windowed) {
+    if (flags & KVK_WINDOWED) {
         ici.enabledExtensionCount = 2;
         ici.ppEnabledExtensionNames = surfaces;
     }
@@ -120,22 +120,100 @@ int kvk_open(struct kvk *v, const char *program, int windowed)
         .dynamicRendering = VK_TRUE,
         .synchronization2 = VK_TRUE,
     };
+    VkPhysicalDeviceVulkan12Features v12 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+    };
+    VkPhysicalDeviceVulkan11Features v11 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+    };
+    VkPhysicalDeviceFeatures core = { 0 };
     VkDeviceCreateInfo dci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &v13,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &qci,
     };
-    static const char *const swapchain[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    if (windowed) {
-        dci.enabledExtensionCount = 1;
-        dci.ppEnabledExtensionNames = swapchain;
+    const char *extensions[2];
+    uint32_t nextensions = 0;
+
+    if (flags & KVK_WINDOWED) {
+        extensions[nextensions++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
     }
+    /* **Compute on tensors** (`docs/xavier.md` X12): what llama.cpp's
+     * shaders are written against - 8- and 16-bit values in storage
+     * buffers, half floats and small integers in arithmetic, a subgroup's
+     * size chosen - asked of the device and turned on where it has them,
+     * and push descriptors, so a dispatch names its buffers as it is
+     * recorded rather than through a set made for it. What the device
+     * lacks is left off, and `v->tensors` says what it has. */
+    if (flags & KVK_COMPUTE) {
+        PFN_vkGetPhysicalDeviceFeatures2 features2 =
+            (PFN_vkGetPhysicalDeviceFeatures2)gipa(v->instance, "vkGetPhysicalDeviceFeatures2");
+        PFN_vkEnumerateDeviceExtensionProperties enumerate_extensions =
+            (PFN_vkEnumerateDeviceExtensionProperties)gipa(v->instance,
+                                                           "vkEnumerateDeviceExtensionProperties");
+        VkPhysicalDeviceVulkan13Features h13 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        };
+        VkPhysicalDeviceVulkan12Features h12 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &h13,
+        };
+        VkPhysicalDeviceVulkan11Features h11 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &h12,
+        };
+        VkPhysicalDeviceFeatures2 has = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &h11,
+        };
+
+        if (features2 == NULL) {
+            refused(v, "no-features2");
+            goto done;
+        }
+        features2(v->physical, &has);
+        v11.storageBuffer16BitAccess = h11.storageBuffer16BitAccess;
+        v11.uniformAndStorageBuffer16BitAccess = h11.uniformAndStorageBuffer16BitAccess;
+        v12.storageBuffer8BitAccess = h12.storageBuffer8BitAccess;
+        v12.uniformAndStorageBuffer8BitAccess = h12.uniformAndStorageBuffer8BitAccess;
+        v12.shaderFloat16 = h12.shaderFloat16;
+        v12.shaderInt8 = h12.shaderInt8;
+        v13.subgroupSizeControl = h13.subgroupSizeControl;
+        v13.computeFullSubgroups = h13.computeFullSubgroups;
+        core.shaderInt16 = has.features.shaderInt16;
+        core.shaderInt64 = has.features.shaderInt64;
+        v->tensors = (h11.storageBuffer16BitAccess ? KVK_HAS_STORAGE16 : 0) |
+                     (h12.storageBuffer8BitAccess ? KVK_HAS_STORAGE8 : 0) |
+                     (h12.shaderFloat16 ? KVK_HAS_FLOAT16 : 0) |
+                     (h12.shaderInt8 ? KVK_HAS_INT8 : 0) |
+                     (has.features.shaderInt16 ? KVK_HAS_INT16 : 0) |
+                     (h13.subgroupSizeControl ? KVK_HAS_SUBGROUP_SIZE : 0);
+        v13.pNext = &v12;
+        v12.pNext = &v11;
+        dci.pEnabledFeatures = &core;
+
+        VkExtensionProperties all[256];
+        uint32_t nall = 256;
+        int push = 0;
+        if (enumerate_extensions != NULL &&
+            enumerate_extensions(v->physical, NULL, &nall, all) >= VK_SUCCESS) {
+            for (uint32_t i = 0; i < nall; i++) {
+                push |= strcmp(all[i].extensionName, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME) == 0;
+            }
+        }
+        if (!push) {
+            refused(v, "no-push-descriptor");
+            goto done;
+        }
+        extensions[nextensions++] = VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME;
+    }
+    dci.enabledExtensionCount = nextensions;
+    dci.ppEnabledExtensionNames = nextensions > 0 ? extensions : NULL;
     KVK_STEP(v, create_device(v->physical, &dci, NULL, &v->device), "device");
 
 #define KVK_LOOK_UP(name) v->name = (PFN_##name)gdpa(v->device, #name);
     KVK_FUNCTIONS(KVK_LOOK_UP)
 #undef KVK_LOOK_UP
+    v->vkCmdPushDescriptorSetKHR =
+        (PFN_vkCmdPushDescriptorSetKHR)gdpa(v->device, "vkCmdPushDescriptorSetKHR");
     PFN_vkGetDeviceQueue get_queue = (PFN_vkGetDeviceQueue)gdpa(v->device, "vkGetDeviceQueue");
     get_queue(v->device, 0, 0, &v->queue);
 
@@ -718,5 +796,195 @@ int kvk_present(struct kvk *v, struct kvk_swapchain *s, uint32_t index)
     return 1;
 
 done:
+    return 0;
+}
+
+/* --- Compute (`docs/xavier.md` X12) --------------------------------------- */
+
+int kvk_compute_make(struct kvk *v, struct kvk_compute *c, const uint32_t *spirv,
+                     size_t spirv_bytes, uint32_t buffers, uint32_t push_bytes,
+                     const uint32_t *spec, uint32_t nspec, const char *what)
+{
+    VkDescriptorSetLayoutBinding binding[KVK_COMPUTE_BUFFERS];
+    VkSpecializationMapEntry entry[16];
+    VkShaderModule module = VK_NULL_HANDLE;
+
+    memset(c, 0, sizeof(*c));
+    if (buffers > KVK_COMPUTE_BUFFERS || nspec > 16 || v->vkCmdPushDescriptorSetKHR == NULL) {
+        refused(v, what);
+        return 0;
+    }
+    c->buffers = buffers;
+    c->push_bytes = push_bytes;
+    for (uint32_t i = 0; i < buffers; i++) {
+        binding[i] = (VkDescriptorSetLayoutBinding){
+            .binding = i,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        };
+    }
+    VkDescriptorSetLayoutCreateInfo dslci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,
+        .bindingCount = buffers,
+        .pBindings = binding,
+    };
+    KVK_STEP(v, v->vkCreateDescriptorSetLayout(v->device, &dslci, NULL, &c->set_layout), what);
+    VkPushConstantRange range = {
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .size = push_bytes,
+    };
+    VkPipelineLayoutCreateInfo plci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &c->set_layout,
+        .pushConstantRangeCount = push_bytes > 0,
+        .pPushConstantRanges = &range,
+    };
+    KVK_STEP(v, v->vkCreatePipelineLayout(v->device, &plci, NULL, &c->layout), what);
+
+    VkShaderModuleCreateInfo smci = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = spirv_bytes,
+        .pCode = spirv,
+    };
+    KVK_STEP(v, v->vkCreateShaderModule(v->device, &smci, NULL, &module), what);
+    for (uint32_t i = 0; i < nspec; i++) {
+        entry[i] = (VkSpecializationMapEntry){ .constantID = i, .offset = 4 * i, .size = 4 };
+    }
+    VkSpecializationInfo si = {
+        .mapEntryCount = nspec,
+        .pMapEntries = entry,
+        .dataSize = 4 * nspec,
+        .pData = spec,
+    };
+    VkComputePipelineCreateInfo cpci = {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+            .module = module,
+            .pName = "main",
+            .pSpecializationInfo = nspec > 0 ? &si : NULL,
+        },
+        .layout = c->layout,
+    };
+    KVK_STEP(v, v->vkCreateComputePipelines(v->device, VK_NULL_HANDLE, 1, &cpci, NULL,
+                                            &c->pipeline), what);
+    v->vkDestroyShaderModule(v->device, module, NULL);
+    return 1;
+
+done:
+    if (module != VK_NULL_HANDLE) {
+        v->vkDestroyShaderModule(v->device, module, NULL);
+    }
+    kvk_compute_free(v, c);
+    return 0;
+}
+
+void kvk_compute_free(struct kvk *v, struct kvk_compute *c)
+{
+    if (c->pipeline != VK_NULL_HANDLE) {
+        v->vkDestroyPipeline(v->device, c->pipeline, NULL);
+    }
+    if (c->layout != VK_NULL_HANDLE) {
+        v->vkDestroyPipelineLayout(v->device, c->layout, NULL);
+    }
+    if (c->set_layout != VK_NULL_HANDLE) {
+        v->vkDestroyDescriptorSetLayout(v->device, c->set_layout, NULL);
+    }
+    memset(c, 0, sizeof(*c));
+}
+
+void kvk_compute_dispatch(struct kvk *v, const struct kvk_compute *c,
+                          const struct kvk_span *spans, const void *push,
+                          uint32_t x, uint32_t y, uint32_t z)
+{
+    VkDescriptorBufferInfo info[KVK_COMPUTE_BUFFERS];
+    VkWriteDescriptorSet write[KVK_COMPUTE_BUFFERS];
+
+    for (uint32_t i = 0; i < c->buffers; i++) {
+        info[i] = (VkDescriptorBufferInfo){
+            .buffer = spans[i].buffer,
+            .offset = spans[i].offset,
+            .range = spans[i].range != 0 ? spans[i].range : VK_WHOLE_SIZE,
+        };
+        write[i] = (VkWriteDescriptorSet){
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = i,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &info[i],
+        };
+    }
+    v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c->pipeline);
+    v->vkCmdPushDescriptorSetKHR(v->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c->layout, 0,
+                                 c->buffers, write);
+    if (c->push_bytes > 0) {
+        v->vkCmdPushConstants(v->cmd, c->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, c->push_bytes,
+                              push);
+    }
+    v->vkCmdDispatch(v->cmd, x, y, z);
+}
+
+/* One global barrier rather than one a buffer: llama.cpp's backend does
+ * the same between the nodes of a graph, and a token's steps each read
+ * what the step before wrote, so there is nothing narrower to say. */
+void kvk_compute_barrier(struct kvk *v)
+{
+    VkMemoryBarrier b = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                         VK_ACCESS_HOST_READ_BIT,
+    };
+
+    v->vkCmdPipelineBarrier(v->cmd,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_HOST_BIT, 0,
+                            1, &b, 0, NULL, 0, NULL);
+}
+
+int kvk_buffer_make_storage(struct kvk *v, struct kvk_buffer *b, VkDeviceSize size,
+                            const char *what)
+{
+    VkMemoryRequirements need;
+    VkBufferCreateInfo bci = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+    const VkMemoryPropertyFlags mapped =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    uint32_t type;
+
+    memset(b, 0, sizeof(*b));
+    KVK_STEP(v, v->vkCreateBuffer(v->device, &bci, NULL, &b->buffer), what);
+    v->vkGetBufferMemoryRequirements(v->device, b->buffer, &need);
+    /* Cached and the device's own first (an Intel GPU's, sharing the
+     * processor's last-level cache), then cached, then any mapped. */
+    type = kvk_memory_type(v, need.memoryTypeBits,
+                           mapped | VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (type == UINT32_MAX) {
+        type = kvk_memory_type(v, need.memoryTypeBits, mapped | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+    }
+    if (type == UINT32_MAX) {
+        type = kvk_memory_type(v, need.memoryTypeBits, mapped);
+    }
+    VkMemoryAllocateInfo mai = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = need.size,
+        .memoryTypeIndex = type,
+    };
+    KVK_STEP(v, v->vkAllocateMemory(v->device, &mai, NULL, &b->memory), what);
+    KVK_STEP(v, v->vkBindBufferMemory(v->device, b->buffer, b->memory, 0), what);
+    KVK_STEP(v, v->vkMapMemory(v->device, b->memory, 0, VK_WHOLE_SIZE, 0, &b->bytes), what);
+    return 1;
+
+done:
+    kvk_buffer_free(v, b);
     return 0;
 }

@@ -4788,7 +4788,12 @@ K3D_VK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk.c.o $(UBUILD)/user/kits/3d/k3d_terr
                $(UBUILD)/user/kits/3d/k3d_extrude.c.o
 K3D_VK_SPV := $(foreach s,mesh sky ground model overlay shadow,$(foreach k,vert frag,$(UBUILD)/gen/k3d/k3d_$(s)_$(k).h))
 VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o $(KVK_OBJS) $(K3D_VK_OBJS)
-VULKANTEST_SPV := $(foreach s,triangle cube,$(foreach k,vert frag,$(UBUILD)/gen/vulkantest/$(s)_$(k).h))
+VULKANTEST_SPV := $(foreach s,triangle cube,$(foreach k,vert frag,$(UBUILD)/gen/vulkantest/$(s)_$(k).h)) \
+                  $(UBUILD)/gen/vulkantest/compute_comp.h
+
+$(UBUILD)/gen/vulkantest/compute_comp.h: user/kits/vulkantest/compute.comp
+	@mkdir -p $(dir $@)
+	glslangValidator -V --target-env vulkan1.3 --quiet --vn compute_comp -o $@ $<
 
 $(UBUILD)/gen/vulkantest/triangle_%.h: user/kits/vulkantest/triangle.%
 	@mkdir -p $(dir $@)

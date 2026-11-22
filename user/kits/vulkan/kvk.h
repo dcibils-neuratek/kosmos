@@ -9,7 +9,9 @@
  *     a buffer the processor maps, an image in the device's memory;
  *     a layout's barrier, a recording begun, submitted and waited for;
  *     a graphics pipeline of triangles, with or without depth;
- *     a Kosmos window as a surface and its swapchain (`VK_KOSMOS_surface`).
+ *     a Kosmos window as a surface and its swapchain (`VK_KOSMOS_surface`);
+ *     a compute pipeline, and its dispatches recorded with the buffers
+ *     they read and write (`docs/xavier.md` X12: the LLM Kit's tensors).
  *
  * It was `vulkantest.c`'s own until the 3D Kit needed the same (F3), and a
  * second copy is what this kit exists to prevent. Lua does not reach it:
@@ -54,7 +56,9 @@ struct kw_window;
     X(vkDeviceWaitIdle) X(vkCreateSwapchainKHR) X(vkDestroySwapchainKHR)     \
     X(vkGetSwapchainImagesKHR) X(vkAcquireNextImageKHR) X(vkQueuePresentKHR)  \
     X(vkCreateQueryPool) X(vkDestroyQueryPool) X(vkCmdResetQueryPool)        \
-    X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults)
+    X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults)                         \
+    X(vkCreateComputePipelines) X(vkCmdDispatch) X(vkCmdFillBuffer)         \
+    X(vkFlushMappedMemoryRanges) X(vkInvalidateMappedMemoryRanges)
 
 struct kvk {
     VkInstance instance;
@@ -74,6 +78,11 @@ struct kvk {
     double stamp_ns;
     uint32_t stamp_bits;
     char why[96];               /* the step that failed and its VkResult */
+    /* What compute on tensors may use, asked for with KVK_COMPUTE: the
+     * KVK_HAS_ bits the device has, and the one call of
+     * VK_KHR_push_descriptor's. */
+    unsigned tensors;
+    PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
 #define KVK_DECLARE(name) PFN_##name name;
     KVK_FUNCTIONS(KVK_DECLARE)
 #undef KVK_DECLARE
@@ -93,10 +102,22 @@ struct kvk {
 void kvk_failed(struct kvk *v, const char *what, VkResult r);
 
 /* The instance, the device, its queue and a command buffer: 1, or 0 with
- * `why`. `windowed`, and the instance has surfaces and the device
- * swapchains. `device_name` is set as soon as the device is found, so a
- * failure after it can still say which device it was. */
-int  kvk_open(struct kvk *v, const char *program, int windowed);
+ * `why`. KVK_WINDOWED, and the instance has surfaces and the device
+ * swapchains; KVK_COMPUTE, and the device has what tensor shaders use
+ * that it can give (`tensors`) and push descriptors, which it must.
+ * `device_name` is set as soon as the device is found, so a failure after
+ * it can still say which device it was. */
+#define KVK_WINDOWED 1
+#define KVK_COMPUTE  2
+
+#define KVK_HAS_STORAGE16     0x01u   /* 16-bit values in storage buffers */
+#define KVK_HAS_STORAGE8      0x02u   /* 8-bit values in storage buffers */
+#define KVK_HAS_FLOAT16       0x04u   /* float16_t arithmetic */
+#define KVK_HAS_INT8          0x08u   /* int8_t arithmetic */
+#define KVK_HAS_INT16         0x10u   /* int16_t arithmetic */
+#define KVK_HAS_SUBGROUP_SIZE 0x20u   /* a pipeline's subgroup size chosen */
+
+int  kvk_open(struct kvk *v, const char *program, int flags);
 
 /* The device's own time for what a recording does between `kvk_time_start`
  * (first in it, outside any rendering) and `kvk_time_end`, read after its
@@ -187,6 +208,49 @@ struct kvk_pipeline_shape {
 
 int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,
                  const struct kvk_pipeline_shape *shape);
+
+/* **A compute pipeline** (`docs/xavier.md` X12): a shader of SPIR-V whose
+ * storage buffers are bindings 0 to `buffers` - 1 of set 0, given as each
+ * dispatch is recorded (push descriptors), with `push_bytes` of push
+ * constants and `nspec` specialisation constants, ids 0 up, four bytes
+ * each - which is how llama.cpp's shaders take their block sizes. */
+#define KVK_COMPUTE_BUFFERS 8
+
+struct kvk_compute {
+    VkDescriptorSetLayout set_layout;
+    VkPipelineLayout layout;
+    VkPipeline pipeline;
+    uint32_t buffers;
+    uint32_t push_bytes;
+};
+
+int  kvk_compute_make(struct kvk *v, struct kvk_compute *c, const uint32_t *spirv,
+                      size_t spirv_bytes, uint32_t buffers, uint32_t push_bytes,
+                      const uint32_t *spec, uint32_t nspec, const char *what);
+void kvk_compute_free(struct kvk *v, struct kvk_compute *c);
+
+/* A run of a buffer a shader is given: `range` 0 is to its end. */
+struct kvk_span {
+    VkBuffer buffer;
+    VkDeviceSize offset, range;
+};
+
+/* Recorded: `c` bound, its buffers and push constants given, and `x` by
+ * `y` by `z` workgroups dispatched. */
+void kvk_compute_dispatch(struct kvk *v, const struct kvk_compute *c,
+                          const struct kvk_span *spans, const void *push,
+                          uint32_t x, uint32_t y, uint32_t z);
+
+/* Recorded: what the dispatches before it wrote is what the ones after
+ * it read - and, at the end of a recording, what the processor reads. */
+void kvk_compute_barrier(struct kvk *v);
+
+/* A buffer as `kvk_buffer_make` makes it, for compute: storage and
+ * transfers, in memory the processor maps and reads from its caches where
+ * the device has such memory - the GPU's results and the weights it reads
+ * both read back at the processor's speed (`docs/xavier.md` X12). */
+int kvk_buffer_make_storage(struct kvk *v, struct kvk_buffer *b, VkDeviceSize size,
+                            const char *what);
 
 /* A window's swapchain: the surface, its images and their views, and a
  * fence for acquiring. Opened on a device opened `windowed`. */

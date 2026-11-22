@@ -1449,7 +1449,7 @@ static int l_window(lua_State *L)
     w->serial = ++opened ? opened : ++opened;
 
     const char *why = NULL;
-    if (!kvk_open(&w->v, "k3dvk", 1)) {
+    if (!kvk_open(&w->v, "k3dvk", KVK_WINDOWED)) {
         why = w->v.why;
     } else if ((w->window = kw_open(title, (unsigned)width, (unsigned)height, 0)) == NULL) {
         why = kw_why();

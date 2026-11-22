@@ -41399,3 +41399,56 @@ Intel's driver, is for the M700 (Q4).
   reading the screen. Sound was started but not heard (nobody at the
   machine); mouse and keys are Diego's to try. This is Q4's first half:
   the `timedemo` and the present's split are still to come.
+
+## 18.987 Compute in the Vulkan Kit (Xavier on Vulkan, V1, 0.12.68)
+
+**In short:** the Vulkan Kit could only draw; now it computes too, which
+is the first step of putting Xavier's model on the GPU through Vulkan
+(`xavier.md`, *X12*). A check runs two compute passes over 100,003 words
+on lavapipe in QEMU, and every word comes back exactly as this side works
+it out.
+
+**What** (`user/kits/vulkan/kvk.c`): `kvk_open` takes flags now,
+`KVK_WINDOWED` as before and **`KVK_COMPUTE`**, which turns on what
+llama.cpp's shaders are written against where the device has it (8- and
+16-bit storage, 8- and 16-bit integers, half floats, subgroup size
+control), records it in `v->tensors`, and requires
+`VK_KHR_push_descriptor`. Then `kvk_compute_make` (a pipeline from SPIR-V,
+its storage buffers bindings of set 0, push constants, specialisation
+constants by id), `kvk_compute_dispatch` (the buffers given as runs of
+buffers as it is recorded - push descriptors, so nothing is allocated a
+dispatch), `kvk_compute_barrier`, and `kvk_buffer_make_storage`, which
+prefers memory that is the device's own, mapped and cached - on an Intel
+GPU, the processor's own RAM read through its caches.
+
+**The check** (`tools/run_vulkan.py`, `vulkantest.c`'s `compute`,
+`compute.comp`): pass 0 writes `in[i] * mul + ADD` plus a byte and a half
+word read from storage; pass 1, after the barrier, `out[(i*7+3) % n] ^
+(out[i] >> 3)`, each word read from another workgroup's output. The
+workgroup size and `ADD` are specialisation constants, `n`, `mul` and the
+pass push constants, and the second pass's input and output are two runs
+of one buffer. Twice: 100,003 words in groups of 64 (not a whole number
+of groups) and 4,096 in groups of 256, each held by its first and last
+words and an FNV-1a hash of all of them, computed here. And the device
+must have 8- and 16-bit storage and integers.
+
+**Found on the way**: lavapipe offers half-float arithmetic only where the
+processor has F16C (`lp_has_fp16`), and QEMU's processor here does not
+report it. llama.cpp's shaders do not need it - their scales are read
+through 16-bit storage and widened, `FLOAT16` unset - so it is reported
+(`tensors=s16,s8,i8,i16,subgroup`) and not required.
+
+**Control**: the second pass shifted by 4 instead of 3 - both runs fail,
+first, last and hash all different; put back, the suite passes.
+
+```
+PASS: and compute, 100003 words in groups of 64, 4096 words in groups of 256: two
+dispatches with a barrier between, over push descriptors and specialisation and push
+constants, every word the second pass wrote the one worked out here; the device has
+s16,s8,i8,i16,subgroup
+```
+
+**The gate** (`make test`, what the Vulkan Kit reaches): 159 of 160 in
+765 s. `x86-cafesa3d-2` failed on a screen dump read short with 3.6 GB
+left on the disk; 2.4 GB of an old stick's symbols and 2.2 GB of finished
+suites' scratch freed, it passes alone, 60 checks.
