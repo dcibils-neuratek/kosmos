@@ -778,6 +778,18 @@ Vulkan or OpenCL. It needs threads (`threads.md` 4-8), AVX2 through
 Diego's, at the end of the document. The mockup and the diagram follow
 them.
 
+**Xavier on Vulkan, X12 - ASKED on 22 November 2026, designed, waiting
+for Diego's three decisions** (Diego: "do Xavier with gpu support so llm
+will be much faster. Not sure if you can port llama cpp vulkan support or
+you can design and build your own"). Recommended: our own backend in the
+LLM Kit (`llm_vk.c`), with llama.cpp's MIT compute shaders compiled to
+SPIR-V on the Mac, a whole token as one command buffer, compute added to
+the Vulkan Kit, and the server linked a second time with `anv`
+(`llm-anv.elf`, installed) and with lavapipe for the gate. The gain is
+mostly time to the first word (an estimated 3-5x); writing is capped by
+the M700's memory, at about 25 tokens a second against 13.1 today. Steps
+V1-V7. `xavier.md`, *X12*; diagram `xavier-vulkan-architecture.png`.
+
 **`/Models`, a drive for language models - AGREED 8 November 2026.**
 `/Home` on the M700's stick is 2 GB (`STICK_HOME_MB`, 8 October), phi-2
 alone is 1.5 GB of it, and 88 GB of the 128 GB Kingston are in no

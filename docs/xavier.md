@@ -1199,6 +1199,214 @@ processor.
    question (attention, norms, GELU: 7 of its 12 s), and the pool's
    workers spin while they wait.
 
+## X12, Xavier on Vulkan: the design (22 November 2026)
+
+**In short:** Diego, 22 November: "do Xavier with gpu support so llm will
+be much faster. Not sure if you can port llama cpp vulkan support or you
+can design and build your own". The recommendation is **our own**: a
+Vulkan backend inside the LLM Kit, standing on the Vulkan Kit, with
+**llama.cpp's own compute shaders** (MIT, GLSL) compiled to SPIR-V on the
+Mac. That way the engine stays E1, Kosmos's own C, and the shaders are
+the part llama.cpp's contributors have spent two years tuning. Porting
+ggml-vulkan whole would mean porting ggml and llama.cpp around it, which
+is E2, the engine Diego turned down on 8 November. What it buys on the
+M700 is mostly **time to the first word**. Writing gains less, because
+the HD 530 reads the same DDR4 the four cores already nearly fill.
+
+### Why Vulkan, when X7 already runs on the HD 530
+
+X7 runs products on the GPU with kernels in Kosmos's own kernel language
+(`kc`), handed to the EUs through the Compute Kit. It works, it is to the
+bit, and on the M700 it measured 4.51 tokens a second for phi-2 against
+4.65 on four cores. For Qwen2.5 1.5B the processor alone is now the
+fastest setting, at 13.1 a second (`testing.md` 18.743). Three things
+hold it back, and Vulkan answers each of them:
+
+- **A wait per product.** About 200 products a token, and each one is a
+  message to the driver and a fence. Vulkan records **a whole token's
+  layers in one command buffer**, with barriers between the steps, and
+  waits once.
+- **Only the products go to the GPU.** Attention, the norms, RoPE and
+  GELU stay on the processor. Those are 7 of a phi-2 question's 12 s
+  (G5, above), and they make the GPU and the processor hand the stream
+  back and forth. With llama.cpp's shaders **every step of a layer**
+  runs on the GPU, and the stream never leaves it until the logits.
+- **A compiler of our own.** `kc` is ours and simple. Mesa's `brw`, which
+  `anv` uses, is Intel's optimising compiler, with shared local memory
+  and subgroups. Those are what a tiled matrix product needs to read the
+  question, where the arithmetic decides the time and not the memory.
+
+It also brings two things X7 could not have:
+
+- **It runs in QEMU**, on lavapipe. The gate can hold the GPU path to the
+  processor's on every pass, instead of only through the EU emulator on
+  the Mac.
+- **It runs on any GPU with a Vulkan driver**: radv on the Mac Pro's
+  FirePros once there is a driver beneath it (*All the acceleration there
+  is*), and v3dv on a Pi 5.
+
+### What a person can do
+
+- **Xavier answers sooner.** The first word of an answer arrives after
+  the question is read, and the question is read on the GPU. That is the
+  wait a person notices.
+- **Xavier writes as fast as the memory allows.** A token reads the whole
+  model once. On the GPU, with nothing waited for between products, the
+  rate gets closer to what the M700's memory can feed.
+- **The same switch.** Settings' GPU switch, the LLM Monitor's tile
+  ("GPU, Vulkan"), and Compare's two speeds, all as they are. Compare
+  also shows the time to the first word.
+- **Every model Xavier runs**: phi-2 and Qwen2.5 (0.5B and 1.5B), at
+  Q4_0 and Q8_0, with the Q6_K output matrix.
+- **The machine still works as it did.** No GPU, an older image, or an
+  error at load all mean the processor answers, and the Monitor says why.
+
+### Port or our own
+
+| | **(a) Port ggml-vulkan** | **(b) Our own backend, llama.cpp's shaders** *(recommended)* |
+|---|---|---|
+| What comes over | ggml (the graph, the scheduler, the allocator), `ggml-vulkan.cpp` (20,000 lines of C++20), and llama.cpp's model code above it | the `.comp` and `.glsl` files we use, unedited, from the same pinned release; their push-constant layouts read from `ggml-vulkan.cpp` |
+| The engine | llama.cpp's: Xavier's E1 kit retired or kept as a second engine | E1, as it is: one new path beside AVX2's and X7's |
+| Models | every architecture llama.cpp knows | ours: phi-2 and Qwen2, and what we add |
+| Language | C++ in the LLM server, with libc++ and threads | C, as the server is |
+| The kit premise | a second copy of everything E1 does | one engine, one door |
+| Work | the port, then keeping a 20,000-line backend building as upstream moves | about 1,500 lines of C, the shaders compiled, and the tests |
+
+(a) is the larger result for less understanding: every model at once, but
+nothing of it is Kosmos's, and it reverses decision 1. (b) keeps the part
+worth taking, the shaders, and leaves the engine ours. If (b) ever falls
+short, (a) is still possible later, because the shaders would be the same
+ones.
+
+### Who supplies each piece
+
+| Piece | Supplied by | New or as it is |
+|---|---|---|
+| Compute on Vulkan: a pipeline from SPIR-V with specialisation and push constants, storage buffers and their descriptor sets, dispatches recorded with barriers, one submit and one wait, timestamps | **the Vulkan Kit** (`kvk`), which today offers drawing only. Compute is the same door, and Cafesa3D's render farm and the Media Kit want it next | **new**, in `kvk.c` |
+| The shaders: matrix-vector for Q4_0, Q8_0, Q6_K and F32; the tiled matrix product (`mul_mm`) for the question; `rms_norm`, `norm`, `rope_neox`, `soft_max`, `add`, `swiglu`, GELU, `cpy` to the F16 cache, `get_rows`; and attention (`flash_attn`) once the simple form is held | **llama.cpp's**, `ggml/src/ggml-vulkan/vulkan-shaders`, from the release already in `build/downloads` (b12205, MIT), fetched by `tools/upstream.py` and never committed, like every other upstream | **vendored at build** |
+| Their compiler | `glslangValidator` (Homebrew, 16.6), on the Mac, when the image is built. Tried today: `mul_mat_vec.comp` for Q4_0 compiles to 19,944 bytes of SPIR-V. glslc is not installed, and its one difference here (it turns on `#include`) is one line a build step adds | as it is |
+| The layer as a list of dispatches, the weights and the cache in buffers, the logits read back | the LLM Kit: **`llm_vk.c`**, a third path beside `llm_dot*.c` and `llm_gpu.c`, chosen by the `llm_offload` hook as X7 is. It hands over a whole token, not one product | **new** |
+| The tensor code on the GPU | the same file, which Whisper uses when the Speech Kit arrives (*Who supplies each piece*, above: "Whisper on the LLM Kit's tensor code") | **new** |
+| Intel's driver | Mesa's `anv` over `/Devices/gpu`, as Quake III and Flight have it | as it is |
+| The server that holds it | the LLM server, the same source, linked twice: `llm.c` without Vulkan in the system image, as now, and **`llm-anv.elf`**, with `anv` in it, installed in `/Home/System/LLM`. Two Mesa drivers cannot share one image, and `anv` is too large for the system's image. Init starts `llm-anv.elf` where the machine has an Intel GPU and the file is there, as `IMAGES.GPUS` does for applications, and the plain server everywhere else. `llm-vk.elf`, with lavapipe in it, exists for the gate | **changed**: init's `start` for ROLE_LLM, and the installer |
+| The switch, the tile, Compare | Settings, the LLM Monitor, `llmproto.h` | as it is, plus "Vulkan" and the first word's time |
+
+### Data, regions and messages
+
+**The weights are read once, into the GPU's memory.** On the M700 the
+GPU's memory is the machine's own RAM. `anv` offers a memory type that is
+device-local, host-visible and host-cached (Gen9 snoops the
+processor's last-level cache), so the model file is read **straight
+into mapped Vulkan buffers**. It is not read into a region first and then
+copied. The processor's own paths read the same bytes at full speed, so
+falling back costs nothing and the model is never held twice. If a
+device has no such type, the model is copied at load, once, and the
+Monitor says it is held twice.
+
+**A token is one submit.** The token's embedding row, the position and
+the cache length are push constants and a small buffer. The 28 layers'
+dispatches are recorded once per shape and re-used. The only bytes that
+come back are the logits: 151,936 floats for Qwen, 600 KB, read from a
+cached buffer by the sampler on the processor, as now. **Reading a
+question** is the same command buffer with `mul_mm` in place of the
+matrix-vector product, and a batch of the question's tokens a submit.
+Nothing in any of this is a message. The server's protocol is unchanged.
+
+**The cache**: K and V in F16 buffers on the GPU, as llama.cpp keeps
+them. That is half the processor's F32 cache, so a context of the same
+length takes half the memory.
+
+### C or Lua
+
+All of it is C. It is a server's engine, on a path where something waits
+for it, and the shaders are GLSL. Lua does not appear below Xavier's
+window.
+
+### The busiest path, and what it can buy
+
+**Writing**, Qwen2.5 1.5B at Q4_0 on the M700: each token reads about
+0.93 GB (1.31 billion values at Q4_0, plus the Q6_K output matrix). At
+13.1 tokens a second the processor already pulls 12.2 GB/s. The M700's
+two channels of DDR4-2133 peak at 34 GB/s, and a good streaming read gets
+somewhere near 25. **So the ceiling is about 25 tokens a second, about
+twice today's, and nothing faster than that is possible on this
+machine.** A GPU on the same memory can get closer to the ceiling, because
+it keeps more reads in flight and hands nothing back and forth. It cannot
+go past it. **Estimate: 15 to 20 tokens a second**, to be measured, not
+promised.
+
+**Reading the question** is bound by arithmetic: every weight is used by
+every token of the question. The HD 530 has 24 EUs at up to 1.1 GHz,
+which is roughly 400 GFLOPS in F32 and twice that in F16. The processor
+read phi-2's 88-token question at about 40 GFLOPS (475 GFLOP in 12.3 s).
+**Estimate: a question read three to five times sooner**, a few hundred
+milliseconds before Qwen's first word instead of a couple of seconds.
+This is where "much faster" will be felt.
+
+**The Mac Pro** is where Vulkan would pay most: 264 GB/s on a D700, about
+ten times the M700's memory. It needs an AMD driver beneath `radv` first,
+which is its own design (*All the acceleration there is*). Nothing here
+is AMD-specific, so this backend is what runs there once that driver
+exists.
+
+### The same answer, held how
+
+X7's products are the processor's to the bit, by construction.
+**llama.cpp's shaders are not.** They add in a different order and use
+F16 where it pays, so an answer can differ from the processor's after a
+few dozen words, as llama.cpp's own backends differ from each other. So
+the hold changes, and it is decision 1 below:
+
+- **Each operation against the processor's**, on random inputs and on the
+  corners: the normalised mean squared error under the bound llama.cpp's
+  `test-backend-ops` uses for that operation (1e-7 for most of them,
+  5e-4 for products through F16). This runs on the host on lavapipe, and
+  in the gate on lavapipe inside QEMU. The control is a shader given the
+  wrong block layout, which must fail.
+- **Whole answers**: the tiny phi-2 and Qwen 0.5B, greedy, compared with
+  the processor's answer token by token. They must agree for the first
+  32 tokens, and the logits of every agreeing token must be within the
+  bound. On the M700 the same check runs on `anv`.
+
+### The steps
+
+1. **V1, compute in the Vulkan Kit**: `kvk_compute_*`, one shader (`add`)
+   run through it and held, in QEMU on lavapipe, with a control. `x86-vulkan`
+   gains the check.
+2. **V2, the shaders build**: `tools/upstream.py` takes the
+   `vulkan-shaders` folder from the pinned release; a Makefile step
+   compiles the variants we use with `glslangValidator`, with the defines
+   `vulkan-shaders-gen.cpp` gives them, into headers of SPIR-V. A list
+   says which variants, so nothing compiles that nothing calls.
+3. **V3, the operations held**: `llm_vk.c` runs each operation alone
+   against the processor's on lavapipe on the Mac (`test_llm --vk`), with
+   the bounds above and a control for each.
+4. **V4, a token on the GPU**: the whole layer as one command buffer, the
+   cache in F16, the logits read back. The tiny models' answers hold, on
+   the Mac and in the gate (`x86-llm-vk`, booting `llm-vk.elf`).
+5. **V5, the question in `mul_mm`**: batches of the question's tokens.
+   Time to the first word reported in Compare and the Monitor.
+6. **V6, the M700**: `llm-anv.elf` installed, init choosing it, and the
+   models' answers held there. Then the speeds, writing and reading,
+   beside four cores with AVX2. Needs a netboot, after Diego's Quake III
+   evening.
+7. **V7, faster**: what the M700's numbers point at. Flash attention, the
+   subgroup forms of the products, and the processor taking a share if
+   it still has memory to spare (G5's lesson says measure first).
+
+### Decisions that are Diego's (X12)
+
+1. **The hold**: answers that agree with the processor's for 32 tokens,
+   with each operation within llama.cpp's bounds *(recommended)*, instead
+   of X7's to-the-bit. To the bit is not possible with shaders written for
+   speed, short of writing our own again.
+2. **Port or our own**: (b), our own backend on llama.cpp's shaders
+   *(recommended)*, or (a), ggml-vulkan with llama.cpp around it.
+3. **X7's EU path**: kept beside Vulkan until V6 shows Vulkan faster on
+   every model, then retired *(recommended)*. Two GPU paths to one GPU is
+   the kind of second copy the kit premise is against, and once the
+   measurement settles it, one of them should go.
+
 ## Decisions that are Diego's
 
 **Taken on 8 November 2026** - Diego: "E1, server yes, convert phi-2, go

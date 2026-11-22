@@ -1,0 +1,144 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Xavier on Vulkan (X12): the LLM Kit's third path, a whole token as one
+  command buffer, standing on the Vulkan Kit's new compute door and on
+  llama.cpp's shaders compiled to SPIR-V on the Mac; the server linked a
+  second time with anv. The busiest paths - a token written (T) and a
+  question read (Q) - drawn through it. Drawn on 22 November 2026, before
+  any of it is built; `docs/xavier.md`, *X12*, is the argument.
+
+  Rendered to docs/xavier-vulkan-architecture.png by headless Chrome at
+  twice its size, as docs/playback-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Xavier on Vulkan architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --gpu: #e9f4ef; --gpu-line: #9fd4c1; --gpu-ink: #0b5a46;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, li code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .gpu { background: var(--gpu); border-color: var(--gpu-line); } .gpu h2 { color: var(--gpu-ink); } .gpu .box { border-color: var(--gpu-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; font-variant-numeric: tabular-nums; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Xavier on Vulkan - what it stands on</h1>
+<p class="sub">The LLM Kit gains a third path: a whole token, every step of every layer, recorded as one Vulkan command buffer and waited for once. The shaders are llama.cpp's, compiled to SPIR-V on the Mac; the engine, the server and its protocol stay Kosmos's own. Without a GPU, nothing changes.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new or changed</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>the LLM server</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits, in the server's process</span>
+  <span><i style="border-color:var(--gpu-line);background:var(--gpu)"></i>Mesa and the GPU</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>drivers and Nebula</span>
+  <span class="f">T</span><span>a token written</span><span class="f">Q</span><span>a question read</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>Xavier</b><p>asks, and streams the answer; Settings' GPU switch</p></div>
+        <div class="box new"><span class="tag">CHANGED</span><b>the LLM Monitor</b><p>"GPU, Vulkan" on its tile; Compare adds the time to the first word</p></div>
+        <div class="box"><b>Ask from anywhere</b><p>the same server, the same <code>llmproto.h</code></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>The LLM server - <code>/Running/llm</code>, one source, three images</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b><code>llm</code>, in the system image</b><p>the processor only, as today: every machine without a GPU image</p></div>
+        <div class="box new"><span class="tag">NEW</span><b><code>llm-anv.elf</code></b><p>with Intel's <code>anv</code>, installed in <code>/Home/System/LLM</code>; chosen by init where there is an Intel GPU</p></div>
+        <div class="box new"><span class="tag">NEW</span><b><code>llm-vk.elf</code></b><p>with lavapipe: QEMU and the gate, the GPU path held on every pass</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, in the server's process)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>the LLM Kit - <code>llm_core.c</code></b><p>the model, the tokens, sampling; the <code>llm_offload</code> hook chooses a path <span class="f">T1</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b><code>llm_vk.c</code> - the tensor code on the GPU</b><p>a layer as a list of dispatches, recorded once a shape; weights and the F16 cache in buffers; logits back <span class="f">T2 T5</span> <span class="f">Q1</span>. Whisper's, later</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
+        <div class="box"><b><code>llm_dot*.c</code></b><p>SSE2, AVX2: the processor's path, and the fallback</p></div>
+        <div class="box later-box"><span class="tag later">TO RETIRE</span><b><code>llm_gpu.c</code> - X7</b><p><code>kc</code>'s EU kernels; kept until the M700 says Vulkan is faster</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>the Vulkan Kit - compute</b><p><code>kvk_compute_*</code>: pipelines from SPIR-V, storage buffers, dispatches with barriers, one submit <span class="f">T3</span></p></div>
+      </div>
+    </div>
+    <div class="layer gpu"><h2>Mesa and the shaders</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr 1fr">
+        <div class="box new"><span class="tag">VENDORED AT BUILD</span><b>llama.cpp's shaders, as SPIR-V</b><p><code>mul_mat_vec</code> Q4_0 Q8_0 Q6_K, <code>mul_mm</code>, <code>rms_norm</code>, <code>norm</code>, <code>rope_neox</code>, <code>soft_max</code>, <code>add</code>, <code>swiglu</code>, GELU, <code>cpy</code>; <code>glslangValidator</code> on the Mac</p></div>
+        <div class="box"><b><code>anv</code> and <code>brw</code></b><p>Intel's Vulkan driver and its compiler, as Quake III has them <span class="f">T4</span></p></div>
+        <div class="box"><b>lavapipe</b><p>Vulkan on the processor, through LLVM: QEMU's GPU</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Drivers and Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b><code>/Devices/gpu</code></b><p>the Intel GPU's driver: buffers, a batch run, its fence</p></div>
+        <div class="box"><b><code>/Models</code></b><p>the model file, read straight into mapped Vulkan buffers</p></div>
+        <div class="box later-box"><span class="tag later">LATER</span><b>an AMD driver</b><p>beneath <code>radv</code>, for the Mac Pro's FirePros: 264 GB/s</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>T - a token written</h3>
+      <ol><li><b>T1</b> The sampler chose the last token; its embedding row and position become push constants.</li>
+          <li><b>T2</b> The token's command buffer, recorded once: 28 layers of norm, products, RoPE, attention, SwiGLU, add.</li>
+          <li><b>T3</b> One submit, one fence. No message for each product, as X7 had.</li>
+          <li><b>T4</b> The EUs read the 0.93 GB of weights; the stream never leaves the GPU.</li>
+          <li><b>T5</b> The logits, 600 KB, read from a cached buffer; the sampler as it is.</li></ol></div>
+    <div class="card"><h3>Q - a question read</h3>
+      <ol><li><b>Q1</b> The same layers, <code>mul_mm</code> in place of the matrix-vector product: a batch of the question's tokens a submit, each weight read once for all of them.</li></ol></div>
+    <div class="card"><h3>What it can buy on the M700</h3>
+      <table>
+        <tr><td>Writing, Qwen 1.5B</td><td>13.1/s today; the memory's ceiling about 25; estimate 15-20</td></tr>
+        <tr><td>Reading a question</td><td>about 40 GFLOPS today; the HD 530 about 400; estimate 3-5x sooner</td></tr>
+        <tr><td>The cache</td><td>F16: half the memory for the same context</td></tr>
+      </table></div>
+    <div class="card"><h3>Held how</h3>
+      <table>
+        <tr><td>Each operation</td><td>against the processor's, within llama.cpp's own bounds; a control each</td></tr>
+        <tr><td>Whole answers</td><td>the tiny models, greedy: 32 tokens the processor's</td></tr>
+        <tr><td>Where</td><td>lavapipe on the Mac and in QEMU; <code>anv</code> on the M700</td></tr>
+      </table></div>
+  </div>
+</div>
+</body>
+</html>
