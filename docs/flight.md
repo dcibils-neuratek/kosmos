@@ -699,7 +699,10 @@ ends on the M700:
     and up to 24 are kept. The runways are drawn at least 3 points wide,
     so one shows at zoom 12. Under the map is a scale bar, the longest
     of 100 m to 20 km that fits a third of its width.
-- **F9 - air traffic control.** LiveATC's public feeds, each an MP3 over
+- **F9 - air traffic control. Set aside** by Diego on 21 November 2026:
+  "No atc for now". The radio library below stays built; the source of
+  the voices and the airspace switching wait until he picks F9 up again.
+- **F9, as it was planned.** LiveATC's public feeds, each an MP3 over
   HTTP, the nearest to the airport chosen by its code. Played by a new
   **Radio Kit** - an HTTP stream into the MP3 Kit's decoder into a stream
   of the audio server - since Music's Radio source wants exactly that

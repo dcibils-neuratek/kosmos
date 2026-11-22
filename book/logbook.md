@@ -6263,3 +6263,29 @@ song there too.
 
 **Measurements.** Thirty starts in a row: 1 heard before the fix, 30
 after.
+
+## 21 November 2026 - The assistant that was right
+
+**In short:** Xavier, the assistant, failed its test now and then, and
+it was never wrong. The answer it was checked against was the one that
+changed: the Mac doing the same arithmetic in a slightly different way.
+
+**What.** Xavier's test asks the language model a question inside
+Kosmos, then asks the same model the same question on the Mac, and
+requires both answers to match to the byte. Every so often they matched
+for a thousand characters and then went different ways. The suspect was
+the conversation memory. When the same code was run on the Mac
+pretending to be an Intel processor, though, it gave exactly the answer
+Kosmos gave. Only the Mac's own build differed.
+
+**Why.** The Mac's processor has an instruction that multiplies two
+numbers and adds a third in one step, and rounds once. The compiler uses
+it on its own. Kosmos's build does the same sum in two steps and rounds
+twice. The difference is in the last digit, and almost never matters.
+But a model choosing its next word picks the likeliest, and once in a
+long answer two words are close enough that the last digit decides.
+
+**The fix.** The Mac's build of the model's code now rounds the way
+Kosmos's does, and a new test holds the Mac's answer and an Intel
+answer to the same byte. A second, smaller failure was a test limit
+that had simply been guessed too low.

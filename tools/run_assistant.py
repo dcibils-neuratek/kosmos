@@ -356,7 +356,13 @@ def main():
                       expect[i]["read"]))
 
         check(answered[0]["kept"] == 0, "the first question kept something: %r" % answered[0])
-        check(answered[1]["kept"] > 0 and answered[1]["read"] < 12,
+        # Kept, and only a tail read. How long a tail is the drawn first
+        # answer's: its words read back as text need not be the tokens it
+        # was written in, so the cache keeps up to where they part, and 10
+        # to 15 are read again - the kit's own count, held above to the
+        # token. This said under 12, and a draw that read 15 failed it
+        # (`testing.md` 18.984).
+        check(answered[1]["kept"] > 0 and answered[1]["read"] * 4 < answered[1]["kept"],
               "the follow-up did not keep the conversation: %r" % answered[1])
         check(bytes.fromhex(asked[1]).startswith(bytes.fromhex(asked[0])),
               "the follow-up did not ask the conversation whole")

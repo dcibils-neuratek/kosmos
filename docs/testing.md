@@ -41238,3 +41238,41 @@ always has a song to play in.
     roadmap to find.
   - `x86-loader`, whose posixtest gave no answer at all.
   Alone, the two passed in 1:55 with 37 and 24 checks.
+
+## 18.984 Xavier's flake was the Mac's arithmetic (0.12.64)
+
+**In short:** `x86-xavier` failed about one gate in three, in two ways.
+Neither was Xavier's fault. The box's answer differed because the Mac
+computed the reference with fused multiply-adds. The follow-up check
+failed because its threshold was a guess that some random draws
+exceeded.
+
+- **The box.** The failing answer matched the kit's for 1038 bytes of
+  1137 and then went its own way. The same question was replayed on this
+  Mac and under Rosetta, each with the plain loops and the base ones:
+  - on this Mac, plain and base agreed with each other but not with the
+    guest;
+  - under Rosetta, the x86 kit agreed with the guest to the byte, with
+    either loop set.
+
+  So the guest was right and the reference was not. Clang on ARM fuses
+  `a * b + c` into one instruction rounded once. The guest's GCC in ISO C
+  mode, and an x86 without FMA, round twice. Built with
+  `-ffp-contract=off`, this Mac's kit gives the guest's 1137 bytes.
+- **The fix**: `LLM_HOST_FLAGS := -ffp-contract=off` on every host build
+  of the kit: `llm_answer`, `test_llm`, `test_llmdot` and its x86 twin.
+- **The check**: `tools/test_llmsame.py`, in `host-check`. It asks
+  `llm_answer` and the new `llm_answer_x86` (under Rosetta) the box's
+  question, from the seed it was drawn from, and requires the same answer
+  to the byte. **Control**: both built without the flag part at character
+  2604 of 2826, and the check fails.
+- **The follow-up.** The check required `read < 12`. 0.12.61's failure
+  read 15 with 115 kept, and the kit on the Mac counted the same 15 and
+  115; the check holding the two equal passed. The tail read again
+  depends on the drawn first answer: its words read back as text need not
+  be the tokens it was written in, so the cache keeps up to where they
+  part. The check is now that a tail was read, under a quarter of what
+  was kept. The exact counts stay held to the kit's.
+- **The gate**: all 126 suites that ran passed, in 9:27, with
+  `test_llmsame` among `host`'s checks, `host-llm` held to llama.cpp as
+  before, and `x86-xavier` with its 37 checks.
