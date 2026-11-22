@@ -498,6 +498,10 @@ int llm_feed_batch(struct llm_model *m, struct llm_held *h, const int32_t *token
 /* IEEE half precision, as ggml converts it: to nearest, ties to even. */
 uint16_t llm_f32_to_f16(float f);
 
+/* Token `token`'s row of the embedding, `n_embd` floats into `out`: where a
+ * forward pass taken somewhere else - the GPU (`llm_vk.h`) - starts. */
+void llm_embedding(const struct llm_model *m, int32_t token, float *out);
+
 /* GELU as the kit takes it in a layer, through half precision as ggml's
  * table: for the tests, which hold the table to the formula. */
 float llm_gelu(float x);

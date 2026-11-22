@@ -52,6 +52,7 @@ enum {
   LLM_VK_ROPE_NEOX,  /* rope_neox_f32 */
   LLM_VK_CPY_F16,    /* cpy_f32_f16 */
   LLM_VK_CPY_F32,    /* cpy_f32_f32 */
+  LLM_VK_MMV_NC,     /* mul_mat_vec_nc_f16_f32: attention's products */
   LLM_VK_OPS
 };
 
@@ -125,5 +126,46 @@ int llm_vk_rope_neox(struct llm_vk *g, struct kvk_span x, struct kvk_span pos, s
 /* `n` floats copied to F16 (rounded to the nearest), or to floats. */
 int llm_vk_cpy_f16(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n);
 int llm_vk_cpy_f32(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n);
+
+/* `n` floats into F16 a stride apart: out[i * stride + at] = x[i]. The
+ * values' cache is kept transposed this way, a position a column, so that
+ * attention's second product reads it a row at a time. `at` under 65536. */
+int llm_vk_cpy_f16_strided(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n,
+                           uint32_t stride, uint32_t at);
+
+/* Attention's products (`mul_mat_vec_nc`): for each of `channels` heads c,
+ * out[c * rows + r] = sum over k < cols of A[(c / divisor) * a_channel +
+ * r * a_row + k] * b[c * b_channel + k], A in F16. The keys' scores are
+ * this with A the cache and `rows` the positions; the values' sum is this
+ * with A the transposed cache and `cols` the positions. */
+int llm_vk_mmv_nc(struct llm_vk *g, struct kvk_span a, struct kvk_span b, struct kvk_span out,
+                  uint32_t cols, uint32_t rows, uint32_t a_row, uint32_t a_channel,
+                  uint32_t b_channel, uint32_t divisor, uint32_t channels);
+
+/* ------------------------------------------------------------------------ */
+/* A model on the GPU (`docs/xavier.md` X12, V4)                              */
+/* ------------------------------------------------------------------------ */
+
+struct llm_model;
+
+/* A model's weights in storage buffers, its cache - keys a position a row,
+ * values transposed - and the working vectors, all on the device. */
+struct llm_vk_model {
+  struct llm_vk *g;
+  struct llm_model *m;
+  struct kvk_buffer *w;                  /* by the tensor's index in `m->tensors` */
+  struct kvk_buffer *kc, *vc;            /* a layer each */
+  struct kvk_buffer x, xn, qkv, att, prob, aout, ffo, ff, up, mlp, logits, pos;
+  char why[160];
+};
+
+/* Everything copied up from an open model; 1, or 0 with `why`. */
+int  llm_vk_model_open(struct llm_vk_model *vm, struct llm_vk *g, struct llm_model *m);
+void llm_vk_model_close(struct llm_vk_model *vm);
+
+/* One token through every layer, recorded as one command buffer and
+ * submitted once: the logits into `m->logits`, the cache a position on, as
+ * `llm_step` leaves them. 0, or -1. */
+int llm_vk_step(struct llm_vk_model *vm, int32_t token);
 
 #endif

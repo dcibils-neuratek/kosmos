@@ -2738,6 +2738,15 @@ host-llmvk-check: $(HOSTDIR)/test_llmvk
 	$(HOSTDIR)/test_llmvk --control > $(HOSTDIR)/test_llmvk.control.txt || \
 	        { cat $(HOSTDIR)/test_llmvk.control.txt; echo "FAIL: a product read as another type still held"; exit 1; }
 	@echo "PASS: every operation held, and every one broke in the control, as it must"
+	for f in tiny-phi2.F16 tiny-phi2.Q4_0; do \
+	        $(HOSTDIR)/test_llmvk --model build/models/$$f.gguf || exit 1; \
+	        $(HOSTDIR)/test_llmvk --model build/models/$$f.gguf --control > $(HOSTDIR)/test_llmvk.control.txt || \
+	                { cat $(HOSTDIR)/test_llmvk.control.txt; echo "FAIL: $$f held with a token dropped"; exit 1; }; \
+	done
+	$(HOSTDIR)/test_llmvk --model build/models/qwen2.5-0.5b-instruct-q4_0.gguf --whole
+	$(HOSTDIR)/test_llmvk --model build/models/qwen2.5-0.5b-instruct-q4_0.gguf --whole --control > $(HOSTDIR)/test_llmvk.control.txt || \
+	        { cat $(HOSTDIR)/test_llmvk.control.txt; echo "FAIL: Qwen's answer held with a token dropped"; exit 1; }
+	@echo "PASS: a token on the GPU, every step - the models' answers the processor's, and every control broke"
 
 LLAMA_CPP := build/downloads/llama.cpp-b12205
 

@@ -1443,6 +1443,11 @@ static void embedding_row(const struct llm_tensor *t, uint32_t row, float *out)
   }
 }
 
+void llm_embedding(const struct llm_model *m, int32_t token, float *out)
+{
+  embedding_row(m->tok_embd, (uint32_t)token, out);
+}
+
 /* LayerNorm, then the weight and the bias (`ggml_compute_forward_norm_f32`). */
 static void layer_norm(const float *x, float *out, uint32_t n, const struct llm_tensor *w,
                        const struct llm_tensor *b, float eps)

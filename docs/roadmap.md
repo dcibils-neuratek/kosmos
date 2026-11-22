@@ -790,8 +790,9 @@ mostly time to the first word (an estimated 3-5x); writing is capped by
 the M700's memory, at about 25 tokens a second against 13.1 today. Steps
 V1-V7. `xavier.md`, *X12*; diagram `xavier-vulkan-architecture.png`.
 V1 built (0.12.68, compute in the Vulkan Kit); V2 and V3 built (llama.cpp's
-shaders compiled, every step held on lavapipe, `testing.md` 18.988); V4, a
-token on the GPU, next.
+shaders compiled, every step held on lavapipe, `testing.md` 18.988); V4's
+half on the Mac built (a token as one command buffer, Qwen 0.5B's and
+phi-2's answers the processor's, 18.989); `llm-vk.elf` in Kosmos next.
 
 **`/Models`, a drive for language models - AGREED 8 November 2026.**
 `/Home` on the M700's stick is 2 GB (`STICK_HOME_MB`, 8 October), phi-2

@@ -19,10 +19,14 @@
  *
  * Usage: test_llmvk [--control]
  */
+#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "llm_core.h"
 #include "llm_vk.h"
@@ -542,6 +546,96 @@ static void steps(struct llm_vk *g, int control)
     free(want);
   }
 
+  /* Attention's two products over an F16 cache (`mul_mat_vec_nc`), at
+   * the models' heads: the keys' scores, a position a row KV wide, and the
+   * values' sum over the transposed cache, n_ctx a row. Qwen 2.5 0.5B's 14
+   * heads on 2 (a divisor of 7), phi-2's 32 of 80, 1.5B's 12 on 2 of 128,
+   * at positions that do and do not fill vec4s. The control reads each
+   * head's query as the next head's. */
+  static const struct { uint32_t D, H, HKV, n, n_ctx; } NC[] = {
+    { 64, 14, 2, 37, 512 }, { 80, 32, 32, 300, 512 }, { 128, 12, 2, 4, 512 }, { 64, 14, 2, 512, 512 },
+  };
+  for (size_t t = 0; t < sizeof(NC) / sizeof(NC[0]); t++) {
+    const uint32_t D = NC[t].D, H = NC[t].H, KV = NC[t].HKV * D, n = NC[t].n, n_ctx = NC[t].n_ctx;
+    const uint32_t div = H / NC[t].HKV;
+    for (int values = 0; values < 2; values++) {
+      /* keys: cache [n_ctx][KV]; values: transposed, [KV][n_ctx]. */
+      size_t cache = (size_t)n_ctx * KV, bn = values ? (size_t)H * n : (size_t)H * D;
+      size_t outn = values ? (size_t)H * D : (size_t)H * n;
+      double *want = malloc(sizeof(double) * outn);
+      struct kvk_buffer a = { 0 };
+      if (!bufs_make(v, &b, bn, 0, 0, outn * 4) || !kvk_buffer_make_storage(v, &a, cache * 2, "cache")) {
+        printf("FAIL: buffers: %s\n", v->why);
+        failures++;
+        free(want);
+        continue;
+      }
+      uint16_t *ac = (uint16_t *)a.bytes;
+      for (size_t i = 0; i < cache; i++) {
+        ac[i] = half(uniform());
+      }
+      float *bv = in_floats(&b, 0);
+      fill(bv, bn, 1.0f);
+      uint32_t cols = values ? n : D, rows = values ? D : n;
+      uint32_t a_row = values ? n_ctx : KV, a_chan = values ? D * n_ctx : D, b_chan = values ? n : D;
+      for (uint32_t c = 0; c < H; c++) {
+        uint32_t cb = control ? (c + 1) % H : c;
+        for (uint32_t r = 0; r < rows; r++) {
+          double sum = 0;
+          for (uint32_t k = 0; k < cols; k++) {
+            sum += (double)llm_f16_to_f32(ac[(size_t)(c / div) * a_chan + (size_t)r * a_row + k]) *
+                   bv[(size_t)cb * b_chan + k];
+          }
+          want[(size_t)c * rows + r] = sum;
+        }
+      }
+      snprintf(what, sizeof(what), "attention's %s, %u heads on %u of %u, %u positions",
+               values ? "values' sum" : "keys' scores", H, NC[t].HKV, D, n);
+      if (kvk_begin(v) &&
+          begin(llm_vk_mmv_nc(g, (struct kvk_span){ a.buffer, 0, 0 }, b.s[0], b.o, cols, rows, a_row, a_chan,
+                              b_chan, div, H), what) &&
+          run(v, what)) {
+        verdict(what, nmse((const float *)b.out.bytes, want, outn), 1e-7, control);
+      }
+      kvk_buffer_free(v, &a);
+      bufs_free(v, &b);
+      free(want);
+    }
+  }
+
+  /* A value down its column of the transposed cache: KV floats to F16,
+   * n_ctx apart, at position `at`. Held bit for bit, the rest of the cache
+   * untouched; the control expects it one position on. */
+  {
+    const uint32_t KV = 128, n_ctx = 512, at = 301;
+    struct kvk_buffer a = { 0 };
+    if (bufs_make(v, &b, KV, 0, 0, 4) && kvk_buffer_make_storage(v, &a, (size_t)KV * n_ctx * 2, "cache")) {
+      float *x = in_floats(&b, 0);
+      fill(x, KV, 4.0f);
+      memset(a.bytes, 0, (size_t)KV * n_ctx * 2);
+      snprintf(what, sizeof(what), "a value down the transposed cache, %u floats %u apart, at %u", KV, n_ctx, at);
+      if (kvk_begin(v) &&
+          begin(llm_vk_cpy_f16_strided(g, b.s[0], (struct kvk_span){ a.buffer, 0, 0 }, KV, n_ctx, at), what) &&
+          run(v, what)) {
+        const uint16_t *c = (const uint16_t *)a.bytes;
+        uint32_t differ = 0;
+        uint32_t where = control ? at + 1 : at;
+        for (size_t i = 0; i < (size_t)KV * n_ctx; i++) {
+          uint16_t want = i % n_ctx == where ? llm_f32_to_f16(x[i / n_ctx]) : 0;
+          differ += c[i] != want;
+        }
+        int ok = control ? differ > 0 : differ == 0;
+        printf("%s: %s, %u differ (%s)\n", ok ? "PASS" : "FAIL", what, differ, control ? "some must" : "none may");
+        failures += !ok;
+      }
+    } else {
+      printf("FAIL: buffers: %s\n", v->why);
+      failures++;
+    }
+    kvk_buffer_free(v, &a);
+    bufs_free(v, &b);
+  }
+
   /* The copies: to F16 exactly as `llm_f32_to_f16` rounds, and to F32
    * exactly; held bit for bit. The control is the F16 one held to the
    * floats before rounding. */
@@ -580,9 +674,198 @@ static void steps(struct llm_vk *g, int control)
   }
 }
 
+/* ---------------------------------------------------------------------- */
+/* A model, a token at a time (V4)                                         */
+/* ---------------------------------------------------------------------- */
+
+static void *alloc(void *ctx, size_t bytes)
+{
+  (void)ctx;
+  return calloc(1, bytes ? bytes : 1);
+}
+
+#define ANSWER 32
+
+/* The question and then ANSWER tokens, the likeliest after each: on the
+ * processor, keeping each step's logits. */
+static int answer_cpu(struct llm_model *m, const int32_t *q, int nq, int32_t *out, float *logits)
+{
+  llm_reset(m);
+  for (int i = 0; i < nq; i++) {
+    if (llm_step(m, q[i]) != 0) {
+      return -1;
+    }
+  }
+  for (int i = 0; i < ANSWER; i++) {
+    memcpy(logits + (size_t)i * m->n_vocab, m->logits, (size_t)m->n_vocab * 4);
+    out[i] = llm_greedy(m);
+    if (i + 1 < ANSWER && llm_step(m, out[i]) != 0) {
+      return -1;
+    }
+  }
+  return 0;
+}
+
+static double nmse_f(const float *got, const float *want, size_t n)
+{
+  double err = 0, norm = 0;
+  for (size_t i = 0; i < n; i++) {
+    double d = (double)got[i] - want[i];
+    err += d * d;
+    norm += (double)want[i] * want[i];
+  }
+  return norm > 0 ? err / norm : err;
+}
+
+/* The model in `path` on the GPU, held to the processor at every step of
+ * an answer, the GPU given the processor's tokens: every step's logits
+ * within 1e-3 of NMSE of the processor's (its products take the input as
+ * Q8_0 blocks, the GPU's as floats; `test-backend-ops` holds one product
+ * to 5e-4, and a model is dozens of them), and the GPU's own likeliest
+ * token counted beside the processor's. With `whole`, the GPU's answer
+ * must also be the processor's, all ANSWER tokens: a real model, whose
+ * likeliest token is clear; a random one's are near ties. The control
+ * gives the GPU the question less its last token, as a token dropped on
+ * the way would, which must break what is held. (A cache started a
+ * position on is not one: RoPE sees only the distances between tokens,
+ * and phi-2's answer barely moved.) */
+static int model(struct llm_vk *g, const char *path, int whole_answer, int control)
+{
+  int fd = open(path, O_RDONLY);
+  struct stat st;
+  if (fd < 0 || fstat(fd, &st) != 0) {
+    printf("FAIL: %s: cannot be read\n", path);
+    return 1;
+  }
+  void *file = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  close(fd);
+  if (file == MAP_FAILED) {
+    printf("FAIL: %s: cannot be mapped\n", path);
+    return 1;
+  }
+
+  static struct llm_model m;
+  struct llm_vk_model vm;
+  char why[200];
+  memset(&m, 0, sizeof(m));
+  if (llm_open(&m, file, (size_t)st.st_size, 512, alloc, NULL, why, sizeof(why)) != 0) {
+    printf("FAIL: %s: %s\n", path, why);
+    return 1;
+  }
+  if (!llm_vk_model_open(&vm, g, &m)) {
+    printf("FAIL: %s on the GPU: %s\n", path, vm.why);
+    return 1;
+  }
+
+  const char *text = m.kind == LLM_ARCH_QWEN2
+                         ? "<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n"
+                         : "Instruct: What is the capital of France?\nOutput:";
+  static int32_t q[256];
+  int nq = llm_tokenize(&m, text, strlen(text), 1, q, 256);
+  int32_t cpu[ANSWER], gpu[ANSWER];
+  float *logits = malloc((size_t)m.n_vocab * 4 * ANSWER);
+  int bad = 1;
+
+  if (nq <= 0 || !logits || answer_cpu(&m, q, nq, cpu, logits) != 0) {
+    printf("FAIL: %s: the processor's answer\n", path);
+    goto done;
+  }
+
+  llm_reset(&m);
+  int r = 0;
+  for (int i = 0; r == 0 && i < nq - (control ? 1 : 0); i++) {
+    r = llm_vk_step(&vm, q[i]);
+  }
+  double worst = 0;
+  int agree = 0;
+  for (int i = 0; r == 0 && i < ANSWER; i++) {
+    double e = nmse_f(m.logits, logits + (size_t)i * m.n_vocab, m.n_vocab);
+    worst = e > worst ? e : worst;
+    if (getenv("LLMVK_STEPS")) {
+      printf("  step %2d: nmse %.3g\n", i, e);
+    }
+    gpu[i] = llm_greedy(&m);
+    agree += gpu[i] == cpu[i];
+    if (gpu[i] != cpu[i]) {
+      const float *c = logits + (size_t)i * m.n_vocab;
+      printf("  step %d: the processor's %d (%.4f, the GPU's %.4f), the GPU's %d (%.4f, the GPU's %.4f)\n", i,
+             cpu[i], c[cpu[i]], m.logits[cpu[i]], gpu[i], c[gpu[i]], m.logits[gpu[i]]);
+    }
+    if (i + 1 < ANSWER) {
+      r = llm_vk_step(&vm, cpu[i]);
+    }
+  }
+  if (r != 0) {
+    printf("FAIL: %s: the GPU's answer: %s\n", path, vm.why);
+    goto done;
+  }
+
+  /* And the GPU's own answer, where the whole of it is held. */
+  int own = whole_answer && !control ? 0 : ANSWER;
+  if (whole_answer && !control && agree == ANSWER) {
+    llm_reset(&m);
+    for (int i = 0; r == 0 && i < nq; i++) {
+      r = llm_vk_step(&vm, q[i]);
+    }
+    for (int i = 0; r == 0 && i < ANSWER; i++) {
+      gpu[i] = llm_greedy(&m);
+      if (i + 1 < ANSWER) {
+        r = llm_vk_step(&vm, gpu[i]);
+      }
+    }
+    own = 0;
+    while (r == 0 && own < ANSWER && gpu[own] == cpu[own]) {
+      own++;
+    }
+  }
+
+  char said[ANSWER * 24] = "", one[64];
+  for (int i = 0; i < ANSWER; i++) {
+    int n = llm_token_text(&m, cpu[i], one, sizeof(one) - 1);
+    one[n > 0 ? n : 0] = 0;
+    strncat(said, one, sizeof(said) - strlen(said) - 1);
+  }
+  /* A real model is held to its answer, as decision 1 has it; its logits
+   * are reported. A tiny one's answer is near ties, and its logits are
+   * held instead. */
+  int held = whole_answer ? agree == ANSWER && own == ANSWER : worst <= 1e-3;
+  int ok = control ? !held : held;
+  printf("%s: %s, a %d-token question, %d answer tokens: every step's logits within %.3g of NMSE%s, "
+         "the likeliest the processor's at %d of %d steps",
+         ok ? "PASS" : "FAIL", path, nq, ANSWER, worst, whole_answer ? "" : " (held to 1e-3)", agree, ANSWER);
+  if (whole_answer && !control) {
+    if (agree == ANSWER) {
+      printf(", the GPU's own answer the processor's for %d of %d tokens", own, ANSWER);
+    } else {
+      printf(", so the GPU's own answer is not the processor's");
+    }
+  }
+  if (control) {
+    printf(" - the control, which must not hold");
+  }
+  printf("\n      \"%s\"\n", said);
+  bad = !ok;
+
+done:
+  free(logits);
+  llm_vk_model_close(&vm);
+  munmap(file, (size_t)st.st_size);
+  return bad;
+}
+
 int main(int argc, char **argv)
 {
-  int control = argc > 1 && strcmp(argv[1], "--control") == 0;
+  int control = 0, whole_answer = 0;
+  const char *model_path = NULL;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--control") == 0) {
+      control = 1;
+    } else if (strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
+      model_path = argv[++i];
+    } else if (strcmp(argv[i], "--whole") == 0) {
+      whole_answer = 1;
+    }
+  }
   struct kvk v;
   struct llm_vk g;
 
@@ -595,6 +878,12 @@ int main(int argc, char **argv)
     return 1;
   }
   printf("device %s, %u lanes a subgroup\n", v.device_name, v.subgroup_size);
+  if (model_path) {
+    int bad = model(&g, model_path, whole_answer, control);
+    llm_vk_close(&g);
+    kvk_close(&v);
+    return bad;
+  }
 
   /* The shapes the models have, and odd ones: a row count no workgroup's
    * rows divide, and Qwen's output matrix's 151,936 rows, more than a

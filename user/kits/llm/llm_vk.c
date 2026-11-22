@@ -9,6 +9,7 @@
  */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "llm_core.h"
@@ -76,6 +77,13 @@ struct rope_push {
   uint32_t a_offset, d_offset;
 };
 
+/* `vk_mat_vec_nc_push_constants`. */
+struct nc_push {
+  uint32_t ncols_x, nrows_x, row_stride_x, channel_stride_x, channel_stride_y, channel_x_divisor;
+  uint32_t ne12, b_offset, d_offset, nb03, nb13, nb23, fusion_flags;
+};
+
+_Static_assert(sizeof(struct nc_push) == 52, "the nc product's push constants are 52 bytes");
 _Static_assert(sizeof(struct unary_push) == 120, "the unary push constants are 120 bytes");
 _Static_assert(sizeof(struct binary_push) == 116, "the binary push constants are 116 bytes");
 _Static_assert(sizeof(struct glu_push) == 108, "the GLU push constants are 108 bytes");
@@ -333,6 +341,44 @@ int llm_vk_rope_neox(struct llm_vk *g, struct kvk_span x, struct kvk_span pos, s
   return 1;
 }
 
+int llm_vk_cpy_f16_strided(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n,
+                           uint32_t stride, uint32_t at)
+{
+  if (n == 0 || stride == 0 || at > 0xffff) {
+    return 0;
+  }
+  /* The destination one row of `n` a stride apart, and `at` its
+   * misalignment in elements (`get_doffset`), which is how ggml says
+   * where a view starts inside a binding. */
+  struct unary_push p = unary_flat(n, 1);
+  p.nb10 = stride;
+  p.nb11 = p.nb12 = p.nb13 = stride * n;
+  p.misalign_offsets = at;
+  struct kvk_span spans[2] = { x, out };
+  elementwise(g, LLM_VK_CPY_F16, spans, &p, n);
+  return 1;
+}
+
+int llm_vk_mmv_nc(struct llm_vk *g, struct kvk_span a, struct kvk_span b, struct kvk_span out,
+                  uint32_t cols, uint32_t rows, uint32_t a_row, uint32_t a_channel,
+                  uint32_t b_channel, uint32_t divisor, uint32_t channels)
+{
+  if (cols == 0 || rows == 0 || channels == 0 || divisor == 0 || rows > g->v->max_groups[1] ||
+      channels > g->v->max_groups[2]) {
+    return 0;
+  }
+  /* `ggml_vk_mul_mat_vec_nc_f16_f32`: one batch (`ne03`, `nb03` unused),
+   * the positions or a head's values down, the heads deep. */
+  struct nc_push p = {
+    .ncols_x = cols, .nrows_x = rows, .row_stride_x = a_row, .channel_stride_x = a_channel,
+    .channel_stride_y = b_channel, .channel_x_divisor = divisor, .ne12 = channels,
+    .nb03 = a_channel * channels, .nb13 = b_channel * channels, .nb23 = rows * channels,
+  };
+  struct kvk_span spans[5] = { a, b, out, out, out };
+  kvk_compute_dispatch(g->v, &g->op[LLM_VK_MMV_NC], spans, &p, 1, rows, channels);
+  return 1;
+}
+
 int llm_vk_mmv_kind(uint32_t type)
 {
   switch (type) {
@@ -418,6 +464,7 @@ int llm_vk_open(struct llm_vk *g, struct kvk *v)
     [LLM_VK_ROPE_NEOX] = { llmvk_rope_neox_f32, sizeof(llmvk_rope_neox_f32), 5, sizeof(struct rope_push) },
     [LLM_VK_CPY_F16] = { llmvk_cpy_f32_f16, sizeof(llmvk_cpy_f32_f16), 2, sizeof(struct unary_push) },
     [LLM_VK_CPY_F32] = { llmvk_cpy_f32_f32, sizeof(llmvk_cpy_f32_f32), 2, sizeof(struct unary_push) },
+    [LLM_VK_MMV_NC] = { llmvk_mul_mat_vec_nc_f16_f32, sizeof(llmvk_mul_mat_vec_nc_f16_f32), 5, sizeof(struct nc_push) },
   };
   for (int k = 0; k < LLM_VK_OPS; k++) {
     const uint32_t *spec = NULL;
@@ -471,4 +518,296 @@ int llm_vk_mmv(struct llm_vk *g, uint32_t type, struct kvk_span w, uint32_t cols
   kvk_compute_dispatch(g->v, &g->mmv[k], spans, &p,
                        (elements + g->mmv_rows[k] - 1) / g->mmv_rows[k], 1, z);
   return 1;
+}
+
+/* ------------------------------------------------------------------------ */
+/* A model on the GPU (V4)                                                    */
+/* ------------------------------------------------------------------------ */
+
+static struct kvk_span whole(const struct kvk_buffer *b)
+{
+  return (struct kvk_span){ b->buffer, 0, 0 };
+}
+
+/* `floats` floats into `b`, `at` floats in: an offset a binding may start
+ * at only where it falls on the device's alignment, which every one taken
+ * here does - a model's widths are multiples of 64. */
+static struct kvk_span part(const struct llm_vk_model *vm, const struct kvk_buffer *b, uint64_t at,
+                            uint64_t floats, int *ok)
+{
+  uint64_t bytes = at * 4;
+  if (vm->g->v->storage_align && bytes % vm->g->v->storage_align != 0) {
+    *ok = 0;
+  }
+  return (struct kvk_span){ b->buffer, bytes, floats * 4 };
+}
+
+static const struct kvk_buffer *tensor_buffer(const struct llm_vk_model *vm, const struct llm_tensor *t)
+{
+  return &vm->w[t - vm->m->tensors];
+}
+
+void llm_vk_model_close(struct llm_vk_model *vm)
+{
+  if (vm->g == NULL) {
+    return;
+  }
+  struct kvk *v = vm->g->v;
+  if (vm->w) {
+    for (uint32_t i = 0; i < vm->m->n_tensors; i++) {
+      kvk_buffer_free(v, &vm->w[i]);
+    }
+  }
+  if (vm->kc) {
+    for (uint32_t l = 0; l < vm->m->n_layer; l++) {
+      kvk_buffer_free(v, &vm->kc[l]);
+      kvk_buffer_free(v, &vm->vc[l]);
+    }
+  }
+  struct kvk_buffer *vecs[] = { &vm->x, &vm->xn, &vm->qkv, &vm->att, &vm->prob, &vm->aout,
+                                &vm->ffo, &vm->ff, &vm->up, &vm->mlp, &vm->logits, &vm->pos };
+  for (size_t i = 0; i < sizeof(vecs) / sizeof(vecs[0]); i++) {
+    kvk_buffer_free(v, vecs[i]);
+  }
+  free(vm->w);
+  free(vm->kc);
+  free(vm->vc);
+  vm->w = vm->kc = vm->vc = NULL;
+  vm->g = NULL;
+}
+
+int llm_vk_model_open(struct llm_vk_model *vm, struct llm_vk *g, struct llm_model *m)
+{
+  struct kvk *v = g->v;
+  const uint32_t E = m->n_embd, KV = m->kv_dim, F = m->n_ff;
+
+  memset(vm, 0, sizeof(*vm));
+  vm->g = g;
+  vm->m = m;
+  if (m->n_ctx > 0xffff || m->head_dim % 2 != 0 || m->n_head % m->n_head_kv != 0) {
+    snprintf(vm->why, sizeof(vm->why), "a shape the GPU path does not take: n_ctx %u, heads %u/%u",
+             m->n_ctx, m->n_head, m->n_head_kv);
+    return 0;
+  }
+
+  /* Every tensor its own buffer: one is bound whole to each step that
+   * reads it, and no tensor of these models is past a binding's range. */
+  vm->w = calloc(m->n_tensors, sizeof(*vm->w));
+  vm->kc = calloc(m->n_layer, sizeof(*vm->kc));
+  vm->vc = calloc(m->n_layer, sizeof(*vm->vc));
+  if (!vm->w || !vm->kc || !vm->vc) {
+    snprintf(vm->why, sizeof(vm->why), "no memory");
+    llm_vk_model_close(vm);
+    return 0;
+  }
+  for (uint32_t i = 0; i < m->n_tensors; i++) {
+    const struct llm_tensor *t = &m->tensors[i];
+    if (t == m->tok_embd && m->out_w != m->tok_embd) {
+      continue;   /* read here, a row a token, by `llm_embedding` */
+    }
+    if (!kvk_buffer_make_storage(v, &vm->w[i], (t->bytes + 3) & ~(uint64_t)3, "weights")) {
+      snprintf(vm->why, sizeof(vm->why), "a tensor's buffer, %llu bytes: %s",
+               (unsigned long long)t->bytes, v->why);
+      llm_vk_model_close(vm);
+      return 0;
+    }
+    memcpy(vm->w[i].bytes, t->data, t->bytes);
+  }
+
+  /* The cache in F16: keys a position a row of KV, values transposed, KV
+   * rows of a position each. */
+  for (uint32_t l = 0; l < m->n_layer; l++) {
+    VkDeviceSize bytes = (VkDeviceSize)m->n_ctx * KV * 2;
+    if (!kvk_buffer_make_storage(v, &vm->kc[l], bytes, "keys") ||
+        !kvk_buffer_make_storage(v, &vm->vc[l], bytes, "values")) {
+      snprintf(vm->why, sizeof(vm->why), "the cache: %s", v->why);
+      llm_vk_model_close(vm);
+      return 0;
+    }
+    memset(vm->kc[l].bytes, 0, bytes);
+    memset(vm->vc[l].bytes, 0, bytes);
+  }
+
+  const struct { struct kvk_buffer *b; uint64_t floats; } VECS[] = {
+    { &vm->x, E }, { &vm->xn, E }, { &vm->qkv, 3 * (uint64_t)E },
+    { &vm->att, (uint64_t)m->n_head * m->n_ctx }, { &vm->prob, (uint64_t)m->n_head * m->n_ctx },
+    { &vm->aout, E }, { &vm->ffo, E }, { &vm->ff, F }, { &vm->up, F }, { &vm->mlp, E },
+    { &vm->logits, m->n_vocab }, { &vm->pos, 1 },
+  };
+  for (size_t i = 0; i < sizeof(VECS) / sizeof(VECS[0]); i++) {
+    if (!kvk_buffer_make_storage(v, VECS[i].b, VECS[i].floats * 4, "vector")) {
+      snprintf(vm->why, sizeof(vm->why), "a working vector: %s", v->why);
+      llm_vk_model_close(vm);
+      return 0;
+    }
+  }
+  return 1;
+}
+
+/* A product by a weight, and its bias where it has one: `out` rows of
+ * the tensor's, `x` its columns. */
+static int product(struct llm_vk_model *vm, const struct llm_tensor *w, const struct llm_tensor *bias,
+                   struct kvk_span x, struct kvk_span out)
+{
+  const uint32_t cols = (uint32_t)w->ne[0], rows = (uint32_t)w->ne[1];
+  if (!llm_vk_mmv(vm->g, w->type, whole(tensor_buffer(vm, w)), cols, rows, x, out)) {
+    return 0;
+  }
+  if (bias) {
+    if (bias->type != LLM_F32) {
+      return 0;
+    }
+    kvk_compute_barrier(vm->g->v);
+    return llm_vk_add(vm->g, out, whole(tensor_buffer(vm, bias)), out, rows, 1, 1);
+  }
+  return 1;
+}
+
+/* A model's norm, from `x` into `out`: RMS and the weight in Qwen2's,
+ * LayerNorm, the weight and the bias in phi-2's. */
+static int layer_norm(struct llm_vk_model *vm, const struct llm_tensor *w, const struct llm_tensor *b,
+                      struct kvk_span x, struct kvk_span out)
+{
+  struct llm_vk *g = vm->g;
+  const struct llm_model *m = vm->m;
+  if (w->type != LLM_F32 || (b && b->type != LLM_F32)) {
+    return 0;
+  }
+  if (m->kind == LLM_ARCH_QWEN2) {
+    return llm_vk_rms_norm(g, x, whole(tensor_buffer(vm, w)), out, m->n_embd, 1, m->norm_eps);
+  }
+  int ok = llm_vk_norm(g, x, out, m->n_embd, 1, m->norm_eps);
+  kvk_compute_barrier(g->v);
+  ok = ok && llm_vk_mul(g, out, whole(tensor_buffer(vm, w)), out, m->n_embd, 1, 1);
+  if (b) {
+    kvk_compute_barrier(g->v);
+    ok = ok && llm_vk_add(g, out, whole(tensor_buffer(vm, b)), out, m->n_embd, 1, 1);
+  }
+  return ok;
+}
+
+int llm_vk_step(struct llm_vk_model *vm, int32_t token)
+{
+  struct llm_model *m = vm->m;
+  struct llm_vk *g = vm->g;
+  struct kvk *v = g->v;
+  const uint32_t E = m->n_embd, D = m->head_dim, KV = m->kv_dim, H = m->n_head;
+  const uint32_t pos = m->n_past, n = pos + 1;
+  const int qwen = m->kind == LLM_ARCH_QWEN2;
+  int ok = 1;
+
+  if (pos >= m->n_ctx || token < 0 || (uint32_t)token >= m->n_vocab) {
+    return -1;
+  }
+  llm_embedding(m, token, (float *)vm->x.bytes);
+  *(int32_t *)vm->pos.bytes = (int32_t)pos;
+
+  struct kvk_span x = whole(&vm->x), xn = whole(&vm->xn), att = whole(&vm->att);
+  struct kvk_span prob = whole(&vm->prob), aout = whole(&vm->aout), ffo = whole(&vm->ffo);
+  struct kvk_span ff = whole(&vm->ff), up = whole(&vm->up), mlp = whole(&vm->mlp);
+  struct kvk_span q = part(vm, &vm->qkv, 0, E, &ok);
+  struct kvk_span k = part(vm, &vm->qkv, E, KV, &ok);
+  struct kvk_span vv = part(vm, &vm->qkv, 2 * (uint64_t)E, KV, &ok);
+  struct kvk_span qkv = part(vm, &vm->qkv, 0, 3 * (uint64_t)E, &ok);
+  if (!ok || !kvk_begin(v)) {
+    snprintf(vm->why, sizeof(vm->why), "%s", ok ? v->why : "a vector off the device's alignment");
+    return -1;
+  }
+#define B() kvk_compute_barrier(v)
+
+  for (uint32_t l = 0; l < m->n_layer && ok; l++) {
+    const struct llm_layer *L = &m->layers[l];
+
+    ok = ok && layer_norm(vm, L->norm_w, L->norm_b, x, xn);
+    B();
+
+    /* Q, K and V where the processor keeps them: K at E, V at 2E. */
+    if (L->qkv_w) {
+      ok = ok && product(vm, L->qkv_w, L->qkv_b, xn, qkv);
+    } else {
+      ok = ok && product(vm, L->q_w, L->q_b, xn, q) && product(vm, L->k_w, L->k_b, xn, k) &&
+           product(vm, L->v_w, L->v_b, xn, vv);
+    }
+    B();
+
+    ok = ok && llm_vk_rope_neox(g, q, whole(&vm->pos), q, D, H, 1, m->n_rot, m->rope_base) &&
+         llm_vk_rope_neox(g, k, whole(&vm->pos), k, D, m->n_head_kv, 1, m->n_rot, m->rope_base);
+    B();
+    if (!qwen) {
+      ok = ok && llm_vk_scale(g, q, q, E, 1.0f / sqrtf((float)D), 0);
+    }
+
+    /* This position's key into its row, its value down its column. */
+    VkDeviceSize krow = (VkDeviceSize)pos * KV * 2;
+    if (v->storage_align && krow % v->storage_align != 0) {
+      snprintf(vm->why, sizeof(vm->why), "a key's row is off the device's alignment");
+      ok = 0;
+      break;
+    }
+    struct kvk_span kc = { vm->kc[l].buffer, krow, (VkDeviceSize)KV * 2 };
+    ok = ok && llm_vk_cpy_f16(g, k, kc, KV) &&
+         llm_vk_cpy_f16_strided(g, vv, whole(&vm->vc[l]), KV, m->n_ctx, pos);
+    B();
+
+    /* The scores, a head's row of `n` each, its softmax, and the values'
+     * sum: a head a channel, a group's heads reading its key and value
+     * head. */
+    ok = ok && llm_vk_mmv_nc(g, whole(&vm->kc[l]), q, att, D, n, KV, D, D, H / m->n_head_kv, H);
+    B();
+    ok = ok && llm_vk_soft_max(g, att, prob, n, H, qwen ? 1.0f / sqrtf((float)D) : 1.0f);
+    B();
+    ok = ok && llm_vk_mmv_nc(g, whole(&vm->vc[l]), prob, aout, n, D, m->n_ctx, D * m->n_ctx, n,
+                             H / m->n_head_kv, H);
+    B();
+
+    ok = ok && product(vm, L->o_w, L->o_b, aout, ffo);
+    if (qwen) {
+      B();
+      ok = ok && llm_vk_add(g, ffo, x, x, E, 1, 1);
+      B();
+      ok = ok && layer_norm(vm, L->ffn_norm_w, NULL, x, xn);
+      B();
+      ok = ok && product(vm, L->gate_w, NULL, xn, ff) && product(vm, L->up_w, NULL, xn, up);
+      B();
+      ok = ok && llm_vk_swiglu(g, ff, up, ff, m->n_ff);
+      B();
+      ok = ok && product(vm, L->down_w, NULL, ff, mlp);
+      B();
+      ok = ok && llm_vk_add(g, mlp, x, x, E, 1, 1);
+    } else {
+      /* phi-2's MLP beside the attention, off the same norm; then the two
+       * added, then the residual, ggml's order. */
+      ok = ok && product(vm, L->up_w, L->up_b, xn, ff);
+      B();
+      ok = ok && llm_vk_gelu(g, ff, ff, m->n_ff);
+      B();
+      ok = ok && product(vm, L->down_w, L->down_b, ff, mlp);
+      B();
+      ok = ok && llm_vk_add(g, ffo, mlp, ffo, E, 1, 1);
+      B();
+      ok = ok && llm_vk_add(g, ffo, x, x, E, 1, 1);
+    }
+    B();
+  }
+
+  ok = ok && layer_norm(vm, m->out_norm_w, m->out_norm_b, x, xn);
+  B();
+  ok = ok && product(vm, m->out_w, m->out_b, xn, whole(&vm->logits));
+  B();
+#undef B
+
+  if (!ok) {
+    if (vm->why[0] == 0) {
+      snprintf(vm->why, sizeof(vm->why), "a step there is no pipeline or shape for");
+    }
+    kvk_submit(v);   /* what was recorded is ended, and thrown away */
+    return -1;
+  }
+  if (!kvk_submit(v)) {
+    snprintf(vm->why, sizeof(vm->why), "submitting: %s", v->why);
+    return -1;
+  }
+  memcpy(m->logits, vm->logits.bytes, (size_t)m->n_vocab * 4);
+  m->n_past++;
+  return 0;
 }

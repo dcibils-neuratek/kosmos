@@ -37,6 +37,11 @@ VARIANTS = {
     "mul_mat_vec_q6_k_f32_f32": mmv("q6_k"),
     "mul_mat_vec_f32_f32_f32": mmv("f32"),
     "mul_mat_vec_f16_f32_f32": mmv("f16"),
+    # Attention's two products, over the cache: the keys a head at a time
+    # and the values transposed, rows a stride apart.
+    "mul_mat_vec_nc_f16_f32": ("mul_mat_vec_nc.comp", dict(A_TYPE="float16_t", A_TYPEV4="f16vec4",
+                                                          B_TYPE="float", B_TYPEV4="vec4",
+                                                          D_TYPE="float")),
     # A layer's other steps.
     "norm_f32": ("norm.comp", dict(MMV, A_TYPE="float", D_TYPE="float")),
     "rms_norm_f32": ("rms_norm.comp", dict(MMV, A_TYPE="float", B_TYPE="float", D_TYPE="float",

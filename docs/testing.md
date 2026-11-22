@@ -41537,3 +41537,85 @@ every case.
 that makes a temporary directory without `tools/scratch.py`, and
 `vkshaders.py` used `tempfile`. On `scratch.directory` it writes the same
 header byte for byte, and `host` and `host-llmvk` pass.
+
+## 18.989 A token on the GPU (Xavier on Vulkan, V4, its half on the Mac)
+
+**In short:** a whole token now goes through a model on Vulkan: every
+layer, attention over the cache and the logits, recorded as one command
+buffer and submitted once. On this Mac's lavapipe, Qwen 2.5 0.5B and
+phi-2 answer "The capital of France is Paris." token for token as the
+processor does, all 32 tokens of the answer. Qwen 2.5 1.5B agrees at 31
+steps of 32, and splits at one where the processor's two likeliest
+tokens are 0.064 apart. What is left of V4 is the same in Kosmos, the
+server linked with lavapipe and booted in the gate.
+
+**What** (`user/kits/llm/llm_vk.c`, `llm_vk.h`):
+
+- `llm_vk_model_open` copies every tensor into a storage buffer of its
+  own, except an embedding the output does not share, which is read a
+  row a token on the processor (`llm_embedding`, new in `llm_core.c`).
+- It gives each layer its cache in F16 on the device: keys a position a
+  row, values transposed, a position a column, as ggml keeps them when
+  it does not use flash attention.
+- `llm_vk_step` records the layer as the processor runs it. Qwen2's: RMS
+  norm, Q, K and V with their biases, RoPE, the key into its row and the
+  value down its column (`llm_vk_cpy_f16_strided`), the scores,
+  softmax, the values' sum, the output, the residual, the second norm,
+  gate and up, SwiGLU, down, the residual. Phi-2's: LayerNorm, the fused
+  QKV, the query scaled, and the MLP beside the attention.
+- A barrier goes between dependent steps, then the final norm and the
+  output. The logits are read back into `m->logits` and `n_past`
+  advances, as `llm_step` leaves them.
+- Attention's two products are `mul_mat_vec_nc`, ggml's own for a cache:
+  a head a channel, a group's heads sharing their key and value head.
+
+**Held first, alone** (`test_llmvk`):
+
+- the keys' scores and the values' sum at the models' heads (14 on 2 of
+  64, 32 of 80, 12 on 2 of 128), at positions that do and do not fill
+  vec4s, up to 512: 2e-15 to 1e-14 of NMSE;
+- a value written down the transposed cache, bit for bit, the rest
+  untouched.
+
+Their controls read each head's query as the next head's, and the value
+one position on.
+
+**Then the models**, a question and 32 answer tokens, with the GPU given
+the processor's tokens, and every step's logits compared:
+
+```
+tiny-phi2 F16    every step within 4.8e-7 of NMSE, the likeliest agreeing at 32 of 32
+tiny-phi2 Q4_0   within 1.9e-4, 30 of 32 (a random model's near ties)
+Qwen 2.5 0.5B    within 6.6e-3, 32 of 32, and its own answer the processor's, 32 of 32   12 s
+phi-2 Q4_0       within 5.8e-2, 32 of 32, and its own answer the processor's, 32 of 32   38 s
+Qwen 2.5 1.5B    within 5.9e-3, 31 of 32: at step 12, 315 at 25.441 and 382 at 25.377 on the
+                 processor, 25.303 and 25.392 on the GPU                                  23 s
+```
+
+**Why the real models' logits differ more than the tiny one's.** The
+processor's products take their input as Q8_0 blocks, as ggml's CPU
+backend does, and the GPU's take it as floats, as `mul_mat_vec` does. In
+F16, where the processor quantises nothing either, the two agree to
+5e-7 over every step, so the arithmetic and the wiring are the same.
+Over 24 and 32 layers of Q4_0 the input's rounding is what is left, and
+phi-2's carries its largest activations.
+
+`ggml-vulkan` itself takes the input as Q8_1 for Q4_0 and Q8_0 on an
+Intel GPU (`mul_mat_vecq`), which is also quicker there. That is V7's,
+and it should bring the two closer.
+
+**Held, then** (decision 1): a tiny model's logits within 1e-3 at every
+step, and a real model's answer, every token, both given the processor's
+tokens and on its own. The gate holds both tiny models and Qwen 0.5B
+(`make host-llmvk-check`, 24 s with the steps). Qwen 1.5B's near tie is
+recorded here, not held.
+
+**Controls**: the question given without its last token, as a token
+dropped on the way would be. Every model breaks: the tiny ones to 1.7 of
+NMSE, Qwen 0.5B to 0.50 (30 of 32), phi-2 to 0.68 (30 of 32). The first
+control, a cache started one position on, was not one. RoPE sees only
+the distances between tokens, and it moved phi-2's logits from 0.058 to
+0.059.
+
+**The gate** (`make test`, what the LLM Kit reaches): 159 of 159 in
+824 s. `host-llmvk` is 24 s of it, run beside the rest.
