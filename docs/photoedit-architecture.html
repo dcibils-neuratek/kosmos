@@ -1,0 +1,161 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Kosmos Paint, a photo editor in the Kosmos Studio family: the application
+  over paintdoc.lua and the family's shared Lua pieces, the new Canvas,
+  Brush, Selection and Picture kits, and the Graphics Kit's colour, blend,
+  scope, effect and resampling primitives that Kosmos Cut shares. The two
+  busiest paths - a brush stroke (B) and a curves slider dragged with the
+  whole stack recomposited (C) - drawn through it. Drawn on 22 November
+  2026, before any of it is built; `docs/photoedit.md` is the argument and
+  `docs/photoedit.html` the window. Template and styles are
+  docs/videoedit-architecture.html's.
+
+  Rendered to docs/photoedit-architecture.png by headless Chrome at twice
+  its size, as docs/videoedit-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Paint architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --shared: #b0368a; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .shared { border-color: var(--shared) !important; box-shadow: 0 0 0 2px rgba(176,54,138,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.sh { background: var(--shared); }
+  .tag.later { background: var(--later); }
+  .tag + .tag { right: auto; left: 10px; }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 40%; }
+</style>
+</head>
+<body>
+<h1>Kosmos Paint - what it stands on</h1>
+<p class="sub">The second of the Kosmos Studio family, beside Kosmos Cut. A photo editor is the thinnest layer: the document's tree in Lua, every pixel in C, in tiles. What both editors need is one copy, marked <b style="color:var(--shared)">shared with Cut</b>. What Paint brings is a kit wherever another application wants it, marked <b style="color:var(--new)">new</b>. A brush stroke (B) and a curves slider (C) never put a pixel through Lua.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--shared);background:#fff"></i>shared with Cut</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits, in the family's image <code>media.elf</code></span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">B</span><span>a brush stroke</span><span class="f">C</span><span>a curves slider</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications - the Kosmos Studio family</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Kosmos Paint - <code>user/installed/Paint/</code></b><p>layers, canvas, tools, inspector; Simple (Develop) and Full (Layers); the Export sheet. Says what the document is; turns the pointer into samples <span class="f">B1</span>; a slider into a field <span class="f">C1</span>; lends the newest view <span class="f">B6 C5</span></p></div>
+        <div class="box"><b>Kosmos Cut</b><p>agreed 22 November; places a <code>.paint</code> on a track and watches its folder; <i>Edit frame in Paint</i></p></div>
+        <div class="box later-box"><span class="tag later">NEXT</span><b>Kosmos Draw</b><p>vectors, designed after this, on the same kits and <code>path.c</code></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in the editor's process)</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>paintdoc.lua</code> - the document</b><p>the layer tree, each layer's properties, the <code>.paint</code> folder read and written, <code>describe()</code> into <code>canvas.h</code>'s structs <span class="f">C1</span>. Cut, Draw, Present use it</p></div>
+        <div class="box new shared"><span class="tag sh">SHARED</span><span class="tag">NEW</span><b>undo, params, exportsheet</b><p><code>undo.lua</code>: steps, coalesced drags, the History panel <span class="f">B7</span>; <code>params.lua</code>: inspector rows declared once; <code>exportsheet.lua</code>: the one Export sheet</p></div>
+        <div class="box"><b>ui.lua, panel, json, prefs, zip</b><p>the window; <code>ui.lend_picture</code> for the canvas; <code>ui.colour</code> <b style="display:inline;font-size:13px;color:var(--new)">new</b>; <code>win:watch_folder</code>; Open window; one file to mail</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, linked into <code>media.elf</code> with the POSIX layer)</h2>
+      <div class="row" style="grid-template-columns:1.5fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>The Canvas Kit - <code>user/kits/canvas/</code></b><p>tiles of 128 by 128, absent, uniform or full; copy-on-write; layers, groups, masks, clipping; a pyramid of levels; the below and above caches; compositing only what changed, at the view's level <span class="f">B4 C3</span>, then level 0 behind <span class="f">B5 C4</span>; undo by tiles; a memory budget and a spill file. Users: Paint, Cut, Draw, Present, Write</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>The Picture Kit - <code>picture.h</code></b><p>every format behind one door: libpng, libjpeg-turbo, libwebp, libavif (W5's); libtiff, libheif, LibRaw (fetched); <code>psd.c</code>; EXIF; ICC by <b style="display:inline;font-size:13px">skcms</b>, the copy in JetSki's Skia. Users: Photo Viewer, Tracker, Write, Mail, Cut, Camera</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:12px">
+        <div class="box new"><span class="tag">NEW</span><b>The Brush Kit</b><p>samples smoothed into a curve, dabs at a spacing, pressure; eraser, clone, heal, smudge <span class="f">B2 B3</span>. Users: Present's pen, PDF markup, Cut's painted masks, Draw's pencil</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>The Selection Kit</b><p>masks in tiles: marquees and lassos through <code>raster.c</code>, the wand, colour range, feather, refine edge, the ants' outline. Users: Cut's secondaries, Present's instant alpha, Camera</p></div>
+        <div class="box"><b>The Text Kit</b><p>FreeType and HarfBuzz (W5b): text layers here, titles in Cut, type in Draw - one renderer</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1.6fr 1fr 1fr;margin-top:12px">
+        <div class="box shared"><span class="tag sh">SHARED WITH CUT</span><b>The Graphics Kit - gfx</b><p><code>grade.c</code> (Cut's: grade, curves, 3D LUT, qualifier) at 8 and 16 bits <span class="f">C2 C3</span>; new: <code>blendmode.c</code> <span class="f">B4</span>, <code>scopes.c</code> <span class="f">C6</span>, <code>effects.c</code>, <code>resample.c</code>. As now: <code>path.c</code>, <code>raster.c</code>, <code>blur.c</code></p></div>
+        <div class="box"><b>The Media Kit</b><p>a frame of a film at full size, for a still into Paint (Cut's V1)</p></div>
+        <div class="box later-box"><span class="tag later">P15</span><b>The Vulkan Kit - <code>kvk.c</code></b><p>compositing and filters as compute shaders, held to the C path; lavapipe, then <code>anv</code></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>/Home - diskfs</b><p>pictures read into pages; changed layers' tiles and the spill file written at an offset by <code>DISK_OP_WRITE_AT</code>; the folder watch Cut listens to</p></div>
+        <div class="box"><b>autod - Automations</b><p>batch: a Look, an export, a resize over a folder, on a trigger</p></div>
+        <div class="box later-box"><span class="tag later">LATER</span><b>a tablet's driver; intelgpu</b><p>a USB digitiser's pressure and tilt (decision 13); the GPU for P15's shaders</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>regions</b><p>the view's ring of three, a file read into pages, the pieces written out</p></div>
+        <div class="box"><b>threads and bands</b><p>the render thread and workers at NORMAL, saving and export at LOW</p></div>
+        <div class="box"><b>pulses</b><p>"a view is in the ring"; a folder changed; nothing waits on a server</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>B - a brush stroke</h3>
+      <ol><li><b>B1</b> A pointer event: Lua puts x, y, pressure and time into the stroke's ring. Nothing else.</li>
+          <li><b>B2</b> The render thread smooths the samples into a curve and walks it at the brush's spacing.</li>
+          <li><b>B3</b> Each dab into the layer's tiles; a tile undo still shares is copied first.</li>
+          <li><b>B4</b> The damage composited at the view's level: below cache, the layer, the layers above.</li>
+          <li><b>B5</b> The pyramid made again under the damage; level 0 behind, never waited for.</li>
+          <li><b>B6</b> To sRGB, into the ring; the window lends it and paints only that rectangle.</li>
+          <li><b>B7</b> The stroke ends: its tiles are one undo step. Nothing copied.</li></ol></div>
+    <div class="card"><h3>C - a curves slider, the stack recomposited</h3>
+      <ol><li><b>C1</b> A slider's value is a struct field (<code>params.lua</code>); the stack is copied whole.</li>
+          <li><b>C2</b> The curve's tables, 4096 entries a channel: microseconds.</li>
+          <li><b>C3</b> At the view's level, 1.5 of 24 megapixels: below cache, the lookup, the layers above.</li>
+          <li><b>C4</b> At rest, level 0 by the workers, visible tiles first, cancelled by the next move.</li>
+          <li><b>C5</b> The newest view lent; one undo step when the button goes up.</li>
+          <li><b>C6</b> The histogram from the same pixels.</li></ol></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>Canvas Kit, <code>paintdoc</code></td><td>Cut (a <code>.paint</code> on a track), Draw, Present, Write</td></tr>
+        <tr><td>Picture Kit</td><td>Photo Viewer, Tracker's previews, Write, Mail, Cut, Camera, Wallpapers</td></tr>
+        <tr><td>Brush Kit</td><td>Present's pen, PDF markup, Cut's masks, Draw's pencil</td></tr>
+        <tr><td>Selection Kit</td><td>Cut's secondaries, Present's instant alpha, Camera</td></tr>
+        <tr><td><code>blendmode</code>, <code>scopes</code>, <code>effects</code>, <code>resample</code></td><td>Cut, Draw, Photo Viewer, Camera</td></tr>
+        <tr><td><code>undo</code>, <code>params</code>, <code>exportsheet</code>, <code>ui.colour</code></td><td>Cut, Draw, Write, Present, Automations</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

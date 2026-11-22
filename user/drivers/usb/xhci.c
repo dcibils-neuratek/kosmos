@@ -86,6 +86,7 @@
 #include "pad_decode.h"
 #include "usb_decode.h"
 #include "uvc_decode.h"
+#include "uac_decode.h"
 #include "midi_decode.h"
 #include "btusb_decode.h"
 #include "../bluetooth/hci_decode.h"
@@ -6294,6 +6295,111 @@ static bool read_configuration(struct controller *c, struct device *d,
 }
 
 /* Whether a configuration holds something `use_device` goes on to use. */
+/*
+ * **A speaker, headphones, a microphone or a headset** - USB Audio Class 1
+ * or 2 (`docs/usbaudio.md` U1). Named, and each setting that carries sound
+ * said with what it offers: its direction, channels, bits, rates, how it
+ * keeps time and how much it carries a frame. A UAC2 device keeps its rates
+ * behind its clock source, so they are asked for (GET RANGE of the clock's
+ * sampling frequency, UAC2 5.2.3.3 and 5.2.5.1.1) - two bytes for how many
+ * subranges, then the whole. Nothing is played yet: that is U2.
+ */
+#define UAC2_GET_RANGE      (0xA1u | (0x02u << 8))
+#define UAC2_SAM_FREQ       0x0100u     /* CS_SAM_FREQ_CONTROL << 8 */
+#define UAC2_RANGES_MAX     21u         /* 2 + 12 x 21 = 254 bytes */
+
+static void use_audio(struct controller *c, struct device *d,
+                      struct uac_device *info, struct say_line *line)
+{
+    static const char *const SYNC[] = {
+        "with no sync", "asynchronous", "adaptive", "synchronous",
+    };
+    const struct uac_alt *a;
+    uint16_t index = (uint16_t)((unsigned)info->clock << 8 | info->control);
+    unsigned i, k, n;
+
+    if (info->version == 2 && info->clock != 0
+        && control_in(c, d, UAC2_GET_RANGE, UAC2_SAM_FREQ, index, 2u)) {
+        n = (unsigned)d->buffer[0] | (unsigned)d->buffer[1] << 8;
+        n = n > UAC2_RANGES_MAX ? UAC2_RANGES_MAX : n;
+
+        if (n > 0 && control_in(c, d, UAC2_GET_RANGE, UAC2_SAM_FREQ, index,
+                                (uint16_t)(2u + 12u * n))) {
+            d->buffer[0] = (uint8_t)n;
+            d->buffer[1] = 0;
+
+            for (i = 0; i < info->nalts; i++) {
+                (void)uac_rates_from_range(d->buffer, 2u + 12u * n,
+                                           &info->alts[i]);
+            }
+        }
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": a ");
+    say_text(line, uac_kind(info));
+    say_text(line, ", USB Audio Class ");
+    say_dec(line, info->version);
+    say_text(line, ": ");
+    say_dec(line, info->nalts);
+    say_text(line, info->nalts == 1 ? " setting" : " settings");
+
+    if (info->skipped != 0 || info->alts_dropped != 0) {
+        say_text(line, " (");
+        say_dec(line, info->skipped + info->alts_dropped);
+        say_text(line, " more not read)");
+    }
+
+    say_send(console, line);
+
+    for (i = 0; i < info->nalts; i++) {
+        a = &info->alts[i];
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, a->in ? ":   records on " : ":   plays on ");
+        say_dec(line, a->interface);
+        say_text(line, ".");
+        say_dec(line, a->alternate);
+        say_text(line, ": ");
+        say_dec(line, a->channels);
+        say_text(line, " channels, ");
+        say_dec(line, a->bits);
+        say_text(line, " bits, ");
+
+        if (a->continuous && a->nrates == 2) {
+            say_dec(line, a->rates[0]);
+            say_text(line, " to ");
+            say_dec(line, a->rates[1]);
+        } else if (a->nrates == 0) {
+            say_text(line, "rates not said");
+        } else {
+            for (k = 0; k < a->nrates; k++) {
+                if (k != 0) {
+                    say_text(line, " ");
+                }
+                say_dec(line, a->rates[k]);
+            }
+        }
+
+        say_text(line, " Hz, ");
+        say_text(line, SYNC[a->sync & 3u]);
+
+        if (a->feedback != 0) {
+            say_text(line, " (feedback on ");
+            say_dec(line, a->feedback);
+            say_text(line, ")");
+        }
+
+        say_text(line, ", ");
+        say_dec(line, (unsigned)a->packet * (1u + a->extra));
+        say_text(line, " bytes an interval");
+        say_send(console, line);
+    }
+}
+
 static bool usable(enum usb_config_kind kind)
 {
     return kind == USB_CONFIG_BOOT_MOUSE || kind == USB_CONFIG_BULK_ONLY
@@ -6427,6 +6533,22 @@ static void use_device(struct controller *c, struct device *d,
                 c->kind_of[d->slot] = USB_KIND_MIDI;
                 c->driven_of[d->slot] = true;
                 use_midi(c, d, &midi, line);
+                return;
+            }
+        }
+
+        /* A speaker, headphones, a microphone (`usbaudio.md` U1). After
+         * MIDI's, because a MIDI keyboard has an AudioControl interface too
+         * - and no setting that carries sound, so this would refuse it. */
+        {
+            static struct uac_device audio;
+
+            uac_decode_config(d->buffer, total, &audio);
+
+            if (audio.ok) {
+                c->kind_of[d->slot] = USB_KIND_AUDIO;
+                c->driven_of[d->slot] = true;
+                use_audio(c, d, &audio, line);
                 return;
             }
         }

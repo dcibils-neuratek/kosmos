@@ -834,6 +834,52 @@ three designs below (Diego: "ok then i want to work on the other stuff").
 - **`hw_give` sends no null `PIPE_CONTROL` before a VF invalidate**,
   which i915 does on Gen9. Seen only in reading.
 
+**A family of creative applications - ASKED 22 November 2026** (Diego: "i
+want a new app for photo editing similar to adobe photoshop and in the same
+line as the video eeditor, as it will be part of a family of apps for photo
+and video editing like adobe family of prodycts. After this we will do
+another app that is similar to adobe illustrator which is a vector oriented
+design and editing tool"). Three applications, one family - one look, one
+file language between them, and every piece two of them need a kit with one
+door: **(1) Kosmos Cut**, the video editor, agreed (below); **(2) a photo
+editor**, Photoshop's ground with Lightroom's development - layers, masks,
+selections, brushes, adjustments, filters, RAW, large images in tiles -
+**Kosmos Paint**, designed 22 November in `docs/photoedit.md`,
+`photoedit.html` and `photoedit-architecture.png` - for Diego to decide,
+thirteen decisions, steps P0 to P15 after Cut's V1 to V7 - sharing Cut's
+grading, scopes, effects, undo and export through the Graphics Kit and
+three Lua pieces, with a Canvas, Picture, Brush and Selection Kit new; **(3) a vector editor**, Illustrator's ground - paths and
+the pen, shapes, strokes and fills, type on a path, artboards, SVG and PDF -
+designed after the photo editor, on the same kits (the Graphics Kit's
+`path` rasteriser, the PDF Kit). Each designed and agreed before code.
+
+**A video editor, "fully equipped" - AGREED 22 November 2026, every
+recommendation taken** (Diego, 22 November: "agreed with your recommendations on the video editor") (Diego: "i want to build a fully equiped video
+editing app like adobe premiere or imovie", "so research on what those are
+and their funciontality and lets work on a spec and a mockup for it").
+`docs/videoedit.md` (Premiere, iMovie, Final Cut Pro, Resolve, Kdenlive and
+Shotcut compared; a Simple tier on iMovie's ground and a Full one on
+Premiere's, one application and one project; a timeline library, an Edit
+Kit that renders a moment for the viewer and the export alike, the Media
+Kit given a frame at a time, thumbnails, peaks and an encoder door, colour
+in the Graphics Kit; steps V0-V15; ten decisions), `docs/videoedit.html`
+and `docs/videoedit-architecture.png`. Working name Kosmos Cut. After the
+three designs agreed the same day, unless Diego puts it sooner.
+
+**Qwen2.5-3B in Xavier - AGREED 22 November 2026** (Diego, asking first
+for Thinking Machines' Inkling-2-Mini - "can we try addig this new model to
+xavier" - then, told it does not fit: "ok lets add Qwen2.5-3B"). Inkling-2-Mini
+is 26.4B parameters, a mixture of 128 experts with its middle layers looped
+three times, released 20 November: about 14-16 GB at four bits against the
+M700's 8 GB, a third forward pass and a 200k tokenizer, and no llama.cpp in
+the tree to hold it to; left unless a 32 GB machine and that work are wanted.
+Qwen2.5-3B Instruct is the kit's own `qwen2` (36 layers, 2048 wide, 16 heads
+over 2 of K and V, tied embeddings): `Qwen/Qwen2.5-3B-Instruct-GGUF`'s
+`qwen2.5-3b-instruct-q4_0.gguf`, 1,997,879,712 bytes, SHA-256 670d82d0...816a,
+held to llama.cpp on the Mac as the 1.5B is, offered by Xavier and the Models
+page, and measured on the M700 - about 2 GB read a token, so near 5-6 tokens
+a second on its processor.
+
 **After Xavier on Vulkan - AGREED 22 November 2026** (Diego: "once the
 llm with vulkan support is ready", "I want to do usb audio so i can test my
 edifier usb speakers which they work with audio over usb", "also i wanto
@@ -863,7 +909,7 @@ of today's monitors is lost**: the design opens with an inventory of
 each one's, and none of those applications goes before its every row has
 a place here. Feature set, mockup, architecture and diagram, agreed
 before code. After USB audio and the resolution selector, unless Diego
-puts it sooner. **Designed on 22 November, for Diego to agree**:
+puts it sooner. **Designed and AGREED on 22 November, every recommendation taken**:
 `docs/sysmonitor.md` (the inventory - 103 rows over nine windows and bars,
 every one placed - the feature set, architecture, steps S1-S11, seven
 decisions), `docs/sysmonitor.html` and `docs/sysmonitor-architecture.png`.
@@ -4653,8 +4699,8 @@ processors, and still what follows USB:
    so the list is the monitor's own. Today the firmware chooses (60 Hz,
    and 3440x1440 or 1720x1440 by boot). **Next after USB audio** (Diego,
    22 November: "i wan tot be able to switch resolutions and refresh rates
-   available for the monitor"). **Designed on 22 November, for Diego to
-   agree**: `docs/displaymodes.md` (feature set, architecture, steps D1-D9,
+   available for the monitor"). **Designed and AGREED on 22 November, every
+   recommendation taken**: `docs/displaymodes.md` (feature set, architecture, steps D1-D9,
    seven decisions), `docs/displaymodes.html` and
    `docs/displaymodes-architecture.png`. 3440x1440 at 144 Hz is probably
    past the HD 530's DisplayPort 1.2 and display clock; D1 reads what the
@@ -13041,7 +13087,7 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   again first, its chooser and the formats on the page. **Next after
   Xavier on Vulkan** (Diego, 22 November: "I want to do usb audio so i can
   test my edifier usb speakers which they work with audio over usb").
-  **Designed on 22 November, for Diego to agree**: `docs/usbaudio.md`
+  **Designed and AGREED on 22 November, every recommendation taken**: `docs/usbaudio.md`
   (feature set, architecture, steps U1-U9, three decisions),
   `docs/usbaudio.html` (Mixer with its choosers) and
   `docs/usbaudio-architecture.png`. U1 reads the Edifier speakers'

@@ -42170,3 +42170,84 @@ dispatch (`TOKENS`), for a question; that is not yet dispatched.
 **Not yet used**: the model's buffers are still ggml's, and the products
 still llama.cpp's. Laying out every Q4_0 tensor at load and dispatching
 the reordered product for a token and for a question is the next step.
+
+## 18.996 A USB speaker named, and what it offers said (USB audio, U1)
+
+**In short**: Kosmos now recognises a USB speaker, headphones, microphone
+or headset, and says what it can play. Nothing plays through it yet - that
+is U2. QEMU's own speaker is named in the driver's log and listed by
+`lsusb` as audio; before this it was "no driver".
+
+**What**: `user/drivers/usb/uac_decode.c`, USB Audio Class 1 and 2
+descriptors in and a description out - whether it plays, records or both,
+each setting that carries PCM (interface, setting, channels, sample size,
+rates, its isochronous endpoint, how it keeps time, an asynchronous
+output's feedback endpoint), the kind of terminal it plays into, a UAC2
+device's clock source - and `uac_pick`, the setting a 16-bit mix at 44.1
+kHz loses nothing to (`usbaudio.md`, decision 1). `xhci.c` claims such a
+device after MIDI's check, since a MIDI keyboard has an AudioControl
+interface too; asks a UAC2 device's clock for its rates (GET RANGE); and
+says each setting. `USB_KIND_AUDIO`, 11, and `usb.lua` names it.
+
+**Held by**:
+
+- `tools/test_uacdecode.c`, 63 checks on the Mac: QEMU 11.1.1's
+  `usb-audio` byte for byte as `hw/usb/dev-audio.c` lays it out (113
+  bytes; UAC1, one setting, 48 kHz, 16 bits, stereo, synchronous, 192
+  bytes a frame) and its `multi=on` 5.1 and 7.1; a UAC2 DAC at high speed,
+  asynchronous with a feedback endpoint, its rates from GET RANGE as six
+  points and as one wide range; a UAC1 headset whose speaker is
+  asynchronous by `bSynchAddress`, a mono microphone with a range of
+  rates, an AC-3 setting skipped and a HID interface; a MIDI keyboard
+  refused; and every fixture cut at every length against a guard page.
+  **Its control**, `UACTEST_BROKEN=1`, breaks one field in each fixture -
+  QEMU's endpoint made bulk, the stereo setting's channels made one, a DAC
+  setting's protocol made UAC1's, the headset's feedback endpoint made
+  interrupt - and fails 19 of 58. `make host-check` runs both.
+- `usb_audio` in `x86-usb-2`: QEMU's speaker plugged into `qemu-xhci`; the
+  log says "a speaker, USB Audio Class 1: 1 setting" and "plays on 1.1: 2
+  channels, 16 bits, 48000 Hz, synchronous, 192 bytes an interval", and
+  `lsusb` lists 46f4:0002 "driven: audio". **Its control**,
+  `USBAUDIO_ABSENT=1`, boots without the speaker and fails 3 of 3.
+  `usb_list` passes beside it.
+
+**Left of U1**: the Edifier speakers' own descriptors, read on the M700
+when they are plugged in, kept as a fixture of the test - which answers
+whether they are UAC1 or 2 and adaptive, synchronous or asynchronous.
+
+## 18.997 Qwen2.5-3B held to llama.cpp, and the one-token bound by depth
+
+**In short**: Xavier can use Qwen2.5-3B, a model twice the 1.5B's size,
+with the same code - it is the same architecture. The check that holds the
+kit to llama.cpp needed one change: its bound on the very first token's
+numbers is now set by how deep the model is, because the rounding the two
+programs differ by adds up layer by layer, and the 3B has 36 layers.
+
+**Why** (Diego, 22 November: "can we try addig this new model to xavier",
+Thinking Machines' Inkling-2-Mini - 26.4B parameters, a looped mixture of
+experts, too large for the M700's 8 GB and a third forward pass - then "ok
+lets add Qwen2.5-3B"). `Qwen/Qwen2.5-3B-Instruct-GGUF`'s
+`qwen2.5-3b-instruct-q4_0.gguf`, 1,997,879,712 bytes, SHA-256 670d82d0...816a
+as Hugging Face lists it, in `build/models/` and its `SHA256SUMS`.
+
+**What was found**: llama.cpp b12205's reference made as the others'
+(`tools/llm_reference_qwen2.5-3b-instruct-q4_0.txt`); the kit 111 of 112.
+Every token of every text the same, every one of 80 answer steps
+llama.cpp's choice with no near-tie, and the one failure the one-token
+prompt's ten largest logits: 0.1082 apart against a flat 0.10. The other
+two Qwen models, measured the same day: 0.0755 for the 0.5B (24 layers),
+0.0853 for the 1.5B (28) - 0.0031, 0.0030 and 0.0030 a layer. So the
+drift is the order sums are taken in, added to at every layer, as the
+test's own comment says of llama.cpp against itself; a flat bound was
+right only for shallow models.
+
+**The change**: `EXACT_A_LAYER`, 0.0035 a layer, the one-token bound
+being the larger of that and 0.10 - 0.13 for the 3B, 0.10 for the 0.5B
+and 1.5B as before, 0.112 for phi-2's 32. The controls the bound exists
+for, a GELU without its cubic term and the MLP's bias left out, are 1.37
+and 1.25 out: ten times it. All three Qwen models pass 112 of 112;
+`host-llm-check` runs the 3B too.
+
+**Speed on the Mac**, scalar, one thread: 3.24 tokens a second; four
+parts, 10.3. On the M700 it is to be measured: about 2 GB read a token
+against 14 GB/s, so near 6-7 tokens a second.

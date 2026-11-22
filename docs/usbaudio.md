@@ -244,6 +244,11 @@ Each is small enough to be checked by itself:
   logs what it offers. `lsusb` says "driven: speaker". On the M700, the
   Edifier speakers' descriptors read and kept as the test's fixture. This
   answers every question this document has about them.
+  **Built in 0.12.77** (`testing.md` 18.996): `uac_decode.c` and its 63
+  checks, QEMU's speaker byte for byte among them; `xhci.c` names it and
+  says its setting; `lsusb` lists it "driven: audio". The Edifier
+  speakers' descriptors are what is left, when they are plugged into the
+  M700.
 - **U2, isochronous OUT.** `xhci.c` keeps a speaker's OUT endpoint fed
   with TDs from a buffer of its own, a tone made in the driver, behind
   `opt/kosmos/usbaudio=tone`, as the camera's pattern is. QEMU's WAV holds
@@ -272,7 +277,9 @@ adaptive; U6 and U7 if they are not. U1 says which.
 
 ---
 
-## Decisions that are Diego's
+## Decisions - agreed
+
+**Agreed on 22 November 2026, every recommendation taken** (Diego, 22 November: "agreed with your recommendations, go ahead with usb audio"). Each decision below stands as recommended.
 
 1. **The mix rate.** (a) Keep mixing at 44.1 kHz and convert to each
    device's rate at its door *(recommended for now)*. Nothing that plays

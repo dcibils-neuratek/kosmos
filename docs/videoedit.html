@@ -1,0 +1,567 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos Cut, a video editor, before it is built. Drawn on 22 November 2026
+  from Diego's ask of the same day: "i want to build a fully equiped video
+  editing app like adobe premiere or imovie". docs/videoedit.md has the
+  feature set and the architecture, docs/videoedit-architecture.png what it
+  stands on. The films, the project and the people in it are made up.
+-->
+<title>Kosmos Cut</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as Bluetooth, Mixer and Network Monitor are drawn. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-blue: #4f8df7; --a-ok: #4cc27a;
+  --a-warn: #f2b233; --a-bad: #e5534b; --a-well: #181c25;
+  /* What a clip is, on the timeline. */
+  --c-video: #3d6fd1; --c-over: #8a5bd6; --c-title: #c2843a; --c-audio: #2f9a6a;
+  --c-music: #2b8a95;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 80ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 12px 0 0; max-width: 92ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 780px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+.stage { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+
+/* The window */
+.win { background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 12.5px; flex: none; position: relative; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .s { color: var(--a-dim); font-size: 12px; }
+.head .grow { flex: 1; }
+.lights { display: flex; gap: 7px; margin-right: 4px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.btn { border: 1px solid #4a5468; background: #323a4b; color: var(--a-ink); border-radius: 7px; padding: 4px 12px; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.btn.go { background: var(--a-blue); border-color: var(--a-blue); color: #fff; }
+.seg { display: inline-flex; border: 1px solid #4a5468; border-radius: 7px; overflow: hidden; }
+.seg span { padding: 4px 12px; font-size: 12.5px; background: #2a3140; color: var(--a-dim); }
+.seg span.on { background: #3a4458; color: var(--a-ink); }
+.tool { width: 28px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--a-dim); border: 1px solid transparent; }
+.tool.on { background: #3a4458; border-color: #556079; color: var(--a-ink); }
+.tool svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.kbd { font: 10.5px var(--mono); color: var(--a-faint); white-space: nowrap; }
+
+.grid3 { display: grid; grid-template-columns: 248px minmax(0, 1fr) 268px; border-bottom: 1px solid var(--a-line); }
+.pane { padding: 10px 12px; min-width: 0; }
+.pane + .pane { border-left: 1px solid var(--a-line); }
+.ph { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.ph b { font-family: var(--display); font-size: 14px; font-weight: 600; }
+.ph span { color: var(--a-dim); font-size: 11.5px; }
+
+/* Library */
+.search { background: #2a3140; border: 1px solid #485165; border-radius: 7px; padding: 4px 9px; color: var(--a-faint); margin-bottom: 8px; }
+.bins { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.bins span { padding: 2px 9px; border-radius: 999px; background: #2a3140; color: var(--a-dim); font-size: 11.5px; border: 1px solid var(--a-line); }
+.bins span.on { background: #34405a; color: var(--a-ink); border-color: #4f6696; }
+.clips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.clip { border-radius: 7px; overflow: hidden; background: var(--a-raised); border: 1px solid var(--a-line); }
+.clip.sel { border-color: var(--a-blue); box-shadow: 0 0 0 1px var(--a-blue); }
+.clip .th { height: 58px; position: relative; }
+.clip .th em { position: absolute; right: 4px; bottom: 3px; font: 10.5px var(--mono); font-style: normal; background: rgba(0,0,0,.55); padding: 0 4px; border-radius: 3px; }
+.clip .th .fav { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--a-ok); }
+.clip .th .rng { position: absolute; top: 0; bottom: 0; background: rgba(79,141,247,.28); border-left: 2px solid var(--a-blue); border-right: 2px solid var(--a-blue); }
+.clip .th .skim { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #ff4d7a; }
+.clip .n { padding: 3px 7px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.clip .n small { color: var(--a-faint); display: block; font-size: 10.5px; }
+
+/* Viewer */
+.viewer { background: #000; border-radius: 6px; position: relative; overflow: hidden; }
+.viewer .tc { position: absolute; left: 8px; top: 6px; font: 11px var(--mono); color: #cfd6e2; background: rgba(0,0,0,.45); padding: 1px 6px; border-radius: 4px; }
+.viewer .dropped { position: absolute; right: 8px; top: 6px; font: 11px var(--mono); color: var(--a-warn); background: rgba(0,0,0,.45); padding: 1px 6px; border-radius: 4px; }
+.transport { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.transport .tcbig { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
+.transport .grow { flex: 1; }
+.tbtn { width: 30px; height: 26px; border-radius: 6px; background: #2d3446; border: 1px solid #485165; display: grid; place-items: center; }
+.tbtn svg { width: 14px; height: 14px; fill: var(--a-ink); }
+.meter { display: grid; gap: 3px; width: 54px; }
+.meter i { display: block; height: 5px; border-radius: 3px; background: linear-gradient(90deg, var(--a-ok) 0 70%, var(--a-warn) 70% 88%, var(--a-bad) 88%); position: relative; overflow: hidden; }
+.meter i::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: var(--off); background: #3a4253; }
+
+/* Inspector */
+.tabs { display: flex; gap: 2px; margin-bottom: 10px; border-bottom: 1px solid var(--a-line); }
+.tabs span { padding: 4px 9px 6px; color: var(--a-dim); font-size: 12px; }
+.tabs span.on { color: var(--a-ink); box-shadow: inset 0 -2px 0 var(--a-blue); }
+.sec { margin-bottom: 10px; }
+.sec h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--a-faint); font-weight: 600; display: flex; justify-content: space-between; }
+.prow { display: grid; grid-template-columns: 82px 1fr 44px 12px; gap: 8px; align-items: center; margin-bottom: 6px; }
+.prow label { color: var(--a-dim); font-size: 12px; }
+.prow .v { text-align: right; font: 11.5px var(--mono); color: var(--a-dim); }
+.prow .kf { width: 9px; height: 9px; transform: rotate(45deg); border: 1.5px solid var(--a-faint); }
+.prow .kf.on { background: var(--a-warn); border-color: var(--a-warn); }
+.track { height: 5px; border-radius: 3px; background: #3a4253; position: relative; }
+.track i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v); background: var(--a-blue); border-radius: 3px; }
+.track i::after { content: ""; position: absolute; right: -6px; top: -4px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+.track.mid i { left: 50%; width: calc(var(--v) - 50%); }
+.drop { background: #2d3446; border: 1px solid #485165; border-radius: 7px; padding: 4px 9px; display: flex; justify-content: space-between; color: var(--a-ink); }
+.drop span { color: var(--a-dim); }
+.wheels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; color: var(--a-dim); font-size: 11px; }
+.wheel { width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 4px; position: relative;
+         background: radial-gradient(circle, rgba(31,36,48,1) 0 12%, transparent 60%), conic-gradient(#e5534b, #f2b233, #4cc27a, #2bb6c4, #4f8df7, #a46cf0, #e5534b); opacity: .85; }
+.wheel i { position: absolute; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #fff; left: var(--x); top: var(--y); transform: translate(-50%, -50%); }
+
+/* Toolbar over the timeline */
+.tbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--a-line); }
+.tbar .sep { width: 1px; height: 18px; background: var(--a-line); margin: 0 6px; }
+.tbar .grow { flex: 1; }
+.tbar .zoom { width: 110px; }
+.chip { white-space: nowrap; font-size: 11.5px; color: var(--a-dim); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--a-line); }
+.chip.on { color: var(--a-ink); border-color: #4f6696; background: #2c3650; }
+
+/* Timeline */
+.tl { position: relative; background: var(--a-well); }
+.ruler { height: 24px; display: grid; grid-template-columns: 104px 1fr; border-bottom: 1px solid var(--a-line); background: var(--a-win); }
+.ruler .marks { position: relative; font: 10px var(--mono); color: var(--a-faint); }
+.ruler .marks b { position: absolute; top: 2px; font-weight: 400; transform: translateX(3px); }
+.ruler .marks i { position: absolute; bottom: 0; width: 1px; background: #4a5266; }
+.ruler .rb { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; }
+.trk { display: grid; grid-template-columns: 104px 1fr; border-bottom: 1px solid #262c38; }
+.trk .lab { padding: 0 6px 0 8px; background: var(--a-win); border-right: 1px solid var(--a-line); display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.trk .lab b { font-size: 11.5px; font-weight: 600; }
+.trk .lab .sw { display: flex; gap: 3px; }
+.trk .lab .sw span { font: 600 9.5px var(--body); width: 15px; height: 15px; border-radius: 3px; display: grid; place-items: center; background: #2a3140; color: var(--a-faint); border: 1px solid var(--a-line); }
+.trk .lab .sw span.on { color: #fff; background: #44506a; }
+.trk .lab .sw span.tg.on { background: var(--a-blue); border-color: var(--a-blue); }
+.trk .lab .sw span.m.on { background: #b9832a; border-color: #b9832a; }
+.lane { position: relative; }
+.ck { position: absolute; top: 3px; bottom: 3px; border-radius: 5px; overflow: hidden; border: 1px solid rgba(255,255,255,.18); }
+.ck.sel { border: 2px solid #ffd54a; }
+.ck .nm { position: absolute; left: 5px; top: 1px; font-size: 10.5px; color: #fff; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.7); z-index: 2; }
+.ck .strip { position: absolute; left: 0; right: 0; top: 0; bottom: 0; display: flex; opacity: .9; }
+.ck .strip i { flex: 1; border-right: 1px solid rgba(0,0,0,.35); }
+.ck svg.wave { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; }
+.ck .fx { position: absolute; right: 4px; top: 1px; font: 600 9px var(--body); background: rgba(0,0,0,.45); color: #fff; padding: 0 4px; border-radius: 3px; z-index: 2; }
+.ck .rubber { position: absolute; left: 0; right: 0; top: 0; height: 100%; z-index: 1; }
+.tr { position: absolute; top: 3px; bottom: 3px; z-index: 3; border-radius: 4px; background: linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,255,255,.32), rgba(255,255,255,.08)); border: 1px solid rgba(255,255,255,.5); }
+.marker { position: absolute; top: 0; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid var(--a-warn); transform: translateX(-5px); }
+.playhead { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #ff4d7a; z-index: 5; }
+.playhead::before { content: ""; position: absolute; top: 0; left: -6px; border-left: 6.75px solid transparent; border-right: 6.75px solid transparent; border-top: 9px solid #ff4d7a; }
+.snap { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffd54a; z-index: 4; opacity: .8; }
+
+/* Simple */
+.story { padding: 12px; background: var(--a-well); }
+.story .line { display: flex; gap: 3px; align-items: stretch; position: relative; }
+.sb { height: 64px; border-radius: 6px; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,.15); flex: none; }
+.sb em { position: absolute; left: 5px; top: 3px; font-size: 10.5px; color: #fff; font-style: normal; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+.sb .d { position: absolute; right: 4px; bottom: 3px; font: 10px var(--mono); color: #fff; background: rgba(0,0,0,.5); padding: 0 3px; border-radius: 3px; }
+.tx { width: 18px; height: 22px; align-self: center; border-radius: 4px; background: #3a4458; border: 1px solid #5b6888; display: grid; place-items: center; flex: none; }
+.tx svg { width: 12px; height: 12px; stroke: var(--a-ink); fill: none; stroke-width: 1.6; }
+.under { display: flex; gap: 3px; margin-top: 4px; }
+.pill { height: 22px; border-radius: 5px; font-size: 10.5px; padding: 3px 7px; color: #fff; white-space: nowrap; overflow: hidden; }
+.looks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.look { border-radius: 6px; overflow: hidden; border: 1px solid var(--a-line); font-size: 11px; text-align: center; color: var(--a-dim); }
+.look.on { border-color: var(--a-blue); color: var(--a-ink); }
+.look i { display: block; height: 38px; }
+
+/* Sheets and scopes */
+.dim { opacity: .35; filter: saturate(.6); }
+.sheet { position: absolute; left: 50%; top: 46px; transform: translateX(-50%); width: 520px; background: #262c39; border: 1px solid #4a5468; border-top: 0;
+         border-radius: 0 0 12px 12px; box-shadow: 0 18px 40px rgba(0,0,0,.5); padding: 16px 18px; z-index: 10; }
+.sheet h3 { margin: 0 0 12px; font-family: var(--display); font-size: 17px; }
+.frow { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: center; margin-bottom: 9px; }
+.frow label { color: var(--a-dim); text-align: right; }
+.field { background: #1d222d; border: 1px solid #485165; border-radius: 7px; padding: 5px 9px; }
+.facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.facts div { background: #1f2430; border: 1px solid var(--a-line); border-radius: 8px; padding: 6px 9px; }
+.facts small { display: block; color: var(--a-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+.facts b { font: 500 13px var(--mono); }
+.bar { height: 7px; border-radius: 4px; background: #3a4253; overflow: hidden; }
+.bar i { display: block; height: 100%; width: var(--v); background: var(--a-blue); }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.scopes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.scope { background: #0d0f14; border: 1px solid var(--a-line); border-radius: 6px; height: 128px; position: relative; overflow: hidden; }
+.scope span { position: absolute; left: 6px; top: 3px; font-size: 10.5px; color: var(--a-faint); z-index: 2; }
+.scope svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Kosmos Cut, a video editor</h1>
+<p class="sub">One application with two depths. <b>Simple</b> is a story line with music, titles, transitions and a look, as iMovie has. <b>Full</b> adds tracks, the trimming tools, keyframes, colour with scopes, a mixer, multicam and proxies, as Premiere has. Both show the same project. Drawn on 22 November 2026, before any of it is built; <code>docs/videoedit.md</code> has what it is made of. The films and the project are made up. For Diego to change until it is right.</p>
+
+<div class="q"><b>Diego, 22 November:</b> "i want to build a fully equiped video editing app like adobe premiere or imovie", "lets work on a spec and a mockup for it".</div>
+
+<h2>Full: the library, the viewer, the inspector and the timeline</h2>
+<div class="scroller"><div class="stage"><div class="win" id="full" style="width:1140px"></div></div></div>
+<p class="cap"><b>The header</b> holds the project's name and the Simple / Full switch, which is the same project seen at two depths. Export is at the right. <b>The library</b> shows every clip as a thumbnail with its length. Hover skims it in the viewer, the blue band is the range chosen with I and O, and the green line marks a favourite. Bins are chips. <b>The viewer</b> shows the program at its own size, rendered at that size and not the film's, so every effect costs a quarter. It has timecode, J K L, a meter, and Proxies / Originals. <b>The inspector</b> shows what is selected, here the ferry clip: Video, Colour, Audio and Speed, and a diamond beside every value is its keyframe. <b>The toolbar</b> has the tools with their keys: Select, Track select, Ripple, Roll, Slip, Slide, Rate stretch and Razor. <b>The timeline</b> has tracks with their target (T), lock and mute. The story is on V1, a picture in picture on V2 and a title on V3. The films' own sound is on A1, Ana's voice on A2, the music on A3 (its volume line ducked under her voice) and effects on A4, muted. The cross dissolve is the light band, the yellow triangles are markers that become chapters, and the bar under the ruler is green for rendered, red for "will not play in real time" and grey for live. The yellow line is a snap.</p>
+
+<h2>A trim, as it is being made: the Roll tool on a cut</h2>
+<div class="scroller"><div class="stage"><div class="win" id="trim" style="width:760px"></div></div></div>
+<p class="cap">While a cut is dragged with Roll (R), the viewer shows the two frames either side of it, the out of the clip before and the in of the clip after, with how far it has moved. Ripple, Slip and Slide show the same pair. Slip shows the clip's own first and last frames, because those are what change.</p>
+
+<h2>Colour, with the scopes</h2>
+<div class="scroller"><div class="stage"><div class="win" id="colour" style="width:1140px"></div></div></div>
+<p class="cap">The Colour tab: lift, gamma and gain wheels, then curves and a LUT from a <code>.cube</code> file. The scopes take the space under the viewer while Colour is open: waveform, RGB parade, vectorscope and histogram, each computed in C from the frame shown, at its size. A reference frame (here the harbour) can be matched to.</p>
+
+<h2>Simple: the story line</h2>
+<div class="scroller"><div class="stage"><div class="win" id="simple" style="width:1140px"></div></div></div>
+<p class="cap">The same project in Simple. The tracks fold into a <b>story line</b>, and what is over or under it hangs from it. Removing a clip closes the gap. The squares between clips are transitions, and a click changes them. The inspector is reduced to what iMovie offers: a look with a strength, four sliders, crop or Ken Burns, speed and volume. Nothing done in Full is lost here: a clip with keyframes or an effect only Full has shows a small "Full" badge and keeps it.</p>
+
+<h2>Export</h2>
+<div class="scroller"><div class="stage"><div class="win" id="export" style="width:1140px"></div></div></div>
+<p class="cap">One sheet. A name and where, a size, a quality, and the facts it will have. Full adds the format, codec and bit rate, sound, chapters from markers and the queue. While it runs, the editor and the desktop stay usable, because export runs on threads below the window's. A notification says when it is done, and Cancel removes the partial file.</p>
+<div class="scroller"><div class="stage"><div class="win" id="exporting" style="width:520px"></div></div></div>
+
+<h2>Left out, on purpose</h2>
+<ul>
+  <li><b>Plug-ins.</b> Every effect is the Edit Kit's, in C, and later on the GPU.</li>
+  <li><b>Themes and trailers.</b> iMovie's templates are Tier 3.</li>
+  <li><b>Node compositing</b>, as Resolve's Fusion. Layers and an effect stack go a long way first.</li>
+</ul>
+</div>
+
+<script>
+const LIGHTS = '<span class="lights"><i style="background:#ee5048"></i><i style="background:#f2b233"></i><i style="background:#3fbf4f"></i></span>';
+const I = {
+  sel: '<svg viewBox="0 0 16 16"><path d="M4 2l8 6-4 1 2 4-1.5.7-2-4L4 12z"/></svg>',
+  trk: '<svg viewBox="0 0 16 16"><path d="M2 8h12M10 5l3 3-3 3M2 4v8"/></svg>',
+  rip: '<svg viewBox="0 0 16 16"><path d="M8 2v12M5 5L2 8l3 3M11 5l3 3-3 3"/></svg>',
+  roll: '<svg viewBox="0 0 16 16"><path d="M6 2v12M10 2v12M3 8h10"/></svg>',
+  slip: '<svg viewBox="0 0 16 16"><rect x="3" y="4" width="10" height="8" rx="1"/><path d="M1 8h3M12 8h3"/></svg>',
+  slide: '<svg viewBox="0 0 16 16"><path d="M2 4v8M14 4v8M5 6h6v4H5z"/></svg>',
+  rate: '<svg viewBox="0 0 16 16"><path d="M2 8h12M2 5v6M14 5v6M5 6l-2 2 2 2M11 6l2 2-2 2"/></svg>',
+  razor: '<svg viewBox="0 0 16 16"><path d="M8 1v14M4 4l8 8M12 4l-8 8"/></svg>',
+  hand: '<svg viewBox="0 0 16 16"><path d="M5 9V4a1 1 0 012 0v4M7 7V3a1 1 0 012 0v5M9 7V4a1 1 0 012 0v6c0 3-2 4-4 4s-3-1-4-3L2 8a1 1 0 011.6-1L5 9"/></svg>',
+  magnet: '<svg viewBox="0 0 16 16"><path d="M3 3v5a5 5 0 0010 0V3h-3v5a2 2 0 01-4 0V3z"/></svg>',
+  link: '<svg viewBox="0 0 16 16"><path d="M7 9l2-2M6 11l-1 1a2.5 2.5 0 01-3.5-3.5l2-2M10 5l1-1a2.5 2.5 0 013.5 3.5l-2 2"/></svg>',
+  tx: '<svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2L2 10"/></svg>',
+};
+const PLAY = '<svg viewBox="0 0 14 14"><path d="M3 2l9 5-9 5z"/></svg>';
+const PREV = '<svg viewBox="0 0 14 14"><path d="M3 2h2v10H3zM12 2v10L5 7z"/></svg>';
+const NEXT = '<svg viewBox="0 0 14 14"><path d="M9 2h2v10H9zM2 2v10l7-5z"/></svg>';
+
+/* Made-up footage, as gradients a frame might be. */
+const SHOT = {
+  harbour: "linear-gradient(180deg,#f3b77a 0%,#e88c6a 38%,#4b5f86 39%,#2c3c5c 70%,#1c2638 100%)",
+  market:  "linear-gradient(135deg,#c9533b 0%,#e7a03d 30%,#6c8f3a 55%,#3b5a2c 100%)",
+  ferry:   "linear-gradient(180deg,#9cc7e8 0%,#cfe3f1 45%,#e7eef2 46%,#5a7f96 60%,#2f4f63 100%)",
+  ana:     "radial-gradient(circle at 55% 40%,#d8a98a 0 16%,#3d2f2a 17% 30%,#5d6b73 31% 100%)",
+  drone:   "linear-gradient(160deg,#2f6f8a 0%,#4d9bb0 30%,#c8b88a 50%,#e6d6a8 62%,#7b8f5a 100%)",
+  light:   "linear-gradient(180deg,#25304f 0%,#5d6aa0 45%,#e8d9a0 47%,#2a3550 60%,#131a2c 100%)",
+  rambla:  "linear-gradient(180deg,#aac9e3 0%,#d7e6ef 40%,#7f8c90 41%,#c9b79a 70%,#8e7d62 100%)",
+  gulls:   "linear-gradient(180deg,#7fb2d8,#d9eaf5)",
+};
+const CLIPS = [
+  { n: "Harbour at dawn", f: "MP4 · H.264 · 4K", d: "0:42", s: "harbour", fav: true },
+  { n: "Market walk", f: "MOV · HEVC · 1080p", d: "2:18", s: "market" },
+  { n: "Ferry deck", f: "MP4 · H.264 · 1080p", d: "1:05", s: "ferry", sel: true, rng: [22, 64], skim: 41 },
+  { n: "Interview - Ana", f: "MP4 · H.264 · 1080p", d: "8:51", s: "ana", fav: true },
+  { n: "Drone over Rambla", f: "MP4 · H.264 · 4K", d: "0:58", s: "drone" },
+  { n: "Lighthouse.jpg", f: "JPEG · 4032×3024", d: "photo", s: "light" },
+  { n: "Gulls.wav", f: "WAV · 48 kHz", d: "0:31", s: "gulls" },
+  { n: "Sunrise theme.flac", f: "FLAC · 24 bit", d: "3:12", s: null },
+];
+
+function head(title, sub, mode) {
+  return `<div class="head">${LIGHTS}<span class="t">${title}</span><span class="s">${sub}</span><span class="grow"></span>
+    <span class="seg"><span${mode === "simple" ? ' class="on"' : ""}>Simple</span><span${mode === "full" ? ' class="on"' : ""}>Full</span></span>
+    <span class="btn">Import…</span><span class="btn go">Export…</span></div>`;
+}
+
+function library() {
+  const cards = CLIPS.map(c => `<div class="clip${c.sel ? " sel" : ""}">
+      <div class="th" style="background:${c.s ? SHOT[c.s] : "#24303a"}">${c.s ? "" : waveSvg(140, 58, 7, "#4cc2a0", 0.9)}
+        ${c.rng ? `<span class="rng" style="left:${c.rng[0]}%;width:${c.rng[1] - c.rng[0]}%"></span>` : ""}
+        ${c.skim ? `<span class="skim" style="left:${c.skim}%"></span>` : ""}
+        ${c.fav ? '<span class="fav"></span>' : ""}<em>${c.d}</em></div>
+      <div class="n">${c.n}<small>${c.f}</small></div></div>`).join("");
+  return `<div class="pane"><div class="ph"><b>Library</b><span>8 clips · 18:12</span></div>
+    <div class="search">Search clips</div>
+    <div class="bins"><span class="on">All</span><span>Favourites</span><span>Weekend</span><span>Sound</span><span>Captures</span></div>
+    <div class="clips">${cards}</div></div>`;
+}
+
+function viewer(w, h, inner, tc, extra) {
+  return `<div class="viewer" style="height:${h}px">${inner}<span class="tc">${tc}</span>${extra || ""}</div>`;
+}
+
+function programFrame() {
+  /* The ferry, with the picture in picture of Ana, and a lower third. */
+  return `<div style="position:absolute;inset:0;background:${SHOT.ferry}"></div>
+    <div style="position:absolute;right:18px;top:20px;width:150px;height:84px;border-radius:4px;border:2px solid #fff;background:${SHOT.ana};box-shadow:0 4px 12px rgba(0,0,0,.4)"></div>
+    <div style="position:absolute;left:26px;bottom:30px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6)">
+      <div style="font:600 20px var(--display)">Ana Ferreira</div>
+      <div style="font:13px var(--body);opacity:.9">Deckhand, Colonia line</div>
+      <div style="width:150px;height:2px;background:#f2b233;margin-top:4px"></div></div>`;
+}
+
+function transport(tc, extra) {
+  return `<div class="transport">
+    <span class="tbtn">${PREV}</span><span class="tbtn">${PLAY}</span><span class="tbtn">${NEXT}</span>
+    <span class="tcbig">${tc}</span><span class="grow"></span>
+    ${extra || ""}
+    <span class="meter"><i style="--off:30%"></i><i style="--off:34%"></i></span>
+    <span class="seg"><span class="on">Proxies</span><span>Originals</span></span></div>`;
+}
+
+function prow(label, v, val, kf, mid) {
+  return `<div class="prow"><label>${label}</label><span class="track${mid ? " mid" : ""}"><i style="--v:${v}%"></i></span><span class="v">${val}</span><span class="kf${kf ? " on" : ""}"></span></div>`;
+}
+
+function inspectorVideo() {
+  return `<div class="pane"><div class="ph"><b>Ferry deck</b><span>V1 · 00:41:12 - 01:04:03</span></div>
+    <div class="tabs"><span class="on">Video</span><span>Colour</span><span>Audio</span><span>Speed</span></div>
+    <div class="sec"><h4>Transform <span>&#8635;</span></h4>
+      ${prow("Position X", 50, "0", false, true)}${prow("Position Y", 50, "0", false, true)}
+      ${prow("Scale", 62, "108%", true)}${prow("Rotation", 50, "0.0°", false, true)}</div>
+    <div class="sec"><h4>Crop</h4>${prow("Top", 0, "0")}${prow("Bottom", 6, "24")}</div>
+    <div class="sec"><h4>Compositing</h4>${prow("Opacity", 100, "100%")}
+      <div class="prow"><label>Blend</label><span class="drop" style="grid-column:span 3">Normal <span>&#9662;</span></span></div></div>
+    <div class="sec"><h4>Effects <span>+ Add</span></h4>
+      <div class="drop" style="margin-bottom:5px">Stabilise <span>smooth 40%</span></div>
+      <div class="drop">Vignette <span>amount 25%</span></div></div></div>`;
+}
+
+function inspectorColour() {
+  return `<div class="pane"><div class="ph"><b>Ferry deck</b><span>Colour</span></div>
+    <div class="tabs"><span>Video</span><span class="on">Colour</span><span>Audio</span><span>Speed</span></div>
+    <div class="sec"><h4>Wheels</h4><div class="wheels">
+      <div><div class="wheel"><i style="--x:44%;--y:56%"></i></div>Lift</div>
+      <div><div class="wheel"><i style="--x:52%;--y:48%"></i></div>Gamma</div>
+      <div><div class="wheel"><i style="--x:58%;--y:40%"></i></div>Gain</div></div></div>
+    <div class="sec"><h4>Basic</h4>${prow("Exposure", 56, "+0.3")}${prow("Contrast", 60, "+12")}${prow("Temperature", 44, "-6")}${prow("Saturation", 54, "106%")}</div>
+    <div class="sec"><h4>Curves <span>Luma &#9662;</span></h4>
+      <svg viewBox="0 0 240 90" style="width:100%;height:90px;background:#181c25;border:1px solid var(--a-line);border-radius:6px">
+        <path d="M0 90L240 0" stroke="#3a4253" stroke-dasharray="3 3" fill="none"/>
+        <path d="M0 88 C60 80 90 52 120 44 S200 6 240 2" stroke="#e9ecf1" stroke-width="1.6" fill="none"/>
+        <circle cx="120" cy="44" r="3.5" fill="#fff"/><circle cx="60" cy="72" r="3.5" fill="#fff"/></svg></div>
+    <div class="sec"><h4>LUT</h4><div class="drop">Warm film.cube <span>strength 70%</span></div></div></div>`;
+}
+
+/* A waveform as an SVG, from a seeded noise. */
+function waveSvg(w, h, seed, colour, op) {
+  let x = seed * 9301 + 49297, pts = [];
+  const N = Math.max(20, Math.floor(w / 2));
+  for (let i = 0; i <= N; i++) {
+    x = (x * 9301 + 49297) % 233280;
+    const env = 0.35 + 0.65 * Math.abs(Math.sin(i / N * Math.PI * (2 + seed % 3)));
+    pts.push(Math.max(0.08, (x / 233280) * env));
+  }
+  const mid = h / 2;
+  let d = `M0 ${mid}`;
+  pts.forEach((a, i) => d += `L${(i / N * w).toFixed(1)} ${(mid - a * mid * 0.9).toFixed(1)}`);
+  for (let i = N; i >= 0; i--) d += `L${(i / N * w).toFixed(1)} ${(mid + pts[i] * mid * 0.9).toFixed(1)}`;
+  return `<svg class="wave" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path d="${d}Z" fill="${colour}" opacity="${op || 0.75}"/></svg>`;
+}
+
+/* The timeline: 0 to 90 seconds over the lane's width. */
+const SPAN = 90;
+const TRACKS = [
+  { id: "V3", h: 30, kind: "v", clips: [{ a: 37, b: 47, n: "T  Ana Ferreira", c: "--c-title" }] },
+  { id: "V2", h: 36, kind: "v", clips: [{ a: 34, b: 52, n: "Interview - Ana", s: "ana", c: "--c-over", fx: "PiP" }] },
+  { id: "V1", h: 46, kind: "v", target: true, clips: [
+      { a: 0, b: 14, n: "Harbour at dawn", s: "harbour", c: "--c-video", fx: "LUT" },
+      { a: 14, b: 31, n: "Market walk", s: "market", c: "--c-video" },
+      { a: 31, b: 54, n: "Ferry deck", s: "ferry", c: "--c-video", sel: true, fx: "fx 2" },
+      { a: 54, b: 68, n: "Drone over Rambla", s: "drone", c: "--c-video" },
+      { a: 68, b: 76, n: "Lighthouse.jpg", s: "light", c: "--c-video", fx: "Ken Burns" },
+      { a: 76, b: 90, n: "Harbour at dawn", s: "harbour", c: "--c-video" } ],
+    trans: [[29.5, 32.5], [66.5, 69.5]] },
+  { id: "A1", h: 36, kind: "a", target: true, clips: [
+      { a: 14, b: 31, n: "Market walk", c: "--c-audio", seed: 3 },
+      { a: 31, b: 54, n: "Ferry deck", c: "--c-audio", seed: 5, sel: true } ] },
+  { id: "A2", h: 36, kind: "a", target: true, clips: [{ a: 33, b: 52.5, n: "Interview - Ana", c: "--c-audio", seed: 8 }] },
+  { id: "A3", h: 40, kind: "a", clips: [{ a: 0, b: 90, n: "Sunrise theme.flac", c: "--c-music", seed: 11, duck: true }] },
+  { id: "A4", h: 30, kind: "a", mute: true, clips: [{ a: 4, b: 12, n: "Gulls.wav", c: "--c-audio", seed: 2 }, { a: 72, b: 80, n: "Gulls.wav", c: "--c-audio", seed: 6 }] },
+];
+
+function timeline(width, opts) {
+  opts = opts || {};
+  const lane = width - 104;
+  const px = t => t / SPAN * lane;
+  let marks = "";
+  for (let t = 0; t <= SPAN; t += 5) {
+    const big = t % 15 === 0;
+    marks += `<i style="left:${px(t)}px;height:${big ? 8 : 4}px"></i>`;
+    if (big) marks += `<b style="left:${px(t)}px">00:${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}</b>`;
+  }
+  /* Render bar: green rendered, red too heavy, grey live. */
+  const rb = `<div class="rb" style="background:linear-gradient(90deg,#4cc27a 0 ${px(14)}px,#3a4253 ${px(14)}px ${px(34)}px,#e5534b ${px(34)}px ${px(52)}px,#3a4253 ${px(52)}px)"></div>`;
+  const markers = [[14, "Market"], [31, "Ferry"], [54, "Rambla"], [76, "Back home"]].map(m => `<span class="marker" style="left:${px(m[0])}px" title="${m[1]}"></span>`).join("");
+  let rows = TRACKS.map(tk => {
+    const clips = tk.clips.map(c => {
+      const left = px(c.a), w = px(c.b) - px(c.a);
+      let inner = "";
+      if (tk.kind === "v" && c.s) {
+        const n = Math.max(1, Math.round(w / 46));
+        inner = `<span class="strip">${Array.from({ length: n }, () => `<i style="background:${SHOT[c.s]}"></i>`).join("")}</span>`;
+      }
+      if (tk.kind === "a") inner = waveSvg(Math.round(w), tk.h, c.seed || 1, "#b9f0d6", 0.7);
+      if (c.duck) {
+        const a = px(33) - left, b = px(52.5) - left;
+        inner += `<svg class="rubber" viewBox="0 0 ${Math.round(w)} ${tk.h}" preserveAspectRatio="none"><path d="M0 9 L${a - 16} 9 L${a} 24 L${b} 24 L${b + 16} 9 L${w} 9" stroke="#ffd54a" stroke-width="1.5" fill="none"/>
+          <circle cx="${a - 16}" cy="9" r="2.5" fill="#ffd54a"/><circle cx="${a}" cy="24" r="2.5" fill="#ffd54a"/><circle cx="${b}" cy="24" r="2.5" fill="#ffd54a"/><circle cx="${b + 16}" cy="9" r="2.5" fill="#ffd54a"/></svg>`;
+      }
+      return `<div class="ck${c.sel ? " sel" : ""}" style="left:${left}px;width:${w}px;background:var(${c.c})">${inner}<span class="nm">${c.n}</span>${c.fx ? `<span class="fx">${c.fx}</span>` : ""}</div>`;
+    }).join("");
+    const trans = (tk.trans || []).map(t => `<span class="tr" style="left:${px(t[0])}px;width:${px(t[1]) - px(t[0])}px"></span>`).join("");
+    return `<div class="trk" style="height:${tk.h}px"><div class="lab"><b>${tk.id}</b><span class="sw">
+        <span class="tg${tk.target ? " on" : ""}">T</span><span>L</span><span class="m${tk.mute ? " on" : ""}">M</span>${tk.kind === "a" ? "<span>S</span>" : ""}</span></div>
+      <div class="lane">${clips}${trans}</div></div>`;
+  }).join("");
+  const ph = opts.playhead ?? 41.3;
+  return `<div class="tl"><div class="ruler"><div style="background:var(--a-win);border-right:1px solid var(--a-line);font:10.5px var(--mono);color:var(--a-dim);padding:5px 8px">30 fps</div>
+      <div class="marks">${marks}${markers}${rb}</div></div>${rows}
+    <span class="playhead" style="left:${104 + px(ph)}px"></span>
+    ${opts.snap ? `<span class="snap" style="left:${104 + px(opts.snap)}px"></span>` : ""}</div>`;
+}
+
+function toolbar(active) {
+  const tools = [["sel", "A"], ["trk", "⇧A"], ["rip", "B"], ["roll", "R"], ["slip", "Y"], ["slide", "U"], ["rate", "X"], ["razor", "C"], ["hand", "H"]];
+  return `<div class="tbar">${tools.map(t => `<span class="tool${t[0] === active ? " on" : ""}" title="${t[1]}">${I[t[0]]}</span>`).join("")}
+    <span class="sep"></span><span class="tool on" title="Snapping, N">${I.magnet}</span><span class="tool on" title="Linked, ⌘L">${I.link}</span>
+    <span class="sep"></span><span class="chip">+ Track</span><span class="chip on">Markers</span><span class="chip">Keyframes</span>
+    <span class="grow"></span><span class="kbd">Zoom</span><span class="track zoom"><i style="--v:46%"></i></span>
+    <span class="kbd" style="margin-left:10px">Undo: Slide "Ferry deck"</span></div>`;
+}
+
+/* Full */
+document.getElementById("full").innerHTML =
+  head("Montevideo weekend", "1080p · 30 fps · 1:30", "full") +
+  `<div class="grid3">${library()}
+    <div class="pane"><div class="ph"><b>Program</b><span>960 × 540 of 1920 × 1080</span></div>
+      ${viewer(0, 330, programFrame(), "V1 Ferry deck · V2 Interview - Ana · V3 Title")}
+      ${transport("00:00:41:09", '<span class="btn">In</span><span class="btn">Out</span>')}</div>
+    ${inspectorVideo()}</div>` + toolbar("sel") + timeline(1140, { playhead: 41.3, snap: 52 });
+
+/* Trim */
+document.getElementById("trim").innerHTML =
+  `<div class="head">${LIGHTS}<span class="t">Montevideo weekend</span><span class="s">Roll · the cut between Market walk and Ferry deck</span><span class="grow"></span></div>
+   <div style="padding:12px">
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+     ${viewer(0, 200, `<div style="position:absolute;inset:0;background:${SHOT.market}"></div>`, "out  00:02:11:04", '<span class="dropped" style="color:#cfd6e2">Market walk</span>')}
+     ${viewer(0, 200, `<div style="position:absolute;inset:0;background:${SHOT.ferry}"></div>`, "in  00:00:22:17", '<span class="dropped" style="color:#cfd6e2">Ferry deck</span>')}
+   </div>
+   <div class="transport" style="justify-content:center"><span class="tcbig" style="color:var(--a-warn)">+00:00:00:12</span><span class="kbd">12 frames later · , and . nudge a frame · Esc cancels</span></div></div>` +
+  toolbar("roll") +
+  `<div style="padding:10px 12px;background:var(--a-well)"><div style="position:relative;height:50px">
+     <div class="ck" style="left:0;width:330px;background:var(--c-video)"><span class="strip">${Array.from({ length: 7 }, () => `<i style="background:${SHOT.market}"></i>`).join("")}</span><span class="nm">Market walk</span></div>
+     <div class="ck" style="left:330px;width:400px;background:var(--c-video)"><span class="strip">${Array.from({ length: 9 }, () => `<i style="background:${SHOT.ferry}"></i>`).join("")}</span><span class="nm">Ferry deck</span></div>
+     <span style="position:absolute;left:327px;top:-2px;bottom:-2px;width:6px;border-radius:3px;background:#ffd54a;z-index:4"></span>
+     <span style="position:absolute;left:300px;top:-2px;bottom:-2px;width:1px;background:rgba(255,213,74,.5);z-index:4"></span></div></div>`;
+
+/* Colour */
+function scope(kind) {
+  let svg = "";
+  if (kind === "Waveform") {
+    for (let x = 0; x < 60; x++) {
+      const base = 30 + 50 * Math.sin(x / 9) * Math.sin(x / 4 + 1);
+      svg += `<rect x="${x * 4.4}" y="${40 + base * 0.6}" width="3" height="${30 + (x % 7) * 4}" fill="#8fe3a5" opacity=".55"/>`;
+    }
+  } else if (kind === "Parade") {
+    ["#ff6b6b", "#6be27f", "#6ba8ff"].forEach((c, i) => {
+      for (let x = 0; x < 20; x++) svg += `<rect x="${i * 88 + x * 4}" y="${30 + (i * 9) + 18 * Math.sin(x / 3 + i)}" width="3" height="${40 + (x % 5) * 6}" fill="${c}" opacity=".55"/>`;
+    });
+  } else if (kind === "Vectorscope") {
+    svg = `<circle cx="132" cy="60" r="50" stroke="#3a4253" fill="none"/><circle cx="132" cy="60" r="25" stroke="#2a303c" fill="none"/>
+      <path d="M132 10V110M82 60H182M132 60L170 28" stroke="#2a303c"/>
+      <ellipse cx="146" cy="50" rx="18" ry="9" transform="rotate(-35 146 50)" fill="#e8b56a" opacity=".55"/>
+      <ellipse cx="124" cy="70" rx="12" ry="7" transform="rotate(-30 124 70)" fill="#6ba8ff" opacity=".45"/>`;
+  } else {
+    let d = "M0 120";
+    for (let x = 0; x <= 66; x++) d += ` L${x * 4} ${120 - (20 + 60 * Math.exp(-Math.pow((x - 22) / 9, 2)) + 45 * Math.exp(-Math.pow((x - 50) / 7, 2)))}`;
+    svg = `<path d="${d} L264 120Z" fill="#c8cdd8" opacity=".45"/>`;
+  }
+  return `<div class="scope"><span>${kind}</span><svg viewBox="0 0 264 120" preserveAspectRatio="none">${svg}</svg></div>`;
+}
+document.getElementById("colour").innerHTML =
+  head("Montevideo weekend", "1080p · 30 fps · 1:30", "full") +
+  `<div class="grid3">${library()}
+    <div class="pane"><div class="ph"><b>Program</b><span>Reference: Harbour at dawn, 00:00:06:00</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ${viewer(0, 200, `<div style="position:absolute;inset:0;background:${SHOT.harbour}"></div>`, "Reference")}
+        ${viewer(0, 200, `<div style="position:absolute;inset:0;background:${SHOT.ferry};filter:sepia(.25) saturate(1.15) brightness(1.04)"></div>`, "Ferry deck · graded")}</div>
+      ${transport("00:00:41:09", '<span class="btn">Match colour</span>')}
+      <div class="scopes">${scope("Waveform")}${scope("Parade")}${scope("Vectorscope")}${scope("Histogram")}</div></div>
+    ${inspectorColour()}</div>`;
+
+/* Simple */
+const STORY = [
+  ["harbour", "Harbour at dawn", "0:14", 140], ["market", "Market walk", "0:17", 170],
+  ["ferry", "Ferry deck", "0:23", 230], ["drone", "Drone over Rambla", "0:14", 140],
+  ["light", "Lighthouse", "0:08", 80], ["harbour", "Harbour at dawn", "0:14", 140],
+];
+let line = "";
+STORY.forEach((s, i) => {
+  if (i) line += `<span class="tx">${I.tx}</span>`;
+  line += `<div class="sb" style="width:${s[3]}px;background:${SHOT[s[0]]}"><em>${s[1]}</em><span class="d">${s[2]}</span></div>`;
+});
+document.getElementById("simple").innerHTML =
+  head("Montevideo weekend", "1080p · 30 fps · 1:30", "simple") +
+  `<div class="grid3">${library()}
+    <div class="pane"><div class="ph"><b>Movie</b><span>1:30</span></div>
+      ${viewer(0, 330, programFrame(), "00:00:41:09")}
+      ${transport("00:00:41:09")}</div>
+    <div class="pane"><div class="ph"><b>Ferry deck</b><span>0:23</span></div>
+      <div class="sec"><h4>Look</h4><div class="looks">
+        <div class="look"><i style="background:${SHOT.ferry}"></i>None</div>
+        <div class="look on"><i style="background:${SHOT.ferry};filter:sepia(.35) saturate(1.2)"></i>Warm</div>
+        <div class="look"><i style="background:${SHOT.ferry};filter:grayscale(1) contrast(1.2)"></i>Silver</div>
+        <div class="look"><i style="background:${SHOT.ferry};filter:hue-rotate(-20deg) saturate(.8)"></i>Cool</div></div>
+        ${prow("Strength", 70, "70%")}</div>
+      <div class="sec"><h4>Adjust</h4>${prow("Exposure", 56, "+0.3")}${prow("Contrast", 60, "+12")}${prow("Saturation", 54, "106%")}${prow("Warmth", 58, "+8")}</div>
+      <div class="sec"><h4>Clip</h4>
+        <div class="prow"><label>Frame</label><span class="seg" style="grid-column:span 3"><span class="on">Fit</span><span>Crop</span><span>Ken Burns</span></span></div>
+        <div class="prow"><label>Speed</label><span class="seg" style="grid-column:span 3"><span>½</span><span class="on">1×</span><span>2×</span><span>Reverse</span></span></div>
+        ${prow("Volume", 80, "80%")}${prow("Fade in", 10, "0.5 s")}</div></div></div>
+   <div class="story">
+     <div class="line">${line}<span class="playhead" style="left:452px;top:-6px;bottom:-56px"></span></div>
+     <div class="under" style="padding-left:363px">
+       <div class="pill" style="width:180px;background:var(--c-over)">Interview - Ana · picture in picture</div>
+       <div class="pill" style="width:96px;background:var(--c-title)">T  Ana Ferreira</div></div>
+     <div class="under"><div class="pill" style="width:1000px;background:var(--c-music)">&#9835;  Sunrise theme.flac · lowered under voices</div></div>
+     <div class="under"><div class="pill" style="width:170px;margin-left:363px;background:var(--c-audio)">Interview - Ana · voice</div></div>
+   </div>`;
+
+/* Export */
+document.getElementById("export").innerHTML =
+  `<div class="dim">${head("Montevideo weekend", "1080p · 30 fps · 1:30", "full")}
+    <div class="grid3">${library()}<div class="pane">${viewer(0, 330, programFrame(), "00:00:41:09")}</div>${inspectorVideo()}</div></div>
+   <div class="sheet"><h3>Export movie</h3>
+     <div class="frow"><label>Name</label><span class="field">Montevideo weekend</span></div>
+     <div class="frow"><label>Where</label><span class="drop">/Home/Movies <span>&#9662;</span></span></div>
+     <div class="frow"><label>Size</label><span class="seg"><span class="on">1080p</span><span>720p</span><span>4K</span><span>As project</span></span></div>
+     <div class="frow"><label>Quality</label><span class="seg"><span>Good</span><span class="on">Better</span><span>Best</span></span></div>
+     <div class="frow"><label>Format</label><span class="drop">MP4 · H.264 · AAC 192 kb/s <span>&#9662;</span></span></div>
+     <div class="frow"><label>Chapters</label><span style="color:var(--a-dim)">&#9745; From the 4 markers</span></div>
+     <div class="facts">
+       <div><small>Picture</small><b>1920×1080</b></div><div><small>Rate</small><b>30 fps</b></div>
+       <div><small>Length</small><b>1:30</b></div><div><small>About</small><b>110 MB</b></div></div>
+     <div class="actions"><span class="btn">Add to queue</span><span class="btn">Cancel</span><span class="btn go">Export</span></div></div>`;
+
+document.getElementById("exporting").innerHTML =
+  `<div class="head">${LIGHTS}<span class="t">Exporting</span><span class="s">Montevideo weekend.mp4</span><span class="grow"></span><span class="btn">Cancel</span></div>
+   <div style="padding:14px 16px;display:grid;grid-template-columns:160px 1fr;gap:14px;align-items:center">
+     <div class="viewer" style="height:90px"><div style="position:absolute;inset:0;background:${SHOT.drone}"></div><span class="tc">01:02:14</span></div>
+     <div><div class="bar"><i style="--v:69%"></i></div>
+       <div style="display:flex;justify-content:space-between;margin-top:8px;color:var(--a-dim);font-size:12px">
+         <span>1,866 of 2,700 frames · 41 fps</span><span>about 20 s left</span></div>
+       <div style="margin-top:4px;color:var(--a-faint);font-size:11.5px">H.264 Better · AAC · 76 MB so far · editing stays open</div></div></div>`;
+</script>
+</body>
+</html>

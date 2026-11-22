@@ -660,7 +660,9 @@ working until S9.
 
 ---
 
-## Decisions that are Diego's
+## Decisions - agreed
+
+**Agreed on 22 November 2026, every recommendation taken** (Diego, 22 November: "agreed with your recommendations, go ahead with usb audio"). Each decision below stands as recommended.
 
 1. **What the window is called, and what it opens on.** "System Monitor",
    the name `sysmon.lua` already carries, opening on the Overview. The

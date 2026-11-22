@@ -1,0 +1,519 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos Paint, a photo editor, before it is built: the second of the
+  Kosmos Studio family, beside Kosmos Cut. Drawn on 22 November 2026 from
+  Diego's ask of the same day: "i want a new app for photo editing similar
+  to adobe photoshop and in the same line as the video eeditor". Its styles
+  are docs/videoedit.html's, class for class, so the two read as one
+  family. docs/photoedit.md has the feature set and the architecture,
+  docs/photoedit-architecture.png what it stands on. The photographs, the
+  documents and the people in them are made up.
+-->
+<title>Kosmos Paint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as Kosmos Cut is drawn: the same tokens. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-blue: #4f8df7; --a-ok: #4cc27a;
+  --a-warn: #f2b233; --a-bad: #e5534b; --a-well: #181c25;
+  /* What a layer is, in the layers panel: Cut's clip colours, reused. */
+  --c-video: #3d6fd1; --c-over: #8a5bd6; --c-title: #c2843a; --c-audio: #2f9a6a;
+  --c-music: #2b8a95;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 80ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 12px 0 0; max-width: 92ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 780px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+.stage { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.family { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 900px; margin: 14px 0; }
+.family div { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 14px; }
+.family b { font-family: var(--display); font-size: 17px; display: block; }
+.family span { color: var(--muted); font-size: 13px; }
+@media (max-width: 640px) { .family { grid-template-columns: 1fr; } }
+
+/* The window - as in videoedit.html */
+.win { background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 12.5px; flex: none; position: relative; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .s { color: var(--a-dim); font-size: 12px; }
+.head .grow { flex: 1; }
+.lights { display: flex; gap: 7px; margin-right: 4px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.btn { border: 1px solid #4a5468; background: #323a4b; color: var(--a-ink); border-radius: 7px; padding: 4px 12px; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.btn.go { background: var(--a-blue); border-color: var(--a-blue); color: #fff; }
+.seg { display: inline-flex; border: 1px solid #4a5468; border-radius: 7px; overflow: hidden; }
+.seg span { padding: 4px 12px; font-size: 12.5px; background: #2a3140; color: var(--a-dim); white-space: nowrap; }
+.seg span.on { background: #3a4458; color: var(--a-ink); }
+.tool { width: 28px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--a-dim); border: 1px solid transparent; flex: none; }
+.tool.on { background: #3a4458; border-color: #556079; color: var(--a-ink); }
+.tool svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.kbd { font: 10.5px var(--mono); color: var(--a-faint); white-space: nowrap; }
+
+.grid3 { display: grid; grid-template-columns: 248px minmax(0, 1fr) 268px; border-bottom: 1px solid var(--a-line); }
+.pane { padding: 10px 12px; min-width: 0; }
+.pane + .pane { border-left: 1px solid var(--a-line); }
+.ph { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.ph b { font-family: var(--display); font-size: 14px; font-weight: 600; }
+.ph span { color: var(--a-dim); font-size: 11.5px; }
+
+/* Library, as Cut's, for Simple's photographs */
+.search { background: #2a3140; border: 1px solid #485165; border-radius: 7px; padding: 4px 9px; color: var(--a-faint); margin-bottom: 8px; }
+.bins { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.bins span { padding: 2px 9px; border-radius: 999px; background: #2a3140; color: var(--a-dim); font-size: 11.5px; border: 1px solid var(--a-line); }
+.bins span.on { background: #34405a; color: var(--a-ink); border-color: #4f6696; }
+.clips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.clip { border-radius: 7px; overflow: hidden; background: var(--a-raised); border: 1px solid var(--a-line); }
+.clip.sel { border-color: var(--a-blue); box-shadow: 0 0 0 1px var(--a-blue); }
+.clip .th { height: 58px; position: relative; }
+.clip .th em { position: absolute; right: 4px; bottom: 3px; font: 10.5px var(--mono); font-style: normal; background: rgba(0,0,0,.55); padding: 0 4px; border-radius: 3px; }
+.clip .th .fav { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--a-ok); }
+.clip .n { padding: 3px 7px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.clip .n small { color: var(--a-faint); display: block; font-size: 10.5px; }
+
+/* Layers: the left pane in Full */
+.layers { display: grid; gap: 3px; }
+.lyr { display: grid; grid-template-columns: 16px 34px minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; }
+.lyr.sel { background: #2c3650; border-color: #4f6696; }
+.lyr.in { padding-left: 22px; }
+.lyr .eye { width: 14px; height: 14px; color: var(--a-dim); }
+.lyr .eye.off { opacity: .3; }
+.lyr .eye svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+.lyr .thumb { width: 34px; height: 24px; border-radius: 3px; border: 1px solid rgba(255,255,255,.15); position: relative; display: grid; place-items: center; font: 600 10px var(--body); color: #fff; }
+.lyr .thumb.adj { background: #2a3140; color: var(--a-ink); }
+.lyr .thumb .mk { position: absolute; right: -15px; top: 1px; width: 13px; height: 20px; border-radius: 2px; border: 1px solid rgba(255,255,255,.3); }
+.lyr .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.lyr .nm small { display: block; color: var(--a-faint); font-size: 10.5px; }
+.lyr .mode { font: 10px var(--mono); color: var(--a-faint); white-space: nowrap; }
+.lyr .clipmark { color: var(--a-dim); font-size: 11px; }
+.lfoot { display: flex; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--a-line); flex-wrap: wrap; }
+.lfoot span { font-size: 11px; color: var(--a-dim); border: 1px solid var(--a-line); border-radius: 6px; padding: 2px 7px; background: #262c39; white-space: nowrap; }
+.lhead { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+
+/* Canvas */
+.viewer { background: #000; border-radius: 6px; position: relative; overflow: hidden; }
+.viewer .tc { position: absolute; left: 8px; top: 6px; font: 11px var(--mono); color: #cfd6e2; background: rgba(0,0,0,.45); padding: 1px 6px; border-radius: 4px; z-index: 6; }
+.viewer .dropped { position: absolute; right: 8px; top: 6px; font: 11px var(--mono); color: var(--a-warn); background: rgba(0,0,0,.45); padding: 1px 6px; border-radius: 4px; z-index: 6; }
+.canvaswell { background: repeating-conic-gradient(#2a2f3a 0 25%, #232833 0 50%) 0 0 / 16px 16px; border-radius: 6px; position: relative; overflow: hidden; display: grid; place-items: center; }
+.photo { position: relative; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 6px 18px rgba(0,0,0,.45); }
+.photo > div, .photo > svg { position: absolute; inset: 0; }
+.ants { fill: rgba(79,141,247,.10); stroke-width: 1.2; }
+.ants.w { stroke: #fff; stroke-dasharray: 5 5; animation: march 0.6s linear infinite; fill: none; }
+.ants.b { stroke: #000; }
+@keyframes march { to { stroke-dashoffset: -10; } }
+@media (prefers-reduced-motion: reduce) { .ants.w { animation: none; } }
+.transport { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.transport .tcbig { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
+.transport .grow { flex: 1; }
+
+/* Inspector */
+.tabs { display: flex; gap: 2px; margin-bottom: 10px; border-bottom: 1px solid var(--a-line); }
+.tabs span { padding: 4px 9px 6px; color: var(--a-dim); font-size: 12px; }
+.tabs span.on { color: var(--a-ink); box-shadow: inset 0 -2px 0 var(--a-blue); }
+.sec { margin-bottom: 10px; }
+.sec h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--a-faint); font-weight: 600; display: flex; justify-content: space-between; }
+.prow { display: grid; grid-template-columns: 82px 1fr 44px 12px; gap: 8px; align-items: center; margin-bottom: 6px; }
+.prow label { color: var(--a-dim); font-size: 12px; }
+.prow .v { text-align: right; font: 11.5px var(--mono); color: var(--a-dim); }
+.prow .rs { color: var(--a-faint); font-size: 11px; text-align: center; }
+.track { height: 5px; border-radius: 3px; background: #3a4253; position: relative; }
+.track i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v); background: var(--a-blue); border-radius: 3px; }
+.track i::after { content: ""; position: absolute; right: -6px; top: -4px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+.track.mid i { left: 50%; width: calc(var(--v) - 50%); }
+.track.temp { background: linear-gradient(90deg, #4f8df7, #3a4253 50%, #f2b233); }
+.track.temp i, .track.tint i { background: transparent; }
+.track.tint { background: linear-gradient(90deg, #4cc27a, #3a4253 50%, #c86bd6); }
+.drop { background: #2d3446; border: 1px solid #485165; border-radius: 7px; padding: 4px 9px; display: flex; justify-content: space-between; color: var(--a-ink); white-space: nowrap; gap: 8px; }
+.drop span { color: var(--a-dim); }
+.looks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.look { border-radius: 6px; overflow: hidden; border: 1px solid var(--a-line); font-size: 11px; text-align: center; color: var(--a-dim); }
+.look.on { border-color: var(--a-blue); color: var(--a-ink); }
+.look i { display: block; height: 38px; }
+.hist { background: #0d0f14; border: 1px solid var(--a-line); border-radius: 6px; height: 74px; position: relative; overflow: hidden; margin-bottom: 10px; }
+.hist svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hist span { position: absolute; left: 6px; top: 3px; font-size: 10.5px; color: var(--a-faint); }
+.swatches { display: flex; align-items: center; gap: 6px; }
+.sw2 { position: relative; width: 30px; height: 26px; flex: none; }
+.sw2 i { position: absolute; width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid #e9ecf1; }
+
+/* Toolbar */
+.tbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--a-line); flex-wrap: nowrap; overflow: hidden; }
+.tbar .sep { width: 1px; height: 18px; background: var(--a-line); margin: 0 6px; flex: none; }
+.tbar .grow { flex: 1; }
+.chip { white-space: nowrap; font-size: 11.5px; color: var(--a-dim); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--a-line); }
+.chip.on { color: var(--a-ink); border-color: #4f6696; background: #2c3650; }
+.status { display: flex; gap: 18px; padding: 6px 12px; font: 11px var(--mono); color: var(--a-faint); background: var(--a-well); flex-wrap: wrap; }
+.status b { color: var(--a-dim); font-weight: 500; }
+
+/* Timeline bits, for the family section */
+.trk { display: grid; grid-template-columns: 70px 1fr; border-bottom: 1px solid #262c38; height: 42px; }
+.trk .lab { padding: 0 8px; background: var(--a-win); border-right: 1px solid var(--a-line); display: flex; align-items: center; font-size: 11.5px; font-weight: 600; }
+.lane { position: relative; background: var(--a-well); }
+.ck { position: absolute; top: 3px; bottom: 3px; border-radius: 5px; overflow: hidden; border: 1px solid rgba(255,255,255,.18); }
+.ck.sel { border: 2px solid #ffd54a; }
+.ck .nm { position: absolute; left: 5px; top: 1px; font-size: 10.5px; color: #fff; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.7); z-index: 2; }
+.ck .strip { position: absolute; inset: 0; display: flex; opacity: .9; }
+.ck .strip i { flex: 1; border-right: 1px solid rgba(0,0,0,.35); }
+.ck .fx { position: absolute; right: 4px; top: 1px; font: 600 9px var(--body); background: rgba(0,0,0,.45); color: #fff; padding: 0 4px; border-radius: 3px; z-index: 2; }
+.menu { position: absolute; background: #2a3140; border: 1px solid #4a5468; border-radius: 8px; padding: 4px; box-shadow: 0 12px 30px rgba(0,0,0,.5); z-index: 20; min-width: 190px; }
+.menu div { padding: 4px 10px; border-radius: 5px; display: flex; justify-content: space-between; gap: 16px; white-space: nowrap; }
+.menu div.on { background: var(--a-blue); color: #fff; }
+.menu hr { border: 0; border-top: 1px solid var(--a-line); margin: 4px 2px; }
+
+/* Sheets */
+.dim { opacity: .35; filter: saturate(.6); }
+.sheet { position: absolute; left: 50%; top: 46px; transform: translateX(-50%); width: 520px; background: #262c39; border: 1px solid #4a5468; border-top: 0;
+         border-radius: 0 0 12px 12px; box-shadow: 0 18px 40px rgba(0,0,0,.5); padding: 16px 18px; z-index: 10; }
+.sheet h3 { margin: 0 0 12px; font-family: var(--display); font-size: 17px; }
+.frow { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: center; margin-bottom: 9px; }
+.frow label { color: var(--a-dim); text-align: right; }
+.field { background: #1d222d; border: 1px solid #485165; border-radius: 7px; padding: 5px 9px; }
+.facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.facts div { background: #1f2430; border: 1px solid var(--a-line); border-radius: 8px; padding: 6px 9px; }
+.facts small { display: block; color: var(--a-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+.facts b { font: 500 13px var(--mono); }
+.bar { height: 7px; border-radius: 4px; background: #3a4253; overflow: hidden; }
+.bar i { display: block; height: 100%; width: var(--v); background: var(--a-blue); }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Kosmos Paint, a photo editor</h1>
+<p class="sub">The second of the <b>Kosmos Studio</b> family, beside Kosmos Cut. It has the same window, panes, inspector, toolbar and Export sheet, adapted to a canvas instead of a timeline. <b>Simple</b> develops one photograph, as Lightroom and Photos do. <b>Full</b> is Photoshop's ground: layers, masks, adjustment layers, selections, brushes, text and shapes. Both show the same document. Drawn on 22 November 2026, before any of it is built. <code>docs/photoedit.md</code> has what it is made of. The photographs and documents are made up. For Diego to change until it is right.</p>
+
+<div class="q"><b>Diego, 22 November:</b> "i want a new app for photo editing similar to adobe photoshop and in the same line as the video eeditor, as it will be part of a family of apps for photo and video editing".</div>
+
+<div class="family">
+  <div><b>Kosmos Cut</b><span>film · <code>.cut</code> · agreed 22 November</span></div>
+  <div><b>Kosmos Paint</b><span>pixels · <code>.paint</code> · this page</span></div>
+  <div><b>Kosmos Draw</b><span>vectors · <code>.draw</code> · designed next</span></div>
+</div>
+
+<h2>Full: layers, the canvas with a selection being drawn, and Curves in the inspector</h2>
+<div class="scroller"><div class="stage"><div class="win" id="full" style="width:1140px"></div></div></div>
+<p class="cap"><b>The header</b> is Cut's: the document's name and facts, the Simple / Full switch, then Open... and Export.... <b>The toolbar</b> is Cut's row of tools, here over the canvas. From the left: Move, Marquee, Lasso, Wand, Crop, Brush, Clone, Heal, Eraser, Gradient, Text, Shape, Hand and Zoom, each with its key. The current tool's options follow it, here the Lasso's: new, add, subtract or intersect, and feather. Then come the two colours. <b>The layers</b> take the left pane, where Cut has its library, because they are the document's structure. Each row has its visibility, a thumbnail, a mask beside it when it has one, its name and kind, and its blend mode and opacity. Indented rows are in a group. The arrow marks a layer clipped to the one below. <b>The canvas</b> is the photograph at 23%, drawn from the pyramid's level 2. The marching ants are a lasso being drawn round the lighthouse; the blue wash is the area it will select. <b>The inspector</b> shows the chosen layer, Curves: the histogram behind the curve, the channel, the points, then the layer's blend mode, opacity and mask. <b>The foot</b> shows the zoom and level, the tiles in memory against the budget, and the last step that undo would take back.</p>
+
+<h2>A selection, at 100%: the wand adding the sky to the lasso</h2>
+<div class="scroller"><div class="stage"><div class="win" id="select" style="width:760px"></div></div></div>
+<p class="cap">Zoomed to 100% on the lighthouse's lamp. Shift with the Wand adds by colour: the sky at a tolerance of 24, contiguous, joined to the lasso drawn before. The selection is a mask in tiles, and the ants are its outline at this zoom, made in C. <i>Select and Mask...</i> (Tier 2) opens the refine-edge view for hair and soft edges. Feathering, growing and shrinking are on the Select menu, and a selection becomes a layer mask with one button.</p>
+
+<h2>Simple: developing one photograph</h2>
+<div class="scroller"><div class="stage"><div class="win" id="simple" style="width:1140px"></div></div></div>
+<p class="cap">The same document in Simple. The left pane is Cut's library, here the folder's photographs. The inspector is Lightroom's Basic panel in Kosmos's look: the histogram, a Look with its strength (Cut's eight Looks, the same files), then light, colour, detail and effects. Crop and straighten is a button over the photograph, and spot heal is a click. All of this is one <i>Develop</i> layer at the bottom of Full's stack, so nothing done here is lost there, and a layer only Full has shows a "Full" badge here. A RAW file opens here first (Tier 2), with white balance from the camera.</p>
+
+<h2>Export</h2>
+<div class="scroller"><div class="stage"><div class="win" id="export" style="width:1140px"></div></div></div>
+<p class="cap">One sheet, shared with Cut (<code>exportsheet.lua</code>). It has a name and where, a format, a size, a quality, the metadata, and the facts the file will have. Location is left out by default. Several sizes at once and batch over a folder are Tier 2. While it runs, the editor and the desktop stay usable, and the "Exporting" window is Cut's.</p>
+<div class="scroller"><div class="stage"><div class="win" id="exporting" style="width:520px"></div></div></div>
+
+<h2>One family: a photograph in Cut, a still in Paint</h2>
+<div class="scroller"><div class="stage"><div class="win" id="family" style="width:1140px"></div></div></div>
+<p class="cap">Cut's timeline with <i>Harbour at dusk.paint</i> on V1, drawn by the same Canvas Kit. When Paint saves, Cut sees the document's folder change and draws the new picture on the next frame. <i>Open in Paint</i> is on the clip's right click. The other way, <i>Edit frame in Paint</i> on Cut's viewer renders the frame at full size from the originals. It opens in Paint as a new document with Cut's grade kept as a <i>Develop</i> layer, rather than baked in.</p>
+
+<h2>Left out, on purpose</h2>
+<ul>
+  <li><b>A catalogue of photographs</b>, as Lightroom has. <code>/Home/Photos</code> is a folder and Tracker shows it; a Photos application is its own design.</li>
+  <li><b>Plug-ins.</b> The filters are the kits', in C, and later on the GPU.</li>
+  <li><b>Learned tools</b>, such as select subject and generative fill, are Tier 3. Their doors are drawn now, so they have a place to go.</li>
+</ul>
+</div>
+
+<script>
+const LIGHTS = '<span class="lights"><i style="background:#ee5048"></i><i style="background:#f2b233"></i><i style="background:#3fbf4f"></i></span>';
+const I = {
+  move:   '<svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14M8 1l-2 2M8 1l2 2M8 15l-2-2M8 15l2-2M1 8l2-2M1 8l2 2M15 8l-2-2M15 8l-2 2"/></svg>',
+  marq:   '<svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" stroke-dasharray="2 2"/></svg>',
+  lasso:  '<svg viewBox="0 0 16 16"><path d="M8 3c3.5 0 6 1.4 6 3.5S11.5 10 8 10 2 8.6 2 6.5 4.5 3 8 3z" stroke-dasharray="2 1.6"/><path d="M4 9.5c-.8 1.5 0 3 1.6 3.5"/></svg>',
+  wand:   '<svg viewBox="0 0 16 16"><path d="M2 14l8-8M11 2v2M14 5h-2M13 2l-1.5 1.5M9 1.5l.5 1.5"/></svg>',
+  crop:   '<svg viewBox="0 0 16 16"><path d="M4 1v11h11M1 4h11v11"/></svg>',
+  brush:  '<svg viewBox="0 0 16 16"><path d="M14 2L7 9M7 9c-2 0-3 1.5-3 3s-1 2-2 2c3 1 6 0 6-3z"/></svg>',
+  clone:  '<svg viewBox="0 0 16 16"><rect x="5" y="2" width="6" height="4" rx="1"/><path d="M8 6v3M3 9h10v2H3zM4 13h8"/></svg>',
+  heal:   '<svg viewBox="0 0 16 16"><rect x="1.5" y="5.5" width="13" height="5" rx="2.5" transform="rotate(-35 8 8)"/><path d="M7 7l2 2M9 7l-2 2"/></svg>',
+  erase:  '<svg viewBox="0 0 16 16"><path d="M9 3l4 4-6 6H4l-2-2z M6 6l4 4M7 13h7"/></svg>',
+  grad:   '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 3v10M8 3v10M11 3v10" stroke-opacity=".5"/></svg>',
+  text:   '<svg viewBox="0 0 16 16"><path d="M3 3h10M8 3v10M6 13h4"/></svg>',
+  shape:  '<svg viewBox="0 0 16 16"><rect x="2" y="2" width="7" height="7" rx="1"/><circle cx="10.5" cy="10.5" r="3.5"/></svg>',
+  hand:   '<svg viewBox="0 0 16 16"><path d="M5 9V4a1 1 0 012 0v4M7 7V3a1 1 0 012 0v5M9 7V4a1 1 0 012 0v6c0 3-2 4-4 4s-3-1-4-3L2 8a1 1 0 011.6-1L5 9"/></svg>',
+  zoom:   '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
+  eye:    '<svg viewBox="0 0 14 14"><path d="M1 7s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4z"/><circle cx="7" cy="7" r="1.8"/></svg>',
+};
+
+/* Made-up photographs, as gradients they might be. */
+const SKY = "linear-gradient(180deg,#2b3a67 0%,#6a5a8e 30%,#e08a62 55%,#f6c27a 62%,#3f5878 63%,#24344f 82%,#141d2e 100%)";
+const SHOT = {
+  harbour: SKY,
+  boats:   "linear-gradient(180deg,#9cc7e8 0%,#d7e6ef 44%,#e9eef0 45%,#5a7f96 60%,#2f4f63 100%)",
+  ana:     "radial-gradient(circle at 55% 40%,#d8a98a 0 16%,#3d2f2a 17% 30%,#5d6b73 31% 100%)",
+  market:  "linear-gradient(135deg,#c9533b 0%,#e7a03d 30%,#6c8f3a 55%,#3b5a2c 100%)",
+  rambla:  "linear-gradient(180deg,#aac9e3 0%,#d7e6ef 40%,#7f8c90 41%,#c9b79a 70%,#8e7d62 100%)",
+  fog:     "linear-gradient(180deg,#b6bfc8,#8d97a1 55%,#5f6973)",
+  night:   "linear-gradient(180deg,#0e1630 0%,#22305a 50%,#e3c26a 51%,#141b33 56%,#0a0f1f 100%)",
+  dunes:   "linear-gradient(160deg,#f1cf93 0%,#d79a5a 45%,#9c6338 75%,#5b3a24 100%)",
+};
+
+/* The photograph: sky, sun, sea, the lighthouse and its rock, a few lights. */
+function photo(w, h, opts) {
+  opts = opts || {};
+  const lx = 0.62 * w, base = 0.63 * h;
+  const tower = `${lx - w * 0.022},${base - h * 0.02} ${lx - w * 0.012},${base - h * 0.46} ${lx + w * 0.012},${base - h * 0.46} ${lx + w * 0.022},${base - h * 0.02}`;
+  const lamp = `${lx - w * 0.02},${base - h * 0.46} ${lx - w * 0.02},${base - h * 0.53} ${lx},${base - h * 0.57} ${lx + w * 0.02},${base - h * 0.53} ${lx + w * 0.02},${base - h * 0.46}`;
+  const rock = `${lx - w * 0.12},${base + h * 0.01} ${lx - w * 0.07},${base - h * 0.05} ${lx + w * 0.05},${base - h * 0.06} ${lx + w * 0.13},${base + h * 0.01}`;
+  const lasso = opts.lasso ? `<svg viewBox="0 0 ${w} ${h}">
+      <path class="ants" d="M${lx - w * 0.13} ${base + h * 0.02} L${lx - w * 0.08} ${base - h * 0.07} L${lx - w * 0.035} ${base - h * 0.1} L${lx - w * 0.03} ${base - h * 0.45} L${lx - w * 0.032} ${base - h * 0.55} L${lx} ${base - h * 0.61} L${lx + w * 0.034} ${base - h * 0.55} L${lx + w * 0.03} ${base - h * 0.42} L${lx + w * 0.036} ${base - h * 0.12}" fill="rgba(79,141,247,.14)"/>
+      <path class="ants b" fill="none" d="M${lx - w * 0.13} ${base + h * 0.02} L${lx - w * 0.08} ${base - h * 0.07} L${lx - w * 0.035} ${base - h * 0.1} L${lx - w * 0.03} ${base - h * 0.45} L${lx - w * 0.032} ${base - h * 0.55} L${lx} ${base - h * 0.61} L${lx + w * 0.034} ${base - h * 0.55} L${lx + w * 0.03} ${base - h * 0.42} L${lx + w * 0.036} ${base - h * 0.12}"/>
+      <path class="ants w" d="M${lx - w * 0.13} ${base + h * 0.02} L${lx - w * 0.08} ${base - h * 0.07} L${lx - w * 0.035} ${base - h * 0.1} L${lx - w * 0.03} ${base - h * 0.45} L${lx - w * 0.032} ${base - h * 0.55} L${lx} ${base - h * 0.61} L${lx + w * 0.034} ${base - h * 0.55} L${lx + w * 0.03} ${base - h * 0.42} L${lx + w * 0.036} ${base - h * 0.12}"/>
+      <circle cx="${lx + w * 0.036}" cy="${base - h * 0.12}" r="3" fill="#fff" stroke="#000"/>
+      <path d="M${lx + w * 0.036} ${base - h * 0.12} l9 5 l-3 1 l2 4 l-2 1 l-2 -4 l-3 2 z" fill="#fff" stroke="#000" stroke-width=".8"/></svg>` : "";
+  const text = opts.text ? `<div style="display:flex;align-items:flex-end;padding:0 0 ${h * 0.07}px ${w * 0.06}px;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.5)">
+      <div><div style="font:600 ${Math.round(h * 0.075)}px var(--display);letter-spacing:.02em">Colonia, last ferry</div>
+      <div style="width:${w * 0.18}px;height:2px;background:#f2b233;margin-top:4px"></div></div></div>` : "";
+  const frame = opts.text ? `<div style="inset:${h * 0.035}px;border:1.5px solid rgba(255,255,255,.55);border-radius:3px"></div>` : "";
+  return `<div class="photo" style="width:${w}px;height:${h}px;background:${SKY};${opts.filter ? "filter:" + opts.filter : ""}">
+    <div style="background:radial-gradient(circle at 34% 58%,rgba(255,226,160,.95) 0 ${h * 0.045}px,rgba(255,190,120,.35) ${h * 0.09}px,transparent ${h * 0.22}px)"></div>
+    <div style="background:linear-gradient(180deg,transparent 63%,rgba(255,200,140,.18) 64%,transparent 70%)"></div>
+    <svg viewBox="0 0 ${w} ${h}"><polygon points="${rock}" fill="#0f1522"/><polygon points="${tower}" fill="#e8e1d6"/>
+      <rect x="${lx - w * 0.018}" y="${base - h * 0.33}" width="${w * 0.036}" height="${h * 0.04}" fill="#b5463a"/>
+      <rect x="${lx - w * 0.016}" y="${base - h * 0.17}" width="${w * 0.032}" height="${h * 0.04}" fill="#b5463a"/>
+      <polygon points="${lamp}" fill="#1c2232"/><circle cx="${lx}" cy="${base - h * 0.5}" r="${h * 0.014}" fill="#ffe7a3"/>
+      <path d="M${lx} ${base - h * 0.5} L${w} ${base - h * 0.62} L${w} ${base - h * 0.44} Z" fill="rgba(255,231,163,.12)"/>
+      ${[0.12, 0.2, 0.27, 0.86, 0.92].map((x, i) => `<circle cx="${x * w}" cy="${base + h * (0.01 + (i % 2) * 0.008)}" r="1.6" fill="#ffd98a"/>`).join("")}</svg>
+    ${frame}${text}${lasso}</div>`;
+}
+
+function head(title, sub, mode) {
+  return `<div class="head">${LIGHTS}<span class="t">${title}</span><span class="s">${sub}</span><span class="grow"></span>
+    <span class="seg"><span${mode === "simple" ? ' class="on"' : ""}>Simple</span><span${mode === "full" ? ' class="on"' : ""}>Full</span></span>
+    <span class="btn">Open…</span><span class="btn go">Export…</span></div>`;
+}
+const SUB = "6000 × 4000 · 16-bit · sRGB · 12 layers";
+
+function toolbar(active, options) {
+  const tools = [["move", "V"], ["marq", "M"], ["lasso", "L"], ["wand", "W"], ["crop", "C"], ["brush", "B"], ["clone", "S"], ["heal", "J"], ["erase", "E"], ["grad", "G"], ["text", "T"], ["shape", "U"], ["hand", "H"], ["zoom", "Z"]];
+  return `<div class="tbar">${tools.map(t => `<span class="tool${t[0] === active ? " on" : ""}" title="${t[1]}">${I[t[0]]}</span>`).join("")}
+    <span class="sep"></span>${options}
+    <span class="grow"></span>
+    <span class="swatches"><span class="sw2"><i style="left:0;top:0;background:#c8402c;z-index:2"></i><i style="left:10px;top:7px;background:#f4efe6"></i></span></span></div>`;
+}
+const LASSO_OPTS = `<span class="seg"><span>New</span><span class="on">Add</span><span>Subtract</span><span>Intersect</span></span>
+  <span class="kbd" style="margin-left:8px">Feather</span><span class="chip">2 px</span><span class="chip on">Anti-alias</span>`;
+
+/* Layers, top to bottom. */
+const LAYERS = [
+  { n: "Colonia, last ferry", k: "Text · IBM Plex Sans Condensed 220 pt", t: "T", c: "--c-title", mode: "Normal" },
+  { n: "Frame", k: "Shape · stroke 6 px", t: "▭", c: "--c-title", mode: "Overlay 60%" },
+  { n: "Warm film", k: "Look · strength 70%", t: "◐", adj: true, mode: "Normal" },
+  { n: "Curves", k: "Adjustment · mask: sky", t: "∿", adj: true, mode: "Normal", mask: "linear-gradient(180deg,#fff 0 58%,#000 62%)", sel: true },
+  { n: "Hue / Saturation", k: "Adjustment · reds −12", t: "H", adj: true, mode: "Normal", clip: true },
+  { group: "Retouch", k: "Group · 3 layers" },
+  { n: "Spots", k: "Pixels · 41 tiles", t: "", c: "--c-audio", mode: "Normal", inn: true, bg: "repeating-conic-gradient(#3a4253 0 25%,#2a3140 0 50%) 0 0/8px 8px" },
+  { n: "Wires removed", k: "Pixels · clone · 118 tiles", t: "", c: "--c-audio", mode: "Normal", inn: true, bg: "repeating-conic-gradient(#3a4253 0 25%,#2a3140 0 50%) 0 0/8px 8px" },
+  { n: "Lamp glow", k: "Pixels · brush", t: "", mode: "Screen 80%", inn: true, bg: "radial-gradient(circle,#ffe7a3 0 20%,transparent 60%),#1c2232" },
+  { n: "Lighthouse lifted", k: "Pixels · masked", t: "", mode: "Normal", mask: "radial-gradient(circle at 60% 40%,#fff 0 30%,#000 34%)", bg: SKY },
+  { n: "Develop", k: "Simple's sliders · Exp +0.4", t: "◎", adj: true, mode: "Normal" },
+  { n: "Harbour at dusk.jpg", k: "Photograph · 6000 × 4000", t: "", mode: "Normal", bg: SKY, lock: true },
+];
+
+function layersPane() {
+  const rows = LAYERS.map(l => {
+    if (l.group) return `<div class="lyr"><span class="eye">${I.eye}</span><span class="thumb adj">▾</span><span class="nm">${l.group}<small>${l.k}</small></span><span class="mode">Pass</span></div>`;
+    const thumb = l.adj ? `<span class="thumb adj">${l.t}</span>` : `<span class="thumb" style="background:${l.bg || `var(${l.c})`}">${l.t}${l.mask ? "" : ""}</span>`;
+    const mk = l.mask ? `<span style="position:relative">${thumb.replace("</span>", `<span class="mk" style="background:${l.mask}"></span></span>`)}</span>` : thumb;
+    return `<div class="lyr${l.sel ? " sel" : ""}${l.inn ? " in" : ""}"><span class="eye">${I.eye}</span>${mk}
+      <span class="nm" style="${l.mask ? "padding-left:14px" : ""}">${l.clip ? '<span class="clipmark">↳ </span>' : ""}${l.n}${l.lock ? " 🔒︎" : ""}<small>${l.k}</small></span><span class="mode">${l.mode}</span></div>`;
+  }).join("");
+  return `<div class="pane"><div class="ph"><b>Layers</b><span>12 · 1,904 tiles</span></div>
+    <div class="lhead"><span class="drop">Normal <span>&#9662;</span></span><span class="drop">Opacity <span>100%</span></span></div>
+    <div class="layers">${rows}</div>
+    <div class="lfoot"><span>+ Layer</span><span>+ Adjustment</span><span>Mask</span><span>Group</span><span>⋯</span></div></div>`;
+}
+
+function histSvg(colourful, W, H) {
+  W = W || 264; H = H || 74; const k = H / 74;
+  const curve = (mu, s, a) => x => a * Math.exp(-Math.pow((x - mu) / s, 2));
+  const chans = colourful ? [["#ff6b6b", [curve(18, 8, 70), curve(50, 7, 40), curve(58, 3, 30)]],
+                             ["#6be27f", [curve(16, 9, 60), curve(46, 8, 34)]],
+                             ["#6ba8ff", [curve(14, 7, 80), curve(40, 9, 30)]]]
+                          : [["#c8cdd8", [curve(16, 8, 70), curve(46, 8, 40), curve(58, 3, 28)]]];
+  return chans.map(([c, fs]) => {
+    let d = `M0 ${H}`;
+    for (let x = 0; x <= 66; x++) d += ` L${(x * W / 66).toFixed(1)} ${(H - k * Math.min(70, 2 + fs.reduce((s, f) => s + f(x), 0))).toFixed(1)}`;
+    return `<path d="${d} L${W} ${H}Z" fill="${c}" opacity="${colourful ? .35 : .45}"/>`;
+  }).join("");
+}
+
+function prow(label, v, val, mid, cls) {
+  return `<div class="prow"><label>${label}</label><span class="track${mid ? " mid" : ""}${cls ? " " + cls : ""}"><i style="--v:${v}%"></i></span><span class="v">${val}</span><span class="rs">&#8634;</span></div>`;
+}
+
+function inspectorCurves() {
+  return `<div class="pane"><div class="ph"><b>Curves</b><span>Adjustment · above 8 layers</span></div>
+    <div class="tabs"><span class="on">Adjust</span><span>Mask</span><span>Blend</span><span>Info</span></div>
+    <div class="sec"><h4>Channel <span>Auto</span></h4><div class="seg" style="width:100%"><span class="on" style="flex:1;text-align:center">RGB</span><span style="flex:1;text-align:center;color:#ff8b8b">R</span><span style="flex:1;text-align:center;color:#8be29a">G</span><span style="flex:1;text-align:center;color:#8bb8ff">B</span></div></div>
+    <div class="sec"><svg viewBox="0 0 240 200" style="width:100%;height:200px;background:#0d0f14;border:1px solid var(--a-line);border-radius:6px">
+        <g opacity=".9">${histSvg(false, 240, 200)}</g>
+        <path d="M60 0V200M120 0V200M180 0V200M0 50H240M0 100H240M0 150H240" stroke="#20252f"/>
+        <path d="M0 200L240 0" stroke="#3a4253" stroke-dasharray="3 3" fill="none"/>
+        <path d="M0 196 C40 184 60 160 80 140 S130 82 160 62 S220 12 240 4" stroke="#e9ecf1" stroke-width="1.8" fill="none"/>
+        <circle cx="80" cy="140" r="4" fill="#fff"/><circle cx="160" cy="62" r="5" fill="#4f8df7" stroke="#fff" stroke-width="1.5"/>
+        <text x="94" y="50" fill="#cfd6e2" font-size="10.5" font-family="IBM Plex Mono, monospace">in 170 · out 189</text></svg></div>
+    <div class="sec"><h4>Points <span>2</span></h4>${prow("Input", 67, "170")}${prow("Output", 74, "189")}</div>
+    <div class="sec"><h4>Layer</h4>
+      <div class="prow"><label>Blend</label><span class="drop" style="grid-column:span 3">Normal <span>&#9662;</span></span></div>
+      ${prow("Opacity", 100, "100%")}
+      <div class="prow"><label>Mask</label><span class="drop" style="grid-column:span 3">Sky, feather 40 px <span>&#9662;</span></span></div></div>
+    <div class="sec"><h4>Preset</h4><div class="drop">Lift the evening <span>save…</span></div></div></div>`;
+}
+
+function statusBar() {
+  return `<div class="status"><span><b>23%</b> · level 2 of 6</span><span>tiles <b>1,904</b> · 618 MB of 3.2 GB</span><span>spilled <b>0</b></span><span>cursor 3712, 1408 · #e9c07a</span><span style="margin-left:auto">Undo: <b>Lasso</b> · History 37 steps</span></div>`;
+}
+
+/* Full */
+document.getElementById("full").innerHTML =
+  head("Harbour at dusk", SUB, "full") + toolbar("lasso", LASSO_OPTS) +
+  `<div class="grid3">${layersPane()}
+     <div class="pane" style="padding:10px"><div class="canvaswell" style="height:560px">${photo(560, 373, { lasso: true, text: true })}
+       <span class="tc" style="position:absolute;left:8px;top:6px;font:11px var(--mono);color:#cfd6e2;background:rgba(0,0,0,.45);padding:1px 6px;border-radius:4px">Lasso · adding · 14 points</span></div></div>
+     ${inspectorCurves()}</div>` + statusBar();
+
+/* A selection at 100% */
+document.getElementById("select").innerHTML =
+  `<div class="head">${LIGHTS}<span class="t">Harbour at dusk</span><span class="s">100% · the lamp · Wand, adding</span><span class="grow"></span></div>` +
+  toolbar("wand", `<span class="seg"><span>New</span><span class="on">Add</span><span>Subtract</span><span>Intersect</span></span>
+     <span class="kbd" style="margin-left:8px">Tolerance</span><span class="chip">24</span><span class="chip on">Contiguous</span><span class="chip">All layers</span>`) +
+  `<div style="padding:12px;background:var(--a-well)"><div class="canvaswell" style="height:300px;overflow:hidden">
+     <div style="position:absolute;left:-1080px;top:-60px">${photo(2400, 1600, {})}</div>
+     <svg viewBox="0 0 736 300" style="position:absolute;inset:0;width:100%;height:100%">
+       <path d="M0 0H736V300H444L440 214L460 212L460 98L408 30L356 98L356 212L376 214L372 300H0Z" fill="rgba(79,141,247,.22)"/>
+       <path class="ants b" fill="none" d="M444 300L440 214L460 212L460 98L408 30L356 98L356 212L376 214L372 300"/>
+       <path class="ants w" d="M444 300L440 214L460 212L460 98L408 30L356 98L356 212L376 214L372 300"/>
+       <circle cx="150" cy="60" r="10" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M150 46v-8M150 74v8M136 60h-8M164 60h8" stroke="#fff" stroke-width="1.5"/>
+     </svg>
+     <span style="position:absolute;right:8px;bottom:8px;font:11px var(--mono);color:#cfd6e2;background:rgba(0,0,0,.5);padding:2px 7px;border-radius:4px">Selected: 61.8% of the picture · 9,412 tiles of mask</span></div></div>
+   <div class="status"><span><b>100%</b> · level 0</span><span>Shift adds · Option subtracts · both intersect</span><span style="margin-left:auto">Select ▸ Feather, Grow, Shrink, Invert · ⌘⇧I</span></div>`;
+
+/* Simple */
+const PHOTOS = [
+  { n: "Harbour at dusk", f: "JPEG · 6000 × 4000", s: "harbour", sel: true, fav: true, d: "edited" },
+  { n: "Boats at noon", f: "RAW · DNG · 24 MP", s: "boats", d: "RAW" },
+  { n: "Ana, the deckhand", f: "JPEG · 4032 × 3024", s: "ana", fav: true, d: "" },
+  { n: "Market", f: "HEIF · 12 MP", s: "market", d: "" },
+  { n: "Rambla", f: "JPEG · 4000 × 3000", s: "rambla", d: "" },
+  { n: "Fog, Punta Gorda", f: "TIFF · 16-bit", s: "fog", d: "16-bit" },
+  { n: "Night ferry", f: "RAW · CR3 · 32 MP", s: "night", d: "RAW" },
+  { n: "Dunes", f: "PNG · 2400 × 1600", s: "dunes", d: "" },
+];
+function photosPane() {
+  const cards = PHOTOS.map(c => `<div class="clip${c.sel ? " sel" : ""}"><div class="th" style="background:${SHOT[c.s]}">${c.fav ? '<span class="fav"></span>' : ""}${c.d ? `<em>${c.d}</em>` : ""}</div><div class="n">${c.n}<small>${c.f}</small></div></div>`).join("");
+  return `<div class="pane"><div class="ph"><b>Photos</b><span>/Home/Photos · 8</span></div>
+    <div class="search">Search photos</div>
+    <div class="bins"><span class="on">All</span><span>Favourites</span><span>Edited</span><span>RAW</span><span>Captures</span></div>
+    <div class="clips">${cards}</div></div>`;
+}
+const LOOKF = { none: "", warm: "sepia(.35) saturate(1.2)", silver: "grayscale(1) contrast(1.2)", cool: "hue-rotate(-20deg) saturate(.8)" };
+document.getElementById("simple").innerHTML =
+  head("Harbour at dusk", SUB, "simple") +
+  `<div class="grid3">${photosPane()}
+    <div class="pane"><div class="ph"><b>Photo</b><span>fitted · 23%</span></div>
+      <div class="canvaswell" style="height:440px">${photo(600, 400, { filter: "sepia(.18) saturate(1.12) brightness(1.06)" })}</div>
+      <div class="transport"><span class="btn">Crop and straighten</span><span class="btn">Spot heal</span><span class="btn">Auto</span><span class="grow"></span>
+        <span class="kbd">Hold \\ for the original</span><span class="seg"><span class="on">After</span><span>Before</span></span></div></div>
+    <div class="pane"><div class="ph"><b>Develop</b><span>one layer · Full keeps it</span></div>
+      <div class="hist"><span>Histogram</span><svg viewBox="0 0 264 74" preserveAspectRatio="none">${histSvg(true)}</svg></div>
+      <div class="sec"><h4>Look <span>Cut's Looks</span></h4><div class="looks">
+        ${["none", "warm", "silver", "cool"].map(k => `<div class="look${k === "warm" ? " on" : ""}"><i style="background:${SKY};filter:${LOOKF[k] || "none"}"></i>${k[0].toUpperCase() + k.slice(1)}</div>`).join("")}</div>
+        ${prow("Strength", 70, "70%")}</div>
+      <div class="sec"><h4>Light</h4>${prow("Exposure", 58, "+0.40", true)}${prow("Contrast", 56, "+12", true)}${prow("Highlights", 38, "−24", true)}${prow("Shadows", 64, "+28", true)}</div>
+      <div class="sec"><h4>Colour</h4>${prow("Temperature", 56, "+6", false, "temp")}${prow("Tint", 50, "0", false, "tint")}${prow("Vibrance", 60, "+20", true)}</div>
+      <div class="sec"><h4>Detail and effects</h4>${prow("Sharpen", 30, "30")}${prow("Noise", 18, "18")}${prow("Vignette", 25, "−25")}</div></div></div>`;
+
+/* Export */
+document.getElementById("export").innerHTML =
+  `<div class="dim">${head("Harbour at dusk", SUB, "full")}${toolbar("move", "")}
+    <div class="grid3">${layersPane()}<div class="pane"><div class="canvaswell" style="height:560px">${photo(560, 373, { text: true })}</div></div>${inspectorCurves()}</div></div>
+   <div class="sheet"><h3>Export picture</h3>
+     <div class="frow"><label>Name</label><span class="field">Harbour at dusk</span></div>
+     <div class="frow"><label>Where</label><span class="drop">/Home/Photos/Edited <span>&#9662;</span></span></div>
+     <div class="frow"><label>Format</label><span class="seg"><span class="on">JPEG</span><span>PNG</span><span>WebP</span><span>TIFF</span><span>PSD</span></span></div>
+     <div class="frow"><label>Size</label><span class="seg"><span>As document</span><span class="on">Long side 2560</span><span>50%</span><span>Custom…</span></span></div>
+     <div class="frow"><label>Quality</label><span class="seg"><span>Good</span><span class="on">Better</span><span>Best</span></span></div>
+     <div class="frow"><label>Colour</label><span class="drop">sRGB, profile embedded <span>&#9662;</span></span></div>
+     <div class="frow"><label>Metadata</label><span style="color:var(--a-dim)">&#9745; Camera and date &nbsp; &#9744; Location</span></div>
+     <div class="facts">
+       <div><small>Picture</small><b>2560×1707</b></div><div><small>Depth</small><b>8-bit</b></div>
+       <div><small>Layers</small><b>flattened</b></div><div><small>About</small><b>1.4 MB</b></div></div>
+     <div class="actions"><span class="btn">More sizes…</span><span class="btn">Cancel</span><span class="btn go">Export</span></div></div>`;
+
+document.getElementById("exporting").innerHTML =
+  `<div class="head">${LIGHTS}<span class="t">Exporting</span><span class="s">Harbour at dusk.jpg</span><span class="grow"></span><span class="btn">Cancel</span></div>
+   <div style="padding:14px 16px;display:grid;grid-template-columns:160px 1fr;gap:14px;align-items:center">
+     <div class="viewer" style="height:107px;display:grid;place-items:center">${photo(160, 107, { text: true })}</div>
+     <div><div class="bar"><i style="--v:62%"></i></div>
+       <div style="display:flex;justify-content:space-between;margin-top:8px;color:var(--a-dim);font-size:12px">
+         <span>1,180 of 1,904 tiles composited at full size</span><span>about 1 s left</span></div>
+       <div style="margin-top:4px;color:var(--a-faint);font-size:11.5px">Then Lanczos to 2560 · JPEG Better · editing stays open</div></div></div>`;
+
+/* One family: Cut's timeline with a .paint clip, and the clip's menu. */
+const W = 1140 - 70, SPAN = 60, px = t => t / SPAN * W;
+function strip(s, w) { const n = Math.max(1, Math.round(w / 46)); return `<span class="strip">${Array.from({ length: n }, () => `<i style="background:${s}"></i>`).join("")}</span>`; }
+function clip(a, b, n, bg, opts) {
+  opts = opts || {};
+  return `<div class="ck${opts.sel ? " sel" : ""}" style="left:${px(a)}px;width:${px(b) - px(a)}px;background:${bg}">${opts.strip ? strip(opts.strip, px(b) - px(a)) : ""}<span class="nm">${n}</span>${opts.fx ? `<span class="fx">${opts.fx}</span>` : ""}</div>`;
+}
+document.getElementById("family").innerHTML =
+  `<div class="head">${LIGHTS}<span class="t">Montevideo weekend</span><span class="s">Kosmos Cut · 1080p · 30 fps · 1:00</span><span class="grow"></span>
+     <span class="seg"><span>Simple</span><span class="on">Full</span></span><span class="btn">Import…</span><span class="btn go">Export…</span></div>
+   <div style="display:grid;grid-template-columns:minmax(0,1fr) 420px;border-bottom:1px solid var(--a-line)">
+     <div class="pane"><div class="ph"><b>Program</b><span>V1 Harbour at dusk.paint · drawn by the Canvas Kit</span></div>
+       <div class="viewer" style="height:260px;display:grid;place-items:center;background:#000">${photo(390, 260, { text: true, filter: "sepia(.18) saturate(1.12) brightness(1.06)" })}
+         <span class="tc">00:00:21:04</span><span class="dropped" style="color:var(--a-ok)">updated · saved in Paint 12 s ago</span></div></div>
+     <div class="pane"><div class="ph"><b>Harbour at dusk.paint</b><span>V1 · 00:18 - 00:28</span></div>
+       <div class="tabs"><span class="on">Picture</span><span>Colour</span><span>Speed</span></div>
+       <div class="sec"><h4>Document</h4>
+         <div class="prow"><label>Layers</label><span class="drop" style="grid-column:span 3">All 12, as saved <span>&#9662;</span></span></div>
+         <div class="prow"><label>Frame</label><span class="seg" style="grid-column:span 3"><span>Fit</span><span>Crop</span><span class="on">Ken Burns</span></span></div></div>
+       <div class="sec"><h4>Kept in step</h4><div style="color:var(--a-dim);font-size:12px">Watching the document's folder. A save in Paint is drawn here on the next frame. The grade on this clip is Cut's own, applied over it.</div></div>
+       <div class="sec"><div style="display:flex;gap:8px"><span class="btn go">Open in Paint</span><span class="btn">Edit frame in Paint</span></div></div></div></div>
+   <div class="tbar"><span class="chip on">Markers</span><span class="chip">Keyframes</span><span class="grow"></span><span class="kbd">Undo: Place "Harbour at dusk.paint"</span></div>
+   <div style="position:relative">
+     <div class="trk"><div class="lab">V2</div><div class="lane">${clip(40, 48, "T  Colonia", "var(--c-title)")}</div></div>
+     <div class="trk"><div class="lab">V1</div><div class="lane">
+       ${clip(0, 18, "Ferry deck", "var(--c-video)", { strip: SHOT.boats })}
+       ${clip(18, 28, "Harbour at dusk.paint", "var(--c-over)", { strip: SKY, fx: "PAINT · 12 layers", sel: true })}
+       ${clip(28, 44, "Market walk", "var(--c-video)", { strip: SHOT.market })}
+       ${clip(44, 60, "Interview - Ana", "var(--c-video)", { strip: SHOT.ana })}</div></div>
+     <div class="trk"><div class="lab">A1</div><div class="lane">${clip(0, 60, "♫  Sunrise theme.flac", "var(--c-music)")}</div></div>
+     <span style="position:absolute;top:0;bottom:0;left:${70 + px(21.1)}px;width:1.5px;background:#ff4d7a;z-index:5"></span>
+     <div class="menu" style="left:${70 + px(22)}px;top:-34px">
+       <div class="on">Open in Paint <span class="kbd" style="color:#e6eeff">⌘E</span></div><div>Reveal in Tracker</div><div>Replace with…</div><hr>
+       <div>Layers shown <span class="kbd">All</span></div><div>Freeze as a still</div></div>
+   </div>`;
+</script>
+</body>
+</html>

@@ -9,7 +9,8 @@
  *   - the tokens of each text, plain and with special tokens parsed - the
  *     same ids, in the same order;
  *   - a prompt of one token: the ten largest logits after it within
- *     EXACT of llama.cpp's - the arithmetic alone, before any drift;
+ *     EXACT of llama.cpp's, or EXACT_A_LAYER a layer for a model deep
+ *     enough to need more - the arithmetic alone, before any drift;
  *   - each longer prompt fed a token at a time: its top token llama.cpp's
  *     or a near-tie, and the ten largest logits within TOLERANCE;
  *   - the answer, fed llama.cpp's own tokens so the two cannot wander
@@ -60,6 +61,12 @@
 #include <unistd.h>
 
 #define EXACT 0.10f
+/* And for a deeper model, this much a layer: the drift is the order sums
+ * are taken in, and it is added to at every layer. Measured on 22 November
+ * 2026 as 0.0031, 0.0030 and 0.0030 a layer for Qwen2.5 0.5B, 1.5B and 3B
+ * (24, 28, 36 layers: 0.076, 0.085, 0.108) - the 3B past a flat 0.10 with
+ * every answer step llama.cpp's. */
+#define EXACT_A_LAYER 0.0035f
 #define TOLERANCE 2.0f
 #define NEAR 0.5f
 
@@ -1239,6 +1246,9 @@ int main(int argc, char **argv)
     llm_offload(&m, llm_gpu_product, llm_gpu_done, &gpu);
   }
 
+  const float exact = EXACT_A_LAYER * (float)m.n_layer > EXACT
+                    ? EXACT_A_LAYER * (float)m.n_layer : EXACT;
+
   static char line[1 << 16];
   static int32_t got[4096];
   static int want[4096];
@@ -1309,7 +1319,7 @@ int main(int argc, char **argv)
       for (int i = 0; i < n; i++) if (ids[i] == mine) theirs_of_mine = logits[i];
       same = mine == ids[0] || (theirs_of_mine >= logits[0] - NEAR
                                 && m.logits[ids[0]] >= m.logits[mine] - NEAR);
-      float allowed = prompt_n == 1 ? EXACT : TOLERANCE;
+      float allowed = prompt_n == 1 ? exact : TOLERANCE;
 
       char what[160];
       snprintf(what, sizeof what, "prompt %d's top token %d against llama.cpp's %d, not a "
@@ -1386,6 +1396,6 @@ int main(int argc, char **argv)
          "special; one token's logits within %.2f; each prompt's top token and ten largest logits "
          "within %.2f; every answer step llama.cpp's choice or a near-tie within %.2f, %d of "
          "them)\n", checks, with_gpu ? ", its products on the GPU in the emulator" : "",
-         (int)m.name.n, m.name.s, EXACT, TOLERANCE, NEAR, ties);
+         (int)m.name.n, m.name.s, exact, TOLERANCE, NEAR, ties);
   return 0;
 }

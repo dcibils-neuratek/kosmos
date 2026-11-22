@@ -1,0 +1,147 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Kosmos Cut, a video editor: the application over the Timeline library,
+  the new Edit Kit, the Media Kit grown to write as well as read, the
+  Graphics Kit's colour primitives and the Playback Kit. The busiest path -
+  a frame played or scrubbed - drawn through it (F), the sound (A), and an
+  export (X). Drawn on 22 November 2026, before any of it is built;
+  `docs/videoedit.md` is the argument and `docs/videoedit.html` the window.
+
+  Rendered to docs/videoedit-architecture.png by headless Chrome at twice
+  its size, as docs/usbaudio-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Cut architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Kosmos Cut - what it stands on</h1>
+<p class="sub">A video editor is the thinnest layer: the timeline's rules in Lua, everything per pixel and per sample in C. The Media Kit reads (and now writes) films, the Edit Kit renders a timeline at a moment - the same code for the viewer and for export - and the Playback Kit plays the mix in the audio band. A frame on the timeline (F) never passes through Lua, and neither does an exported one (X).</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits, in the image <code>media.elf</code></span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">F</span><span>a frame played or scrubbed</span><span class="f">X</span><span>a frame exported</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Application</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Kosmos Cut - <code>user/installed/Cut/</code></b><p>library, viewer, inspector, timeline, the tools, Simple and Full, the Export sheet. Says what the timeline is; lends the newest frame to the viewer <span class="f">F1 F6</span> <span class="f">X1</span></p></div>
+        <div class="box"><b>Video, after <code>media.md</code> M6</b><p>names the same image, <code>media.elf</code>; one reader for both</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in the editor's process)</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>timeline.lua</code> - the Timeline library</b><p>tracks, clips, links, markers, keyframes; append, insert, overwrite, ripple, roll, slip, slide, stretch, razor, lift, extract, nest; undo; <code>project.json</code>; <code>describe()</code> into <code>edit.h</code>'s shape <span class="f">F1</span></p></div>
+        <div class="box"><b>ui.lua</b><p>the window, lists, sliders, sheets; <code>ui.lend_picture</code> for the viewer, strips and scopes <span class="f">F6</span></p></div>
+        <div class="box"><b>panel, json, prefs, notify, filetypes</b><p>Open window, the project file, settings, "export finished", <code>.cut</code></p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, linked into <code>media.elf</code> with the POSIX layer)</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>The Edit Kit - <code>user/kits/edit/</code></b><p>a timeline at a moment: live clips and their source time, a frame cache with decode-ahead, newest-wins scrubbing, every layer converted and scaled to the viewer's size, effects, transitions, titles, into a ring of three surfaces <span class="f">F2-F5</span>; the mix of every track, EQ, compressor, R128 meter <span class="f">A</span>; export on threads at LOW <span class="f">X2-X3</span></p></div>
+        <div class="box"><b>The Playback Kit - <code>playback.h</code></b><p>the mix as 16-bit PCM into its input ring; its thread in the audio band; the clock is frames heard <span class="f">A</span></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">GROWS</span><b>The Media Kit - <code>media.h</code></b><p>as now: WebM, MP4, Ogg, MP3, FLAC; AV1, VP9, H.264, Opus, AAC. New: <code>media_frame_at</code>, thumbnails, peaks <span class="f">F3</span>; an encode door - x264, AAC, the mov and matroska muxers <span class="f">X4</span></p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>The Graphics Kit - gfx</b><p>as now: <code>gfx_i420</code>, stretch, blend, blur, text. New: <code>grade.c</code> - grade, curves, 3D LUT, qualifier, key, masks <span class="f">F4</span>; <code>gfx_rgb_i420</code> <span class="f">X3</span></p></div>
+        <div class="box"><b>The Vulkan Kit - <code>kvk.c</code></b><p>compute pipelines, as Xavier's: the same effects as shaders from V14, held to the C path; lavapipe or <code>anv</code></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>/Home - diskfs</b><p>films read through the Storage Kit; the export written a piece at a time by <code>DISK_OP_WRITE_AT</code> <span class="f">X5</span></p></div>
+        <div class="box"><b>audio</b><p>the stream's ring, mixed with everything else, to the device <span class="f">A</span></p></div>
+        <div class="box later-box"><span class="tag later">LATER</span><b>intelgpu - the video engine</b><p>H.264 decode and VDEnc on the M700 (<code>m700-gpu.md</code> 5-8), behind <code>media.h</code>; the GPU for V14's shaders</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>regions</b><p>the frame ring, the frame cache, the strips' atlases, the sound rings, the export's write pieces</p></div>
+        <div class="box"><b>threads and bands</b><p>decode and render at NORMAL, sound in AUDIO, export at LOW</p></div>
+        <div class="box"><b>pulses</b><p>"a frame is in the ring", "room in the ring"; nothing waits on a server</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>F - a frame, played or scrubbed</h3>
+      <ol><li><b>F1</b> An edit: <code>timeline.lua</code> changes, and <code>describe()</code> hands the Edit Kit the whole timeline in fixed structs. Playing or a scrub says only a time; the newest wins.</li>
+          <li><b>F2</b> The render thread finds the live clips and each one's source time.</li>
+          <li><b>F3</b> Frames from the cache, decoded ahead by the Media Kit's threads; a miss seeks to the key frame and decodes forward - proxies make that one frame.</li>
+          <li><b>F4</b> Each layer to 4:2:0-to-RGB and the viewer's size in one SIMD pass; grade, LUT, key, blend, the dissolve, the title.</li>
+          <li><b>F5</b> Into the ring of three; a pulse.</li>
+          <li><b>F6</b> The window lends the newest due frame to the viewer; only the playhead's columns repaint.</li></ol></div>
+    <div class="card"><h3>A - the sound</h3>
+      <ol><li>The Edit Kit mixes every track - gain, pan, fades, EQ - ahead, into the Playback Kit's ring. Its thread in the audio band writes periods to the audio server. Its frames heard are the clock F follows.</li></ol></div>
+    <div class="card"><h3>X - export</h3>
+      <ol><li><b>X1</b> The sheet starts it; progress is a counter read twice a second.</li>
+          <li><b>X2</b> The same render, full size, from the originals, never dropping a frame.</li>
+          <li><b>X3</b> RGB to 4:2:0, SIMD.</li>
+          <li><b>X4</b> x264 on four threads, AAC; the mov muxer.</li>
+          <li><b>X5</b> 4 MB pieces through a ring to <code>/Home</code>, never the whole film in memory.</li></ol></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>Timeline library</td><td>a sound editor, Present's video, Automations</td></tr>
+        <tr><td>Edit Kit</td><td>Present's transitions, Camera's titles, any film made from a description</td></tr>
+        <tr><td>Media Kit, encoding</td><td>the Record Kit (one H.264 encoder), Camera, a screen recorder</td></tr>
+        <tr><td>frame at a time, peaks</td><td>Video's seek, Tracker's preview, Music</td></tr>
+        <tr><td><code>grade.c</code>, LUTs</td><td>Photo, Camera's looks</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

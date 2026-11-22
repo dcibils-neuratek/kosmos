@@ -4660,6 +4660,52 @@ def core(image, check, fails):
 
 
 
+def usb_audio(image, check):
+    """**A USB speaker named, and what it offers said** - `docs/usbaudio.md`
+    U1.
+
+    QEMU's own speaker, `-device usb-audio` - UAC1, one setting, 48 kHz,
+    16 bits, stereo, synchronous, 192 bytes a frame, exactly as
+    `tools/test_uacdecode.c` holds the decoder to its bytes - and `lsusb`
+    once the driver has watched: the driver's log names it a speaker and
+    says the setting, and `lsusb` lists it driven as audio. Before U1 it
+    was "no driver", class 01/01/00.
+
+    Its control, `USBAUDIO_ABSENT=1`, boots without the speaker, and every
+    check must fail.
+    """
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "none,id=ua0")
+
+    if os.environ.get("USBAUDIO_ABSENT") is None:
+        extra += ("-device", "usb-audio,bus=usb0.0,audiodev=ua0")
+
+    out = boot(image, None, 90.0, typed=("lsusb",), extra=extra,
+               after="xhci: watching for devices plugged in and out",
+               until="lsusb: ")
+
+    if out is None:
+        check(False, "the machine would not boot with a USB speaker")
+        return
+
+    out = out.replace("\r", "")
+    named = re.search(r"xhci: .* port \d+: a speaker, USB Audio Class 1: 1 setting$",
+                      out, re.M)
+    setting = re.search(r"xhci: .* port \d+:   plays on 1\.1: 2 channels, 16 bits, "
+                        r"48000 Hz, synchronous, 192 bytes an interval$", out, re.M)
+    rows = [l for l in out.splitlines() if re.match(r"\S+ port \d+ +[0-9a-f]{4}:[0-9a-f]{4}", l)]
+    shown = "\n    ".join(rows) or "(lsusb listed nothing)"
+    said = "\n    ".join(l for l in out.splitlines() if "xhci:" in l and "port" in l) or "(nothing)"
+
+    check(named is not None, "the driver did not name a speaker, UAC1, one setting:\n    " + said)
+    check(setting is not None,
+          "the driver did not say the setting - 1.1, stereo, 16 bits, 48 kHz, "
+          "synchronous, 192 bytes:\n    " + said)
+    check(any("46f4:0002" in l and "driven: audio" in l for l in rows),
+          "lsusb did not list QEMU's speaker (46f4:0002) driven as audio:\n    " + shown)
+
+
 def usb_list(image, check):
     """**Every USB device, driven or not, said to a program** - `docs/
     machine.md` M1, `usbproto.h`.
@@ -5840,7 +5886,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -5949,6 +5995,9 @@ def main():
     # And every USB device listed to a program, driven or not (M1).
     if 'usb_list' in wanted:
         usb_list(image, check)
+
+    if 'usb_audio' in wanted:
+        usb_audio(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:
