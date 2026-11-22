@@ -41389,3 +41389,13 @@ Intel's driver, is for the M700 (Q4).
   again, the two new Quake III images among them. The slowest suites were
   `x86-cafesa3d-2` 402 s and Flight's three, 341 to 386 s (the 6zp split,
   still to do).
+- **On the M700** (0.12.66, network-booted, the package installed with
+  `install quake3`): init chose `quake3-anv.elf`, and the engine said
+  `VK_RENDERER: Integrated Intel(R) HD Graphics 530 (SKL GT2)`, with
+  presentation `IMMEDIATE` over three images and sound at 44,100 Hz
+  stereo. It drew the demo's menu in a 1280 by 720 window. `\map q3dm17`
+  from its console loaded the native cgame in 0.39 s (QEMU: 8.24 s), and
+  `\cg_drawfps 1` read **125 fps**, the `com_maxfps` cap, while VNC was
+  reading the screen. Sound was started but not heard (nobody at the
+  machine); mouse and keys are Diego's to try. This is Q4's first half:
+  the `timedemo` and the present's split are still to come.

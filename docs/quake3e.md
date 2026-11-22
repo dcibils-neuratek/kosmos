@@ -490,7 +490,13 @@ only their own suites.
   brought up on an empty pak as far as `vk_initialize`, which needs no
   content. That checks the instance, the device, the surface and the
   swapchain.
-- **Q4 - on the M700, on `anv`.** The second image, or the loader. Sound
+- **Q4 - first half done on 22 November 2026** (`testing.md` 18.986): on
+  the M700 the package installs, init chooses `quake3-anv.elf`, and the
+  demo's menu and The Longest Yard run on the HD 530 at 125 fps, the
+  frame cap, at 1280 by 720 in a window. Still to come: sound heard, mouse
+  and keys played by a person, `timedemo`, and the present's split. The
+  plan as written:
+- **Q4 (as planned) - on the M700, on `anv`.** The second image, or the loader. Sound
   on. *Measure*: `timedemo` frames a second at 1280 by 720 and 1920 by
   1080; the present split into fence, copy and commit as in 18.936; and
   composing's cost for a full-window game (§6). *Test on the M700*: the

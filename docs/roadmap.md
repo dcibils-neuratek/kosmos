@@ -7028,6 +7028,19 @@ under QEMU does not have:
    with `x86-cafesa3d-2` at 391 s. They want splitting in halves as the
    browser's were, before the next shared change.
 
+   **Measured on 22 November 2026: splitting is not enough.** The whole
+   gate of 0.12.66 took 18:57, of which 399 s was the images. That was a
+   one-off: Quake3e and ioquake3 compiled from nothing in the test build.
+   Measured again on the same change, the image steps take 9 s, 8 s and
+   27 s. The suites' own times add up to **8,381 s on ten processors**:
+   about 14 minutes even if they were packed perfectly. Splitting the four
+   slowest (402, 386, 352 and 341 s) shortens the tail, but cannot bring a
+   whole gate under ten minutes. So the budget holds only for the gates
+   that run what changed. A whole gate needs less work per check: fewer
+   boots shared across more checks, less TCG time per suite, or a machine
+   that runs the guests natively (`make fast` under HVF is still broken on
+   this Mac). Which of those to take is Diego's.
+
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua
    code". It was rejected in August for Lua 5.4 (`design.md` §5, README),
@@ -12030,7 +12043,7 @@ after flight"; `docs/quake3e.md`, Q0 to Q6: the design agreed, key
 transitions and pointer capture as kits with Quake 1 their second user, a
 dedicated server, the client on `lavapipe`, `anv` on the M700, the QVM
 JIT, UDP and multiplayer) -
-then G8, G9 and the daily-driver list, in their order. **Reordered on 21 November 2026**, with Flight done (Diego: "Now that the flight sim is done we need to focus to other things", "Quake 3e port so I can play tomorrow", "Then Xavier with gpu support with vulkan (llama.cpp supports vulkan)", "Then we need to work on the daily driver requirements"): **Quake3e first** (`docs/quake3e.md`, Q1 to Q4 for a game he can play on the M700, Q5 and Q6 after; Q1, pointer capture with Quake 1 its first user, built in 0.12.65, `testing.md` 18.985; Q2 and Q3 together - the engine in a Kosmos window on lavapipe, the game's code ioquake3's compiled native since the demo's QVMs are older than the engine - built in 0.12.66, 18.986; Q4, the M700, next); **then Xavier on the GPU through Vulkan**, designed first - the LLM Kit is Kosmos's own, so whether it gains Vulkan compute of its own or takes llama.cpp's Vulkan backend is that design's question; **then the daily-driver list**, in its order, and G4, G5, G8 and G9 placed among it when Diego says. The simulator takes G9's full-screen flip
+then G8, G9 and the daily-driver list, in their order. **Reordered on 21 November 2026**, with Flight done (Diego: "Now that the flight sim is done we need to focus to other things", "Quake 3e port so I can play tomorrow", "Then Xavier with gpu support with vulkan (llama.cpp supports vulkan)", "Then we need to work on the daily driver requirements"): **Quake3e first** (`docs/quake3e.md`, Q1 to Q4 for a game he can play on the M700, Q5 and Q6 after; Q1, pointer capture with Quake 1 its first user, built in 0.12.65, `testing.md` 18.985; Q2 and Q3 together - the engine in a Kosmos window on lavapipe, the game's code ioquake3's compiled native since the demo's QVMs are older than the engine - built in 0.12.66, 18.986; Q4's first half on the M700 the same night - 125 fps, the cap, on the HD 530 at 1280x720; **then Xavier on the GPU through Vulkan**, designed first - the LLM Kit is Kosmos's own, so whether it gains Vulkan compute of its own or takes llama.cpp's Vulkan backend is that design's question; **then the daily-driver list**, in its order, and G4, G5, G8 and G9 placed among it when Diego says. The simulator takes G9's full-screen flip
 when that lands. **The simulator flies over real places** (Diego, 19
 November 2026: "Can we use real world maps for the flight simulator?", "So
 i can choose q city to fly", "And see the actual satellite images"):

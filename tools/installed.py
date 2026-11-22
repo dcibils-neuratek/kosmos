@@ -59,8 +59,10 @@ SYSTEM_IMAGES = {"webkit": "webkit.elf"}
 DATA = {
     "Doom": [("doom1.wad", "doom1.wad")],
     "Quake": [("id1/pak0.pak", "id1/pak0.pak")],
-    # Quake III's: the full game's first pak, or the demo's.
-    "Quake3": [("baseq3/pak0.pk3", "baseq3/pak0.pk3"), ("demoq3/pak0.pk3", "demoq3/pak0.pk3")],
+    # Quake III's: the full game's nine paks - its own and the 1.32 point
+    # release's - and the demo's one, each taken if it is there.
+    "Quake3": [("baseq3/pak%d.pk3" % n, "baseq3/pak%d.pk3" % n) for n in range(9)]
+              + [("demoq3/pak0.pk3", "demoq3/pak0.pk3")],
 }
 
 # What an application carries from the tree's own vendored assets, beside

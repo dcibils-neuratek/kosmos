@@ -288,7 +288,7 @@ which wants the M700's look switched to Liquid Glass for a minute.
 **Reordered on 21 November 2026** (Diego: "Quake 3e port so I can play
 tomorrow", "Then Xavier with gpu support with vulkan", "Then we need to
 work on the daily driver requirements"): **Quake3e** (`docs/quake3e.md`,
-Q1-Q4 to play on the M700; Q1, pointer capture, built in 0.12.65; Q2-Q3, Quake III in a Kosmos window on lavapipe with the game's code native, built in 0.12.66 - the demo's menu and The Longest Yard in QEMU; Q4, the M700 on `anv`, next), **Xavier on Vulkan** (designed first), then
+Q1-Q4 to play on the M700; Q1, pointer capture, built in 0.12.65; Q2-Q3, Quake III in a Kosmos window on lavapipe with the game's code native, built in 0.12.66 - the demo's menu and The Longest Yard in QEMU; Q4's first half on 22 November: on the M700's HD 530 the demo runs at 125 fps, the cap, in a 1280x720 window; sound heard, play by a person and a timedemo next), **Xavier on Vulkan** (designed first), then
 **the daily-driver list** in item 3's order below. The order below stands
 under that.
 
