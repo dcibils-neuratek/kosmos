@@ -1402,10 +1402,12 @@ the hold changes, and it is decision 1 below:
    is still the processor's. Settings' GPU switch moves the model between
    Vulkan and the processor, and Compare puts the GPU's row first, with
    the first word on every row.
-6. **V6, the M700**: `llm-anv.elf` installed, init choosing it, and the
-   models' answers held there. Then the speeds, writing and reading,
-   beside four cores with AVX2. Needs a netboot, after Diego's Quake III
-   evening.
+6. **V6, the M700 - built 22 November 2026** (0.12.73, `testing.md`
+   18.992): `llm-anv.elf` on the HD 530, the products' shapes measured
+   there (`llm_vk_tune`), and a GPU that stops handing its answer to the
+   processor. **Not yet faster**: Qwen 0.5B writes 13.95 tokens a second
+   against four cores' 21.92 and reads 1.39 times sooner; 1.5B writes 6.90
+   against 12.54 and reads a tenth slower. So decision 3 keeps X7's path.
 7. **V7, faster**: what the M700's numbers point at. Flash attention, the
    subgroup forms of the products, and the processor taking a share if
    it still has memory to spare (G5's lesson says measure first).
@@ -1419,6 +1421,12 @@ your recommendations on xaavier", then "go ahead".
    with each operation within llama.cpp's bounds *(recommended)*, instead
    of X7's to-the-bit. To the bit is not possible with shaders written for
    speed, short of writing our own again.
+   *Found in V6, 22 November 2026, and open:* Qwen 2.5 1.5B does not
+   meet this, on lavapipe (12 tokens, in 0.12.72 as committed) or on the
+   M700 (29). The cause is measured: the processor rounds each product's
+   input to 8 bits, and without that rounding the two agree for 32 of 32
+   (`testing.md` 18.992). Recommended: hold the GPU to an unrounded pass
+   kept in the test. The hold is unchanged until Diego says otherwise.
 2. **Port or our own**: (b), our own backend on llama.cpp's shaders
    *(recommended)*, or (a), ggml-vulkan with llama.cpp around it.
 3. **X7's EU path**: kept beside Vulkan until V6 shows Vulkan faster on

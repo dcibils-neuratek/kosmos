@@ -254,7 +254,7 @@ int kvk_open(struct kvk *v, const char *program, int flags)
             VkQueryPoolCreateInfo qpci = {
                 .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
                 .queryType = VK_QUERY_TYPE_TIMESTAMP,
-                .queryCount = 2,
+                .queryCount = 2 + 1 + KVK_MARKS,   /* a recording's two, and the marks */
             };
             if (v->vkCreateQueryPool(v->device, &qpci, NULL, &v->stamps) != VK_SUCCESS) {
                 v->stamps = VK_NULL_HANDLE;
@@ -450,6 +450,43 @@ void kvk_time_end(struct kvk *v)
     if (v->stamps != VK_NULL_HANDLE) {
         v->vkCmdWriteTimestamp(v->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, v->stamps, 1);
     }
+}
+
+void kvk_marks_start(struct kvk *v)
+{
+    v->marks = 0;
+    if (v->stamps != VK_NULL_HANDLE) {
+        v->vkCmdResetQueryPool(v->cmd, v->stamps, 2, 1 + KVK_MARKS);
+        v->vkCmdWriteTimestamp(v->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, v->stamps, 2);
+        v->marks = 1;
+    }
+}
+
+void kvk_mark(struct kvk *v)
+{
+    if (v->stamps != VK_NULL_HANDLE && v->marks > 0 && v->marks <= KVK_MARKS) {
+        v->vkCmdWriteTimestamp(v->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, v->stamps,
+                               2 + v->marks);
+        v->marks++;
+    }
+}
+
+uint32_t kvk_marks_read(struct kvk *v, double *ms, uint32_t room)
+{
+    static uint64_t at[1 + KVK_MARKS];
+    uint64_t mask = v->stamp_bits >= 64 ? ~(uint64_t)0 : ((uint64_t)1 << v->stamp_bits) - 1;
+    uint32_t n = v->marks;
+
+    if (v->stamps == VK_NULL_HANDLE || n < 2 ||
+        v->vkGetQueryPoolResults(v->device, v->stamps, 2, n, sizeof(at[0]) * n, at, sizeof(at[0]),
+                                 VK_QUERY_RESULT_64_BIT) != VK_SUCCESS) {
+        return 0;
+    }
+    n = n - 1 < room ? n - 1 : room;
+    for (uint32_t i = 0; i < n; i++) {
+        ms[i] = (double)((at[i + 1] - at[i]) & mask) * v->stamp_ns / 1e6;
+    }
+    return n;
 }
 
 double kvk_time_ms(struct kvk *v)

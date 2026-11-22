@@ -61,6 +61,7 @@ struct llm_vk {
   struct kvk_compute op[LLM_VK_OPS];
   struct kvk_compute mmv[LLM_VK_MMV_KINDS];
   uint32_t mmv_rows[LLM_VK_MMV_KINDS];   /* rows a workgroup makes */
+  uint32_t mmv_lanes[LLM_VK_MMV_KINDS];  /* and the lanes it has */
   /* The question's (V5), by the same kinds: medium tiles, and small. */
   struct kvk_compute mm[LLM_VK_MMV_KINDS], mm_s[LLM_VK_MMV_KINDS];
   uint32_t lanes;                        /* lanes a workgroup, for the products */
@@ -161,6 +162,8 @@ int llm_vk_mmv_nc(struct llm_vk *g, struct kvk_span a, struct kvk_span b, struct
 
 struct llm_model;
 
+#define LLM_VK_PROFILE 48
+
 /* A model's weights in storage buffers, its cache - keys a position a row,
  * values transposed - and the working vectors, all on the device. */
 struct llm_vk_model {
@@ -171,6 +174,18 @@ struct llm_vk_model {
   struct kvk_buffer x, xn, qkv, att, prob, aout, ffo, ff, up, mlp, logits, pos;
   /* The same for a question's `LLM_BATCH` tokens at once, a token a row. */
   struct kvk_buffer bx, bxn, bq, bk, bv, baout, bffo, bff, bup, bmlp, bpos;
+  /* **Where a step's time goes** (V6), with the model's clock
+   * (`llm_clock`): steps and batches taken, the clock's ticks recording
+   * them and from submitting to done, and the device's own milliseconds
+   * between the first command and the last. Summed until the caller
+   * clears them. */
+  uint64_t steps, record_ticks, submit_ticks;
+  double gpu_ms;
+  /* With `profile`, each step's GPU time by the line of `llm_vk.c` whose
+   * barrier ended it: `LLM_VK_PROFILE` lines at most, summed over steps. */
+  int profile;
+  uint32_t prof_n, prof_line[LLM_VK_PROFILE];
+  double prof_ms[LLM_VK_PROFILE];
   char why[160];
 };
 
@@ -182,6 +197,14 @@ void llm_vk_model_close(struct llm_vk_model *vm);
  * submitted once: the logits into `m->logits`, the cache a position on, as
  * `llm_step` leaves them. 0, or -1. */
 int llm_vk_step(struct llm_vk_model *vm, int32_t token);
+
+/* **The vector product's shapes tried on this device** (V6): every lanes
+ * and rows of a small grid over the feed-forward's weights and the
+ * logits', each timed by the device and held to the answer of the shape
+ * that is built, a line each to `said`. For a profile, not for use: it
+ * makes some sixty pipelines and takes seconds. Changes nothing. */
+typedef void llm_vk_said_fn(void *ctx, const char *line);
+void llm_vk_tune(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx);
 
 /* Past this many tokens a batch's products are matrix products, and up to
  * it vector products a token at a time, as ggml's `mul_mat_vec_max_cols`. */

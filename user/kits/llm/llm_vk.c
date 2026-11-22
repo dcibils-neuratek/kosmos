@@ -429,35 +429,64 @@ void llm_vk_close(struct llm_vk *g)
   g->v = NULL;
 }
 
+/* The vector products' shaders, by kind. */
+static const struct { const uint32_t *code; size_t bytes; } SPV[LLM_VK_MMV_KINDS] = {
+  { llmvk_mul_mat_vec_f32_f32_f32, sizeof(llmvk_mul_mat_vec_f32_f32_f32) },
+  { llmvk_mul_mat_vec_f16_f32_f32, sizeof(llmvk_mul_mat_vec_f16_f32_f32) },
+  { llmvk_mul_mat_vec_q4_0_f32_f32, sizeof(llmvk_mul_mat_vec_q4_0_f32_f32) },
+  { llmvk_mul_mat_vec_q8_0_f32_f32, sizeof(llmvk_mul_mat_vec_q8_0_f32_f32) },
+  { llmvk_mul_mat_vec_q6_k_f32_f32, sizeof(llmvk_mul_mat_vec_q6_k_f32_f32) },
+};
+
+/* How a workgroup's lanes are summed (V6): through shared memory or, for
+ * Q4_0, by `subgroupAdd` and then shared memory across subgroups. ggml's
+ * third, by `subgroupAdd` alone, hung an HD 530 (`testing.md` 18.992). */
+enum { SUM_SHARED, SUM_ADD, SUMS };
+static const char *const SUM_NAME[SUMS] = { "shared", "add" };
+
+/* Kind `k`'s vector product, `lanes` a workgroup making `rows` rows. */
+static int mmv_make(struct kvk *v, struct kvk_compute *c, int k, int sum, uint32_t lanes, uint32_t rows)
+{
+  const uint32_t spec[3] = { lanes, rows, 1 };
+  const int add = sum == SUM_ADD && k == LLM_VK_MMV_Q4_0;
+
+  return kvk_compute_make(v, c, add ? llmvk_mul_mat_vec_q4_0_add : SPV[k].code,
+                          add ? sizeof(llmvk_mul_mat_vec_q4_0_add) : SPV[k].bytes,
+                          5, sizeof(struct mmv_push), spec, 3, "mmv");
+}
+
 int llm_vk_open(struct llm_vk *g, struct kvk *v)
 {
   /* The products' pipelines, with the rows a workgroup makes that
    * `ggml-vulkan.cpp` chooses (`rm_stdq`, `rm_kq`): two of Q4_0 and one
    * of Q8_0 a workgroup, twice that on an Intel GPU; one of F32, two of
    * F16, two of Q6_K. A workgroup is four subgroups (`DMMV_WG_SIZE_LARGE`,
-   * summed through shared memory), Q6_K's subgroups at least sixteen. */
+   * summed through shared memory), Q6_K's subgroups at least sixteen.
+   *
+   * **Intel's are measured, not ggml's** (V6, `llm_vk_tune`, `testing.md`
+   * 18.992). On an HD 530: Q4_0 by subgroups at 64 lanes by 8 rows, 10.5 ms
+   * where 128 by 4 through shared memory took 17.0; Q8_0 at 16 by 8, 45.3
+   * where 128 by 2 took 65.3; Q6_K at 16 by 8, 120 where 128 by 2 took 224. */
   const uint32_t intel = strncmp(v->device_name, "Intel", 5) == 0;
   const uint32_t rm_stdq = intel ? 2 : 1;
   const uint32_t sub = v->subgroup_size;
   const uint32_t sub16 = sub < 16 ? 16 : sub;
-  static const struct { const uint32_t *code; size_t bytes; } SPV[LLM_VK_MMV_KINDS] = {
-    { llmvk_mul_mat_vec_f32_f32_f32, sizeof(llmvk_mul_mat_vec_f32_f32_f32) },
-    { llmvk_mul_mat_vec_f16_f32_f32, sizeof(llmvk_mul_mat_vec_f16_f32_f32) },
-    { llmvk_mul_mat_vec_q4_0_f32_f32, sizeof(llmvk_mul_mat_vec_q4_0_f32_f32) },
-    { llmvk_mul_mat_vec_q8_0_f32_f32, sizeof(llmvk_mul_mat_vec_q8_0_f32_f32) },
-    { llmvk_mul_mat_vec_q6_k_f32_f32, sizeof(llmvk_mul_mat_vec_q6_k_f32_f32) },
-  };
   const uint32_t rows[LLM_VK_MMV_KINDS] = { 1, 2, 2 * rm_stdq, 1 * rm_stdq, 2 };
 
   memset(g, 0, sizeof(*g));
   g->v = v;
   g->lanes = sub * 4;
   for (int k = 0; k < LLM_VK_MMV_KINDS; k++) {
-    uint32_t spec[3] = { (k == LLM_VK_MMV_Q6_K ? sub16 : sub) * 4, rows[k], 1 };
-
-    g->mmv_rows[k] = rows[k];
-    if (!kvk_compute_make(v, &g->mmv[k], SPV[k].code, SPV[k].bytes, 5,
-                          sizeof(struct mmv_push), spec, 3, "mmv")) {
+    uint32_t lanes = (k == LLM_VK_MMV_Q6_K ? sub16 : sub) * 4, each = rows[k];
+    int sum = SUM_SHARED;
+    if (intel && k >= LLM_VK_MMV_Q4_0) {
+      lanes = k == LLM_VK_MMV_Q4_0 ? 64 : 16;
+      sum = k == LLM_VK_MMV_Q4_0 ? SUM_ADD : SUM_SHARED;
+      each = 8;
+    }
+    g->mmv_lanes[k] = lanes;
+    g->mmv_rows[k] = each;
+    if (!mmv_make(v, &g->mmv[k], k, sum, lanes, each)) {
       snprintf(g->why, sizeof(g->why), "the product's pipeline %d: %s", k, v->why);
       llm_vk_close(g);
       return 0;
@@ -803,11 +832,20 @@ int llm_vk_step(struct llm_vk_model *vm, int32_t token)
   struct kvk_span k = part(vm, &vm->qkv, E, KV, &ok);
   struct kvk_span vv = part(vm, &vm->qkv, 2 * (uint64_t)E, KV, &ok);
   struct kvk_span qkv = part(vm, &vm->qkv, 0, 3 * (uint64_t)E, &ok);
+  const uint64_t t0 = m->clock ? m->clock() : 0;
   if (!ok || !kvk_begin(v)) {
     snprintf(vm->why, sizeof(vm->why), "%s", ok ? v->why : "a vector off the device's alignment");
     return -1;
   }
-#define B() kvk_compute_barrier(v)
+  /* With `profile`, a mark after each barrier, and the line it is on. */
+  static uint32_t tag[KVK_MARKS];
+  uint32_t tags = 0;
+#define B() do { kvk_compute_barrier(v); \
+                 if (vm->profile && tags < KVK_MARKS) { kvk_mark(v); tag[tags++] = __LINE__; } } while (0)
+  kvk_time_start(v);
+  if (vm->profile) {
+    kvk_marks_start(v);
+  }
 
   for (uint32_t l = 0; l < m->n_layer && ok; l++) {
     const struct llm_layer *L = &m->layers[l];
@@ -897,9 +935,34 @@ int llm_vk_step(struct llm_vk_model *vm, int32_t token)
     kvk_submit(v);   /* what was recorded is ended, and thrown away */
     return -1;
   }
+  kvk_time_end(v);
+  const uint64_t t1 = m->clock ? m->clock() : 0;
   if (!kvk_submit(v)) {
     snprintf(vm->why, sizeof(vm->why), "submitting: %s", v->why);
     return -1;
+  }
+  const uint64_t t2 = m->clock ? m->clock() : 0;
+  const double gpu = kvk_time_ms(v);
+  vm->steps++;
+  vm->record_ticks += t1 - t0;
+  vm->submit_ticks += t2 - t1;
+  vm->gpu_ms += gpu > 0 ? gpu : 0;
+  if (vm->profile) {
+    static double ms[KVK_MARKS];
+    uint32_t n = kvk_marks_read(v, ms, tags);
+    for (uint32_t i = 0; i < n; i++) {
+      uint32_t at = 0;
+      while (at < vm->prof_n && vm->prof_line[at] != tag[i]) {
+        at++;
+      }
+      if (at == vm->prof_n && vm->prof_n < LLM_VK_PROFILE) {
+        vm->prof_line[vm->prof_n] = tag[i];
+        vm->prof_ms[vm->prof_n++] = 0;
+      }
+      if (at < vm->prof_n) {
+        vm->prof_ms[at] += ms[i];
+      }
+    }
   }
   memcpy(m->logits, vm->logits.bytes, (size_t)m->n_vocab * 4);
   m->n_past++;
@@ -993,11 +1056,13 @@ int llm_vk_batch(struct llm_vk_model *vm, const int32_t *tokens, uint32_t T)
     snprintf(vm->why, sizeof(vm->why), "a row off the device's alignment");
     return -1;
   }
+  const uint64_t t0 = m->clock ? m->clock() : 0;
   if (!kvk_begin(v)) {
     snprintf(vm->why, sizeof(vm->why), "%s", v->why);
     return -1;
   }
 #define B() kvk_compute_barrier(v)
+  kvk_time_start(v);
 
   for (uint32_t l = 0; l < m->n_layer && ok; l++) {
     const struct llm_layer *L = &m->layers[l];
@@ -1083,11 +1148,149 @@ int llm_vk_batch(struct llm_vk_model *vm, const int32_t *tokens, uint32_t T)
     kvk_submit(v);
     return -1;
   }
+  kvk_time_end(v);
+  const uint64_t t1 = m->clock ? m->clock() : 0;
   if (!kvk_submit(v)) {
     snprintf(vm->why, sizeof(vm->why), "submitting: %s", v->why);
     return -1;
   }
+  const uint64_t t2 = m->clock ? m->clock() : 0;
+  const double gpu = kvk_time_ms(v);
+  vm->steps++;
+  vm->record_ticks += t1 - t0;
+  vm->submit_ticks += t2 - t1;
+  vm->gpu_ms += gpu > 0 ? gpu : 0;
   memcpy(m->logits, vm->logits.bytes, (size_t)m->n_vocab * 4);
   m->n_past += T;
   return 0;
+}
+
+/* One weight's sweep: `count` layers' worth of it one after another, timed
+ * by the device, as it is built and then at every shape. */
+static void tune_weight(struct llm_vk_model *vm, const struct llm_tensor **w, uint32_t count,
+                        const char *name, struct kvk_span out, const float *got, float *want,
+                        llm_vk_said_fn *said, void *ctx)
+{
+  /* Each sum's lanes, and the rows each is tried at. */
+  static const uint32_t LANES[SUMS][3] = { { 16, 32, 64 }, { 16, 64, 128 } };
+  static const uint32_t ROWS[4] = { 2, 4, 8, 16 };
+  struct llm_vk *g = vm->g;
+  struct kvk *v = g->v;
+  const int k = llm_vk_mmv_kind(w[0]->type);
+  const uint32_t cols = (uint32_t)w[0]->ne[0], n = (uint32_t)w[0]->ne[1];
+  const int shapes = (k == LLM_VK_MMV_Q4_0 ? SUMS : 1) * 3 * 4;
+  char line[192];
+
+  if (k < 0) {
+    return;
+  }
+  const struct kvk_compute built = g->mmv[k];
+  const uint32_t built_rows = g->mmv_rows[k];
+  double built_ms = 0;
+
+  for (int i = -1; i < shapes; i++) {         /* -1: as it is built */
+    struct kvk_compute c;
+    uint32_t lanes = 0, rows = built_rows;
+    memset(&c, 0, sizeof(c));
+    const char *sum = "as built";
+    if (i >= 0) {
+      lanes = LANES[i / 12][i / 4 % 3];
+      rows = ROWS[i % 4];
+      sum = SUM_NAME[i / 12];
+      if (!mmv_make(v, &c, k, i / 12, lanes, rows)) {
+        snprintf(line, sizeof(line), "%s, %s, %u lanes %u rows: no pipeline: %s", name, sum, lanes, rows, v->why);
+        said(ctx, line);
+        continue;
+      }
+      g->mmv[k] = c;
+      g->mmv_rows[k] = rows;
+    }
+
+    /* A layer a submission: the driver resets the GPU when a program's
+     * fence has not moved for three seconds (GPU_HANG_MS), and a poor
+     * shape over every layer at once is longer than that. */
+    int ok = 1;
+    double ms = 0;
+    /* The first pass is thrown away: a driver may compile a pipeline as it
+     * first runs it, as lavapipe does, and that is not the shape's time. */
+    ok = kvk_begin(v);
+    if (ok) {
+      ok = llm_vk_mmv(g, w[0]->type, whole(tensor_buffer(vm, w[0])), cols, n, whole(&vm->x), out);
+      ok = kvk_submit(v) && ok;
+    }
+    for (uint32_t j = 0; j < count && ok; j++) {
+      ok = kvk_begin(v);
+      if (ok) {
+        kvk_time_start(v);
+        ok = llm_vk_mmv(g, w[j]->type, whole(tensor_buffer(vm, w[j])), cols, n, whole(&vm->x), out);
+        kvk_compute_barrier(v);
+        kvk_time_end(v);
+        ok = kvk_submit(v) && ok;
+        ms += kvk_time_ms(v);
+      }
+    }
+
+    if (!ok) {
+      snprintf(line, sizeof(line), "%s, %s, %u lanes %u rows: it would not run", name, sum, lanes, rows);
+    } else {
+      double err = 0, all = 0;
+      for (uint32_t r = 0; r < n; r++) {
+        if (i < 0) {
+          want[r] = got[r];
+        }
+        const double d = (double)got[r] - want[r];
+        err += d * d;
+        all += (double)want[r] * want[r];
+      }
+      /* Judged against what is built, which the host's tests hold to double
+       * precision: a faster shape with another answer is no shape at all. */
+      const int same = err <= 1e-7 * all;
+      if (i < 0) {
+        built_ms = ms;
+        snprintf(line, sizeof(line), "%s %ux%u, as built (%u lanes %u rows): %llu us", name, n, cols,
+                 g->mmv_lanes[k], rows,
+                 (unsigned long long)(ms * 1000));
+      } else {
+        snprintf(line, sizeof(line), "%s, %s, %u lanes %u rows: %llu us%s", name, sum, lanes, rows,
+                 (unsigned long long)(ms * 1000), same ? "" : ", ANOTHER ANSWER");
+      }
+    }
+    said(ctx, line);
+
+    if (i >= 0) {
+      g->mmv[k] = built;
+      g->mmv_rows[k] = built_rows;
+      kvk_compute_free(v, &c);
+      if (!ok) {
+        break;                                /* a GPU that refused one is asked no more */
+      }
+      if (ms > 8 * built_ms) {
+        i = (i / 4) * 4 + 3;                  /* more rows only slower: the next lanes */
+      }
+    }
+  }
+}
+
+void llm_vk_tune(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx)
+{
+  const struct llm_model *m = vm->m;
+  /* The logits three times over: one dispatch alone is short to time. */
+  const struct llm_tensor *ff[128], *out[3] = { m->out_w, m->out_w, m->out_w };
+  const uint32_t layers = m->n_layer < 128 ? m->n_layer : 128;
+  const uint32_t most = m->n_vocab > m->n_ff ? m->n_vocab : m->n_ff;
+  float *want = malloc((size_t)most * 4);
+
+  if (!want) {
+    said(ctx, "the sweep: no memory");
+    return;
+  }
+  for (uint32_t c = 0; c < m->n_embd; c++) {
+    ((float *)vm->x.bytes)[c] = (float)((c * 7919u) % 1000u) / 500.0f - 1.0f;
+  }
+  for (uint32_t l = 0; l < layers; l++) {
+    ff[l] = m->layers[l].up_w;
+  }
+  tune_weight(vm, ff, layers, "every layer's up", whole(&vm->ff), vm->ff.bytes, want, said, ctx);
+  tune_weight(vm, out, 3, "the logits thrice", whole(&vm->logits), vm->logits.bytes, want, said, ctx);
+  free(want);
 }

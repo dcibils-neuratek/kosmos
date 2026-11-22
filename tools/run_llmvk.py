@@ -17,7 +17,11 @@ through `llm.lua`, as Xavier does:
   not on the GPU, so the tiny model's near ties fall the other way there
   (`test_llmvk`, `testing.md` 18.989) - a Q4_0 answer is held to being
   one, ready and as long as was asked;
-- **every region given back** after five answers.
+- **every region given back** after five answers;
+- **a GPU that stops costs no answer** (V6): booted again with a step made
+  to fail (`opt/kosmos/llm_vk_fail`), in the answer's writing, the server
+  says the processor takes over and that answer is still the kit's, byte
+  for byte, as is every one after it.
 
 **The control**: the same disk booted with `opt/kosmos/llm=cpu`, where init
 must start the server in its own image and no model may say it is on
@@ -182,6 +186,12 @@ def main():
           "a loaded model did not go to the GPU on llvmpipe")
     held = answers(said, "on Vulkan")
 
+    # The question's batch is the first step; the fourth is the answer's.
+    lost = boot(R, disk, ["-fw_cfg", "name=opt/kosmos/llm_vk_fail,string=3"])
+    check(lost.count("llm: Vulkan stopped, the processor takes over: failed as asked") == 1,
+          "a failed step: the server did not say, once, that the processor takes over")
+    answers(lost, "a GPU that stopped")
+
     cpu = boot(R, disk, ["-fw_cfg", "name=opt/kosmos/llm,string=cpu"])
     check("init: the LLM server from" not in cpu,
           "the control: init started the server from the Vulkan image with llm=cpu")
@@ -193,12 +203,14 @@ def main():
         print("FAIL: " + f)
 
     if fails:
+        print("--- a GPU that stopped:\n" + lost[-2000:])
         print("FAIL: %d of %d checks\n--- on Vulkan:\n%s\n--- the control:\n%s" %
               (len(fails), checks, said[-3000:], cpu[-2000:]))
         return 1
 
     print("PASS: %d checks - the LLM server started from llm-vk.elf, every model on Vulkan, "
           "%d F16 answers the kit's own byte for byte, Q4_0's answered, regions given back; "
+          "a step that failed finished on the processor with the kit's answer, "
           "and with llm=cpu the system's own server, on the processor, the same" %
           (checks, held))
     return 0

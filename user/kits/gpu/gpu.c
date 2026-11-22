@@ -20,6 +20,11 @@ extern lua_State *kosmos_lua_state;
 
 static long device = -2;            /* -2: not asked yet */
 
+void kg_device_given(long capability)
+{
+    device = capability;
+}
+
 long kg_device(void)
 {
     if (device == -2) {

@@ -6,6 +6,13 @@
 --   fetch https://10.0.2.2:8443/ --name test.local --cacert /Home/ca.der
 --   fetch --quiet https://example.com/        the size and the status, no body
 --   fetch 10.0.2.2 8000 /                      (the form it had first)
+--   fetch --out /Home/Models/m.gguf http://192.168.1.34:47701/m.gguf
+--                                              onto the disk as it arrives
+--
+-- **`--out FILE`, curl's `-o`**: the body written to a file rather than
+-- printed, through `download.lua` - a region to the disk, summed on the
+-- way, resumed where it was cut - so a file of any size, a model of a
+-- gigabyte among them, which a Lua string could not hold.
 --
 -- **The smallest thing that exercises a whole connection**: open it, send
 -- bytes, read bytes, notice the reply end. Telnet needs a person and a
@@ -28,7 +35,7 @@
 -- so the two cannot disagree about what a reply is or whom to trust - the
 -- image's roots and `/Home/Preferences/Authorities`.
 
-local words, named, cacert, quiet = {}, nil, nil, false
+local words, named, cacert, quiet, out = {}, nil, nil, false, nil
 local given = {}
 
 for _, w in ipairs(use("/Kosmos/Libraries/files.lua").words(args)) do given[#given + 1] = w end
@@ -41,6 +48,8 @@ do
       named, i = given[i + 1], i + 2
     elseif given[i] == "--cacert" then
       cacert, i = given[i + 1], i + 2
+    elseif given[i] == "--out" then
+      out, i = given[i + 1], i + 2
     elseif given[i] == "--quiet" then
       quiet, i = true, i + 1
     else
@@ -76,6 +85,25 @@ if cacert then
   end
 
   anchors[1] = der
+end
+
+if out then
+  local download = use("/Kosmos/Libraries/download.lua")
+  local files = use("/Kosmos/Libraries/files.lua")
+  files.make_folder(files.parent(out))   -- where it goes, as a download's folder is made
+  local began = sys.ticks()
+  local size, sum = download.file(url, out, { name = named, anchors = anchors })
+
+  if not size then
+    print("fetch: " .. tostring(sum))
+    return
+  end
+
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  local s = math.max((sys.ticks() - began) / hz, 1e-6)
+  print(("fetch: %d bytes into %s in %.1f s, %.1f MB a second, SHA-256 %s"):format(
+    size, out, s, size / s / 1e6, sum))
+  return
 end
 
 local reply, why, how = http.get(url, { name = named, anchors = anchors })

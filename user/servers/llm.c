@@ -285,6 +285,7 @@ static uint64_t up_us(void)
 }
 
 static const char *vk_name(void);      /* the Vulkan device's name, or NULL */
+static void vk_said(void);
 
 static void put(char *to, size_t room, const char *from, size_t n)
 {
@@ -778,18 +779,33 @@ static bool vk_holding;
  * and a panic's last words, are this server's console's lines. */
 void posix_console(long capability);
 
+/* The GPU Kit (`kosmos_gpu.h`), linked with `anv`: the GPU's endpoint init
+ * gave this server, which it has no namespace to look up. */
+void kg_device_given(long capability);
+
 static bool vk_active;                  /* the model's steps Vulkan's, as Settings says */
+static bool vk_lost;                    /* a step failed: the processor's until a restart */
+static long vk_fail_after = -1;         /* `opt/kosmos/llm_vk_fail`: steps before one fails */
+
+/* Whether this step is the one a test asked to fail, as a hung GPU's does. */
+static bool vk_failing(void)
+{
+    if (vk_fail_after < 0 || vk_fail_after-- > 0) return false;
+
+    snprintf(vk_model.why, sizeof vk_model.why, "failed as asked");
+    return true;
+}
 
 static int vk_forward(void *ctx, int32_t token)
 {
     ran_gpu |= LLM_GPU_WRITE;
-    return llm_vk_step(ctx, token);
+    return vk_failing() ? -1 : llm_vk_step(ctx, token);
 }
 
 static int vk_forward_batch(void *ctx, const int32_t *tokens, uint32_t n)
 {
     ran_gpu |= LLM_GPU_READ;
-    return llm_vk_batch(ctx, tokens, n);
+    return vk_failing() ? -1 : llm_vk_batch(ctx, tokens, n);
 }
 
 /* The device and its pipelines, once, at start, beside `gpu_look`: so that
@@ -799,6 +815,7 @@ static void vk_look(void)
 {
     if (vk_state == 0) {
         posix_console(console);
+        kg_device_given(gpu_ep);        /* anv's way to the GPU, where it is Intel's */
         if (!kvk_open(&vk_dev, "llm", KVK_COMPUTE)) {
             say(console, "llm: no Vulkan device: ");
             say(console, vk_dev.why);
@@ -815,6 +832,14 @@ static void vk_look(void)
             return;
         }
         vk_state = 1;
+        {
+            char word[8] = "";
+
+            if (kosmos_boot_option("opt/kosmos/llm_vk_fail", word, sizeof word - 1) > 0
+                && word[0] >= '0' && word[0] <= '9') {
+                vk_fail_after = word[0] - '0';
+            }
+        }
         gpu_have |= LLM_GPU_READ | LLM_GPU_WRITE;
         settings.gpu = LLM_GPU_READ | LLM_GPU_WRITE;
     }
@@ -829,7 +854,7 @@ static void vk_look(void)
  */
 static void vk_apply(void)
 {
-    bool on = vk_holding && settings.gpu != 0;
+    bool on = vk_holding && !vk_lost && settings.gpu != 0;
 
     if (on == vk_active) return;
 
@@ -843,9 +868,21 @@ static void vk_apply(void)
     llm_held_reset(&model.m, &held);
 }
 
+static void vk_tuned(void *ctx, const char *line)
+{
+    (void)ctx;
+    say(console, "llm: shapes: ");
+    say(console, line);
+    say(console, "\n");
+}
+
 static void vk_offer(void)
 {
     if (vk_state != 1) return;
+    if (vk_lost) {
+        llm_offload(&model.m, NULL, NULL, NULL);    /* and not X7's way to the same GPU */
+        return;
+    }
 
     if (!llm_vk_model_open(&vk_model, &vk_ops, &model.m)) {
         say(console, "llm: the model stays on the processor: ");
@@ -854,6 +891,14 @@ static void vk_offer(void)
         return;
     }
     vk_holding = true;
+    {
+        char word[8] = "";
+        long n = kosmos_boot_option("opt/kosmos/llm_profile", word, sizeof word - 1);
+        /* V6's two: 1, where a step's GPU time goes; 2, that and the sweep
+         * of the products' shapes, a minute and more a load. */
+        vk_model.profile = n > 0 && (word[0] == '1' || word[0] == '2');
+        if (n > 0 && word[0] == '2') llm_vk_tune(&vk_model, vk_tuned, NULL);
+    }
     vk_apply();
     say(console, vk_active ? "llm: the model on Vulkan, " : "llm: the model on Vulkan, Settings has it on the processor: ");
     say(console, vk_dev.device_name);
@@ -866,6 +911,60 @@ static void vk_unload(void)
     vk_holding = vk_active = false;
 }
 
+/* After an answer on Vulkan: where its steps' time went. */
+static void vk_said(void)
+{
+    char line[200];
+
+    if (!vk_active || vk_model.steps == 0) return;
+
+    snprintf(line, sizeof line, "llm: on Vulkan, %llu steps: %llu us a step recording, %llu us "
+             "submitted to done, the GPU's own %llu us\n",
+             (unsigned long long)vk_model.steps,
+             (unsigned long long)(micros(vk_model.record_ticks) / vk_model.steps),
+             (unsigned long long)(micros(vk_model.submit_ticks) / vk_model.steps),
+             (unsigned long long)(vk_model.gpu_ms * 1000 / (double)vk_model.steps));
+    say(console, line);
+    for (uint32_t i = 0; i < vk_model.prof_n; i++) {
+        snprintf(line, sizeof line, "llm: on Vulkan, llm_vk.c:%u's step, %llu us a step\n",
+                 vk_model.prof_line[i],
+                 (unsigned long long)(vk_model.prof_ms[i] * 1000 / (double)vk_model.steps));
+        say(console, line);
+    }
+    vk_model.steps = vk_model.record_ticks = vk_model.submit_ticks = 0;
+    vk_model.gpu_ms = 0;
+    vk_model.prof_n = 0;
+}
+
+/*
+ * **A step failed on Vulkan** - a hung GPU, reset, has lost the context -
+ * and the answer goes on: the processor from here until the server starts
+ * again, reading what the conversation holds and then the tokens `rest`,
+ * a batch a pass as any question is, so the server still hears STOP. An
+ * answer used to end there with no words and no error (`testing.md`
+ * 18.992). False where the step was not Vulkan's.
+ */
+static bool vk_failed(const int32_t *rest, uint32_t n)
+{
+    uint32_t had = held.n;
+
+    if (!vk_active || had + n > model.m.n_ctx) return false;
+
+    say(console, "llm: Vulkan stopped, the processor takes over: ");
+    say(console, vk_model.why[0] ? vk_model.why : "no reason given");
+    say(console, "\n");
+
+    memmove(ans.prompt + had, rest, n * sizeof *rest);     /* may be the prompt's own tail */
+    memcpy(ans.prompt, held.tokens, had * sizeof *held.tokens);
+    ans.prompt_n = had + n;
+    ans.prompt_at = 0;
+    ans.kept = 0;
+    vk_lost = true;
+    llm_offload(&model.m, NULL, NULL, NULL);    /* X7's products are the same GPU's */
+    vk_apply();                         /* forgets the conversation, which is now the prompt */
+    return true;
+}
+
 static const char *vk_name(void)
 {
     return vk_state == 1 ? vk_dev.device_name : NULL;
@@ -873,9 +972,11 @@ static const char *vk_name(void)
 #else
 static void vk_look(void) {}
 static void vk_apply(void) {}
+static bool vk_failed(const int32_t *rest, uint32_t n) { (void)rest; (void)n; return false; }
 static void vk_offer(void) {}
 static void vk_unload(void) {}
 static const char *vk_name(void) { return NULL; }
+static void vk_said(void) {}
 #endif
 
 /* One piece of the file; then, when it is all in, the kit's turn. */
@@ -1211,6 +1312,7 @@ static void answer_end(void)
     pool_stop();
 
     if (ans.began_answer != 0) ans.answer_us = micros(kosmos_ticks() - ans.began_answer);
+    vk_said();
 
     if (gpu_time.runs != 0) {
         char line[320];
@@ -1416,7 +1518,7 @@ static void ask_step(void)
 
         if (llm_feed_batch(&model.m, &held, ans.prompt + ans.prompt_at, n) != 0) {
             inside_off();
-            answer_end();
+            if (!vk_failed(ans.prompt + ans.prompt_at, ans.prompt_n - ans.prompt_at)) answer_end();
             return;
         }
 
@@ -1428,9 +1530,11 @@ static void ask_step(void)
         if (answering >= 0) askers[answering].read_tokens += n;
 
         if (ans.prompt_at == ans.prompt_n) {
-            ans.prompt_us = micros(kosmos_ticks() - ans.asked);
-            ans.began_answer = kosmos_ticks();
-            memcpy(ans.stage_at_answer, model.m.stage_counts, sizeof ans.stage_at_answer);
+            if (ans.made == 0) {        /* not a conversation read again mid-answer */
+                ans.prompt_us = micros(kosmos_ticks() - ans.asked);
+                ans.began_answer = kosmos_ticks();
+                memcpy(ans.stage_at_answer, model.m.stage_counts, sizeof ans.stage_at_answer);
+            }
             ans.next = choose();
         }
 
@@ -1500,7 +1604,7 @@ static void ask_step(void)
         gpu_time.feed_us += micros(kosmos_ticks() - began);
         if (no != 0) {
             inside_off();
-            answer_end();
+            if (!vk_failed(&token, 1)) answer_end();
             return;
         }
 

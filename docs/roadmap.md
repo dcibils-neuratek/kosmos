@@ -797,8 +797,28 @@ phi-2's answers the processor's, 18.989); V4's half in Kosmos built
 the tiny model's answers on lavapipe the processor's, `x86-llm-vk`,
 18.990); V5 built (the question read as one batch on `mul_mm`, 2.6
 times sooner on lavapipe, Settings' GPU switch choosing Vulkan or the
-processor, Compare's GPU row and the first word, 18.991); V6, on the M700,
-next.
+processor, Compare's GPU row and the first word, 18.991); V6 built (on
+the M700: shapes measured there, a stopped GPU's answer taken over by the
+processor, 18.992 - not yet faster: 0.5B writes 13.95 tok/s against the
+processor's 21.92, 1.5B 6.90 against 12.54); V7, faster, next: the logits
+are 41% of 0.5B's token, gate, up and down 54% of 1.5B's.
+
+**Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
+for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64
+of the processor's speed: what the default is there is Diego's. (b) The
+LLM server makes its pipelines before it serves, so on the M700
+`/Running/llm` is not there until 6.3 s of the boot, after the desktop:
+make them off the serving path. (c) The GPU's name reads "Intel(R)/1.4",
+cut at its first space.
+
+**`/Models` only where its partition is - noticed 22 November 2026, to
+do.** With `opt/kosmos/models=GUID` on the command line and that drive not
+in the machine, init still hands the LLM server `/Models`'s endpoint
+(`MODELS_WORD and MODELS_EP`), so the server looks only there and never
+in `/Home/Models`: on the M700, whose models drive was out, no model
+could be loaded until the word was taken off the line. To do: the
+endpoint given only where the partition was found, and the server's
+`/Home/Models` otherwise.
 
 **`/Models`, a drive for language models - AGREED 8 November 2026.**
 `/Home` on the M700's stick is 2 GB (`STICK_HOME_MB`, 8 October), phi-2

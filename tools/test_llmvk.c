@@ -819,6 +819,15 @@ static int feed(struct llm_vk_model *vm, const int32_t *q, int n)
   return r;
 }
 
+/* `--tune`: the sweep the M700's profile runs (V6), here first. */
+static int tuning;
+
+static void tuned(void *ctx, const char *line)
+{
+  (void)ctx;
+  printf("shapes: %s\n", line);
+}
+
 static int model(struct llm_vk *g, const char *path, int whole_answer, int control)
 {
   int fd = open(path, O_RDONLY);
@@ -861,6 +870,9 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
     goto done;
   }
 
+  if (tuning) {
+    llm_vk_tune(&vm, tuned, NULL);
+  }
   llm_reset(&m);
   struct timespec t0, t1;
   clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -954,6 +966,8 @@ int main(int argc, char **argv)
       model_path = argv[++i];
     } else if (strcmp(argv[i], "--whole") == 0) {
       whole_answer = 1;
+    } else if (strcmp(argv[i], "--tune") == 0) {
+      tuning = 1;
     } else if (strcmp(argv[i], "--batch") == 0) {
       batched = LLM_BATCH;
       if (i + 1 < argc && atoi(argv[i + 1]) > 0 && atoi(argv[i + 1]) <= LLM_BATCH) {

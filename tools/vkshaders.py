@@ -36,9 +36,12 @@ MM = {"FLOAT_TYPE": "float", "FLOAT_TYPEV2": "vec2", "FLOAT_TYPEV4": "vec4",
       "B_TYPE_SCALAR": "float", "B_TYPEV4": "vec4", "D_TYPE": "float"}
 
 
-def mmv(t):
+def mmv(t, summed=None):
     shader = "mul_mat_vec_%s.comp" % t if t.endswith("_k") else "mul_mat_vec.comp"
-    return shader, dict(MMV, **MMV_F32, **{"DATA_A_" + t.upper(): "1"})
+    d = dict(MMV, **MMV_F32, **{"DATA_A_" + t.upper(): "1"})
+    if summed:                      # how a workgroup's lanes are summed (V6)
+        d[summed] = "1"
+    return shader, d
 
 
 VARIANTS = {
@@ -47,6 +50,9 @@ VARIANTS = {
     "mul_mat_vec_q6_k_f32_f32": mmv("q6_k"),
     "mul_mat_vec_f32_f32_f32": mmv("f32"),
     "mul_mat_vec_f16_f32_f32": mmv("f16"),
+    # Q4_0's summed by `subgroupAdd`, then through shared memory across a
+    # workgroup's subgroups (ggml's hybrid): the HD 530's fastest (V6).
+    "mul_mat_vec_q4_0_add": mmv("q4_0", "USE_SUBGROUP_ADD"),
     # Attention's two products, over the cache: the keys a head at a time
     # and the values transposed, rows a stride apart.
     "mul_mat_vec_nc_f16_f32": ("mul_mat_vec_nc.comp", dict(A_TYPE="float16_t", A_TYPEV4="f16vec4",

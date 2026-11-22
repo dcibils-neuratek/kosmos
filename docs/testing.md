@@ -41831,3 +41831,126 @@ the gain rather than the M700's figure):
 
 All five pass alone, in 192 s. Under the gate's load `x86-llm-vk` took
 447 s of its 540 s timeout; alone it takes about 130 s.
+
+## 18.992 Xavier on the M700's own GPU (Xavier on Vulkan, V6)
+
+**In short:** Xavier's model answers on the M700's HD 530 through Vulkan,
+and it is **not yet faster than the processor**. Sized for this GPU by
+measurement, Qwen 0.5B writes 13.95 tokens a second there (9.8 before)
+against four cores' 21.92, and reads a question 1.39 times sooner than
+they do; Qwen 1.5B writes 6.90 against 12.54 and reads a tenth slower.
+Two faults only the machine could show are fixed: in a C server Intel's
+driver could not find the GPU, and a GPU that hung ended an answer with
+no words and no error, where the processor now takes over. And the GPU
+turned out the more exact of the two: what parts its answers from the
+processor's is the processor rounding its inputs to 8 bits.
+
+**What the machine showed that QEMU could not.**
+
+- `llm: no Vulkan device: no-device`. anv gets the GPU through the GPU
+  Kit's `kg_device`, which asked the Lua namespace, and a C server has
+  none. `x86-llm-vk` could not see it, as lavapipe asks for no GPU. The
+  server now hands over the endpoint init gave it (`kg_device_given`).
+- With `opt/kosmos/models` naming a partition that is not in the machine,
+  the server found no model, though `/Home/Models` held two. That is in
+  `roadmap.md`, to be fixed in init.
+
+**The profile** (`opt/kosmos/llm_profile=1`). An answer's end logs a step's
+recording, its wait and the GPU's own time, and the GPU's time by the line
+of `llm_vk_step` that recorded it. As a model loads, `llm_vk_tune` times
+the vector product at five lane counts by six row counts, over every
+layer's `up` weight and over the logits', and holds each shape's answer to
+that of the shape that is built (NMSE 1e-7).
+
+**Two faults in the sweep itself, found on the Mac before it ran there.**
+
+- The first pass timed the compiler: lavapipe compiles a pipeline as it
+  first runs it, and with the shader cache off 8 lanes by 32 rows read
+  3,297,575 us where the shape takes 11,299. The first pass is thrown away.
+- One submission over every layer at a poor shape could outlast
+  `GPU_HANG_MS`, three seconds, after which the driver resets the engine.
+  A layer is a submission, and a lane count stops growing its rows once
+  it is eight times slower than what is built.
+
+**Qwen 1.5B does not meet the 32-token hold, and did not before V6.**
+`test_llmvk --whole` on it, on lavapipe, with 0.12.72's own sources and
+with these: at token 12 the processor takes token 315 (25.4408, the GPU's
+25.3028) and the GPU 382 (25.3765, the GPU's 25.3920), so 31 of 32 steps
+agree on the likeliest and the answers part there. The batched question
+does the same. `host-llmvk-check` ran Qwen 0.5B and the tiny models only,
+so nothing saw it. The two do differ by construction: the processor rounds
+each product's input to 8 bits (`quantize_q8_0`, `quantize_q8_k`), as
+ggml's does, and the GPU takes floats. That the gap is only that has not
+been measured. The test is left as it is.
+
+**The sweep on the M700's HD 530** (i7's four cores beside it, one boot
+with `opt/kosmos/llm_profile=1`; every shape that finished gave the built
+shape's answer). Microseconds, the GPU's own:
+
+| product | ggml's shape | best measured | gain |
+|---|---|---|---|
+| Qwen 0.5B, every layer's `up`, Q4_0 | 128 by 4: 17,049 | by subgroups, 64 by 8: 10,537 | 1.62 |
+| Qwen 0.5B, the logits, Q8_0 | 128 by 2: 65,343 | 16 by 8: 45,278 | 1.44 |
+| Qwen 1.5B, every layer's `up`, Q4_0 | shared, 64 by 4: 53,734 | by subgroups, 64 by 8: 44,347 | 1.21 |
+| Qwen 1.5B, the logits thrice, Q6_K | 128 by 2: 223,576 | 16 by 8: 120,275 | 1.86 |
+
+(1.5B's `up` was not timed at ggml's own 128 by 4; the nearest is shown.)
+Sixteen rows a workgroup is slower again almost everywhere.
+
+**Answers**, 64 tokens to a 27-token question, the GPU at Q4_0's 64 by 8
+and Q8_0's 16 by 8, both still summed through shared memory (the last
+build, with Q4_0's sum by subgroups, is measured after):
+
+| | reads 27 tokens | first word | writes |
+|---|---|---|---|
+| 0.5B, GPU | 537.7 ms | 538.2 ms | 13.27 tok/s (9.8 at ggml's shapes) |
+| 0.5B, four cores, AVX2 | 750.3 ms | 750.8 ms | 21.86 tok/s |
+| 1.5B, four cores, AVX2 | 1358.0 ms | 1358.5 ms | 12.57 tok/s |
+
+0.5B's answers there are the processor's for 34 tokens, counted by
+tokenising both texts with the model's own merges: the hold is 32.
+
+**A shape that hung the GPU, and an answer that said nothing.** ggml's
+third sum, by `subgroupAdd` alone in subgroups of a size asked for, hung
+the render engine at 8 lanes on Q6_K; the driver reset it after 3000 ms
+and the machine carried on. The server did not: every step then failed,
+`ask_step` called `answer_end`, and the next question was answered with no
+words and no error. The form is taken out. And a step that fails on
+Vulkan now hands that answer to the processor (`vk_failed`): the
+conversation is read again a batch a pass, the answer goes on, and the
+server stays off the GPU until it starts again. `x86-llm-vk` boots a third
+time with the fourth step made to fail (`opt/kosmos/llm_vk_fail=3`) and
+holds that answer, and those after it, to the kit's byte for byte.
+
+**The build as committed**, the same question, 64 tokens, one boot, no
+reset and no takeover in its log:
+
+| | reads 27 tokens | first word | writes | the processor's answer for |
+|---|---|---|---|---|
+| 0.5B, GPU | 538.2 ms | 538.7 ms | 13.95 tok/s | 34 tokens |
+| 0.5B, four cores | 748.7 ms | 749.2 ms | 21.92 tok/s | |
+| 1.5B, GPU | 1495.6 ms | 1496.0 ms | 6.90 tok/s | 29 tokens |
+| 1.5B, four cores | 1362.6 ms | 1363.1 ms | 12.54 tok/s | |
+
+A written token of 0.5B is 78.2 ms of GPU work: the logits 31.9, gate and
+up 16.6, down 9.0, all else 20.7. Of 1.5B, 166.5 ms: gate and up 59.7,
+down 30.0, the logits 27.1. The tokens that agree are counted from the
+two texts with the model's merges, each text's total coming to its 64.
+
+**And the gap is the processor's rounding, measured.** A scratch copy of
+the kit whose quantised products dequantise each weight's row and take the
+input as floats, the rest untouched, against the same GPU pass on lavapipe
+(`test_llmvk --whole`):
+
+| | NMSE, the kit | NMSE, unrounded | tokens the same, unrounded |
+|---|---|---|---|
+| Qwen 0.5B | 0.00661 | 0.00000468 | 32 of 32 |
+| Qwen 1.5B | 0.00594 | 0.0000113 | 32 of 32 (31 of 32 steps as it stands) |
+
+So this replaces "has not been measured", above. Which the hold compares
+with is Diego's decision (`xavier.md` X12, decision 1); the test stays.
+
+**Beside them.** `fetch --out FILE` puts what it fetches in a file and
+says its size, speed and SHA-256: it is how the two models reached the
+M700's `/Home/Models`. A word of 2 in `opt/kosmos/llm_profile` runs the
+sweep as a model loads, and of 1 only the profile.

@@ -77,6 +77,7 @@ struct kvk {
     VkQueryPool stamps;
     double stamp_ns;
     uint32_t stamp_bits;
+    uint32_t marks;             /* the marks in this recording (`kvk_mark`) */
     char why[96];               /* the step that failed and its VkResult */
     /* What compute on tensors may use, asked for with KVK_COMPUTE: the
      * KVK_HAS_ bits the device has, and the one call of
@@ -130,6 +131,18 @@ int  kvk_open(struct kvk *v, const char *program, int flags);
 int    kvk_time_start(struct kvk *v);
 void   kvk_time_end(struct kvk *v);
 double kvk_time_ms(struct kvk *v);
+
+/* **Marks** (Xavier on Vulkan, V6): the device's time at up to
+ * `KVK_MARKS` points of one recording, for where its time goes - a mark
+ * after each barrier says how long the work before it took. Started first
+ * in a recording, outside any rendering; read after the submit, as the
+ * milliseconds between each mark and the one before, `room` at most.
+ * Marks past `KVK_MARKS` are not made, and none where the queue keeps no
+ * time. */
+#define KVK_MARKS 512
+void     kvk_marks_start(struct kvk *v);
+void     kvk_mark(struct kvk *v);
+uint32_t kvk_marks_read(struct kvk *v, double *ms, uint32_t room);
 void kvk_close(struct kvk *v);
 
 uint32_t kvk_memory_type(const struct kvk *v, uint32_t bits, VkMemoryPropertyFlags want);

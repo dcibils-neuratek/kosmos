@@ -26,8 +26,14 @@
 
 #define KG_NO_ANSWER 0xffffffffu
 
-/* `/Devices/gpu`, as this process holds it, or -1. Asked once. */
+/* `/Devices/gpu`, as this process holds it, or -1. Asked once, of the
+ * process's namespace - a Lua program's. */
 long kg_device(void);
+
+/* The same handed over by a process with no namespace to ask: a C server
+ * given the GPU's endpoint by init (the LLM server, `llm-anv.elf`).
+ * Before the first `kg_device`. */
+void kg_device_given(long capability);
 
 /* What the GPU is and is doing: `struct gpu_stats`'s snapshot. */
 uint32_t kg_stats(long gpu, struct gpu_stats *out);
