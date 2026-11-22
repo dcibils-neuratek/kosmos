@@ -41452,3 +41452,88 @@ s16,s8,i8,i16,subgroup
 765 s. `x86-cafesa3d-2` failed on a screen dump read short with 3.6 GB
 left on the disk; 2.4 GB of an old stick's symbols and 2.2 GB of finished
 suites' scratch freed, it passes alone, 60 checks.
+
+## 18.988 llama.cpp's shaders, and each step held (Xavier on Vulkan, V2 and V3)
+
+**In short:** every arithmetic step of a model layer now runs on Vulkan
+and gives the processor's answer: the products for every weight type
+Xavier's models use, the norms, adding and multiplying, the activations,
+softmax, RoPE and the copies into the cache. They are llama.cpp's own
+shaders, compiled here, and they are held on this Mac's lavapipe in two
+seconds, with a control that must break every one (`xavier.md`, *X12*).
+
+**V2, the shaders** (`tools/upstream.py`, `tools/vkshaders.py`): the
+`vulkan-shaders` folder of llama.cpp at b12205 (`a691b23`), fetched
+sparse with its MIT licence into `build/upstream/ggml-vulkan`, and 17
+variants compiled with `glslangValidator` using the defines
+`vulkan-shaders-gen.cpp` gives them. They go into
+`build/llmvk/llmvk_shaders.h`, 780 KB of SPIR-V words. Only the variants
+`llm_vk.c` calls are compiled. Each `#include` needs
+`GL_GOOGLE_include_directive`, which the generator passes and the copy
+here inserts after `#version`.
+
+**V3, the steps** (`user/kits/llm/llm_vk.c`, `llm_vk.h`): each one is a
+pipeline made, and a dispatch recorded, exactly as `ggml-vulkan.cpp`
+makes and records it for the same shapes:
+
+- the same push-constant structs (their sizes asserted: 120, 116, 108,
+  68 and 120 bytes);
+- the magic numbers `init_fastdiv_values` divides an index by;
+- the specialisation constants;
+- the bindings, a missing tensor given another tensor's buffer as ggml
+  does;
+- the workgroups `ggml_vk_op_f32` and `ggml_vk_dispatch_pipeline` work
+  out.
+
+A product's workgroup is four subgroups (`DMMV_WG_SIZE_LARGE`) and makes
+two rows of Q4_0 and one of Q8_0, twice that on an Intel GPU
+(`rm_stdq`). Past the
+dispatch's width, rows are split 64 ways deep.
+
+**The check** (`tools/test_llmvk.c`, `make host-llmvk-check`, gate suite
+`host-llmvk`): random inputs, each answer worked out in double, and the
+normalised mean squared error llama.cpp's `test-backend-ops` uses, held
+to 1e-7.
+
+- **Products**: F32, F16, Q4_0, Q8_0 and Q6_K, the weights random blocks
+  of each type, scales and all, read here as ggml's `dequantize_row_*`
+  reads them. At phi-2's and Qwen 2.5's shapes, an odd row count, and
+  Qwen's output matrix of 151,936 rows: 2e-15 to 4e-14.
+- **Norm and RMS norm with the weight**, at 7, 600 and 3 rows: about
+  3e-15.
+- **ADD and MUL**, with b a whole tensor or one row repeated: under 1e-15.
+- **SCALE, GELU, SiLU and SwiGLU**, over 513, 10,240 and 300,001 floats
+  (the last needs a third dimension of workgroups): 1e-15 to 3e-15.
+- **Softmax**, scaled, at 1, 517 and 4,096 columns: under 6e-14.
+- **RoPE**: Qwen's heads, all 128 values turned, and phi-2's, 32 of 80
+  turned and the rest copied. At position 4,000 the error is 1.4e-8, the
+  nearest any step comes to its bound. The shader takes
+  `pos * pow(theta_scale, i)` in float, where the processor keeps a
+  running product, and at thousands of radians a float angle is good to
+  about 1e-4.
+- **The copies**: to F16 bit for bit as `llm_f32_to_f16` rounds, and to
+  F32 bit for bit.
+
+**Controls** (`--control`, which must break every case and exits 0 only
+when it does):
+
+- each product's blocks are read by another type's pipeline;
+- each step is held to the reference a characteristic mistake would
+  give: the weight left out, the mean not taken away, b not repeated, the
+  bias dropped, the other activation, gate and up swapped, the scale
+  forgotten, positions off by one;
+- the F16 copy is held to the floats before rounding.
+
+Every case misses, with errors from 1.9e-4 to 32.
+
+**Found on the way**: the first control counted a NaN as "not over the
+bound", and only asked that something failed, so it could not tell one
+broken case from all of them. A garbage row in the products is NaN. The
+verdict now takes NaN as outside any bound, and the control has to break
+every case.
+
+**The gate** (`make test`, what the Vulkan Kit reaches): 158 of 159 in
+1056 s. `host` failed, rightly: `tools/test_scratch.py` refuses a tool
+that makes a temporary directory without `tools/scratch.py`, and
+`vkshaders.py` used `tempfile`. On `scratch.directory` it writes the same
+header byte for byte, and `host` and `host-llmvk` pass.

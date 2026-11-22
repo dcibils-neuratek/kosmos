@@ -2710,6 +2710,35 @@ $(HOSTDIR)/test_llmdot_x86: tools/test_llmdot.c $(LLM_KIT_SRCS) user/kits/llm/ll
 	$(HOST_CC) -arch x86_64 -std=c11 -Wall -Wextra -Werror -O2 $(LLM_HOST_FLAGS) -Iuser/kits/llm -o $@ \
 	        tools/test_llmdot.c $(LLM_KIT_SRCS) -lm
 
+# **The LLM Kit's operations on Vulkan** (Xavier X12, V2 and V3): llama.cpp's
+# shaders, fetched at the commit `tools/upstream.py` names, compiled to SPIR-V
+# by `tools/vkshaders.py`, and each operation held on this Mac's lavapipe -
+# Homebrew's Mesa - against the arithmetic done in double precision.
+LLMVK_GOT := build/upstream/ggml-vulkan.got
+LLMVK_HEADER := build/llmvk/llmvk_shaders.h
+LVP_LIB := /opt/homebrew/lib
+
+$(LLMVK_GOT): tools/upstream.py
+	python3 tools/upstream.py fetch ggml-vulkan
+	@touch $@
+
+$(LLMVK_HEADER): tools/vkshaders.py $(LLMVK_GOT)
+	@mkdir -p $(dir $@)
+	python3 tools/vkshaders.py build/upstream/ggml-vulkan/ggml/src/ggml-vulkan/vulkan-shaders $@
+
+$(HOSTDIR)/test_llmvk: tools/test_llmvk.c user/kits/llm/llm_vk.c user/kits/llm/llm_vk.h user/kits/llm/llm_core.h user/kits/vulkan/kvk.c user/kits/vulkan/kvk.h $(LLMVK_HEADER) $(LLM_KIT_SRCS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $(LLM_HOST_FLAGS) -Iuser -Iuser/kits/llm -I$(dir $(LLMVK_HEADER)) \
+	        -isystem build/mesa/tree/include -o $@ tools/test_llmvk.c user/kits/llm/llm_vk.c \
+	        user/kits/vulkan/kvk.c $(LLM_KIT_SRCS) -L$(LVP_LIB) -lvulkan_lvp -Wl,-rpath,$(LVP_LIB) -lm
+
+.PHONY: host-llmvk-check
+host-llmvk-check: $(HOSTDIR)/test_llmvk
+	$(HOSTDIR)/test_llmvk
+	$(HOSTDIR)/test_llmvk --control > $(HOSTDIR)/test_llmvk.control.txt || \
+	        { cat $(HOSTDIR)/test_llmvk.control.txt; echo "FAIL: a product read as another type still held"; exit 1; }
+	@echo "PASS: every operation held, and every one broke in the control, as it must"
+
 LLAMA_CPP := build/downloads/llama.cpp-b12205
 
 # **The LLM Kit held to llama.cpp on the real models** (Xavier X1, 18.736):

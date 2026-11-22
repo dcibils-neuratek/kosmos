@@ -82,6 +82,9 @@ struct kvk {
      * KVK_HAS_ bits the device has, and the one call of
      * VK_KHR_push_descriptor's. */
     unsigned tensors;
+    uint32_t subgroup_size;     /* lanes a subgroup, as the device reports */
+    uint32_t max_groups[3];     /* workgroups a dispatch may ask for, each way */
+    uint32_t storage_align;     /* where a span of a storage buffer may begin */
     PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
 #define KVK_DECLARE(name) PFN_##name name;
     KVK_FUNCTIONS(KVK_DECLARE)

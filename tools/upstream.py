@@ -219,6 +219,16 @@ GIT = {
         "url": "https://github.com/ioquake/ioq3.git",
         "commit": "52088b9eae247d8e321c8dc1fb49a879652854f9",
     },
+    # **llama.cpp's Vulkan shaders** (`docs/xavier.md` X12, V2), MIT: the
+    # GLSL of its Vulkan backend and nothing else of it, at the commit its
+    # release tag `b12205` names - the release the LLM Kit is already held
+    # to (`LLAMA_CPP` in the Makefile). Compiled for the LLM Kit by
+    # `tools/vkshaders.py`.
+    "ggml-vulkan": {
+        "url": "https://github.com/ggml-org/llama.cpp.git",
+        "commit": "a691b2345844ce1b430201fc5fd404ce062e05f2",
+        "sparse": ["/ggml/src/ggml-vulkan/vulkan-shaders/", "/LICENSE"],
+    },
 }
 
 
@@ -683,7 +693,7 @@ def main():
     action, name = sys.argv[1], sys.argv[2]
 
     if name in GIT:
-        print(checkout(name, GIT[name]["url"], GIT[name]["commit"]))
+        print(checkout(name, GIT[name]["url"], GIT[name]["commit"], GIT[name].get("sparse")))
     elif action == "fetch":
         print(fetch(name))
     elif action == "unpack":

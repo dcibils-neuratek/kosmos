@@ -225,6 +225,9 @@ SUITES = [
     # the licences and every syscall's arguments, in seconds.
     Suite("host", ["make", "--no-print-directory", "host-check"]),
     Suite("host-llm", ["make", "--no-print-directory", "host-llm-check"]),
+    # The LLM Kit's steps on Vulkan, each held on this Mac's lavapipe
+    # (`docs/xavier.md` X12, V3): two seconds.
+    Suite("host-llmvk", ["make", "--no-print-directory", "host-llmvk-check"]),
 
     # The kernel from inside: the largest test asset here, and the only thing
     # that exercises the kernel from inside it.

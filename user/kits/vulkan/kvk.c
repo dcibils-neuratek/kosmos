@@ -180,6 +180,25 @@ int kvk_open(struct kvk *v, const char *program, int flags)
         v13.computeFullSubgroups = h13.computeFullSubgroups;
         core.shaderInt16 = has.features.shaderInt16;
         core.shaderInt64 = has.features.shaderInt64;
+        {
+            PFN_vkGetPhysicalDeviceProperties2 properties2 =
+                (PFN_vkGetPhysicalDeviceProperties2)gipa(v->instance,
+                                                         "vkGetPhysicalDeviceProperties2");
+            VkPhysicalDeviceSubgroupProperties sub = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
+            };
+            VkPhysicalDeviceProperties2 p2 = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &sub,
+            };
+            if (properties2 != NULL) {
+                properties2(v->physical, &p2);
+            }
+            v->subgroup_size = sub.subgroupSize ? sub.subgroupSize : 32;
+            v->max_groups[0] = props.limits.maxComputeWorkGroupCount[0];
+            v->max_groups[1] = props.limits.maxComputeWorkGroupCount[1];
+            v->max_groups[2] = props.limits.maxComputeWorkGroupCount[2];
+            v->storage_align = (uint32_t)props.limits.minStorageBufferOffsetAlignment;
+        }
         v->tensors = (h11.storageBuffer16BitAccess ? KVK_HAS_STORAGE16 : 0) |
                      (h12.storageBuffer8BitAccess ? KVK_HAS_STORAGE8 : 0) |
                      (h12.shaderFloat16 ? KVK_HAS_FLOAT16 : 0) |

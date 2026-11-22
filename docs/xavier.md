@@ -1378,9 +1378,12 @@ the hold changes, and it is decision 1 below:
    compiles the variants we use with `glslangValidator`, with the defines
    `vulkan-shaders-gen.cpp` gives them, into headers of SPIR-V. A list
    says which variants, so nothing compiles that nothing calls.
+   **Built** (`tools/vkshaders.py`, 17 variants; `testing.md` 18.988).
 3. **V3, the operations held**: `llm_vk.c` runs each operation alone
-   against the processor's on lavapipe on the Mac (`test_llm --vk`), with
-   the bounds above and a control for each.
+   against the processor's on lavapipe on the Mac, with the bounds above
+   and a control for each. **Built**: `tools/test_llmvk.c`, gate suite
+   `host-llmvk`, every step at 1e-7 of NMSE or bit for bit (`testing.md`
+   18.988).
 4. **V4, a token on the GPU**: the whole layer as one command buffer, the
    cache in F16, the logits read back. The tiny models' answers hold, on
    the Mac and in the gate (`x86-llm-vk`, booting `llm-vk.elf`).
