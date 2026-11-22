@@ -446,8 +446,9 @@ end
 -- What an answer ran on, as the foot says it: "ran on 4 cores, AVX2".
 local LOOP_WORDS = { auto = "Auto", plain = "Plain", base = "Base vectors", avx2 = "AVX2" }
 
-local function ran_words(ran)
+local function ran_words(ran, gpu)
   if not ran then return "ran on the processor" end
+  if (ran.gpu or 0) ~= 0 and gpu and gpu ~= "" then return "ran on " .. gpu end
 
   return ("ran on %d %s, %s"):format(ran.cores, ran.cores == 1 and "core" or "cores",
                                      LOOP_WORDS[ran.loops] or ran.loops)
@@ -526,7 +527,7 @@ function foot:draw(g)
   elseif last then
     words = ("Last answer %.1f tokens a second \u{00b7} question read in %s \u{00b7} first word "
              .. "after %s \u{00b7} %s"):format(rate(last.tokens, last.write_us),
-             seconds(last.read_us), seconds(last.first_us), ran_words(last.ran))
+             seconds(last.read_us), seconds(last.first_us), ran_words(last.ran, last.gpu))
   else
     words = model.state == "ready" and "Ready" or model_words()
   end
@@ -631,7 +632,7 @@ local function finished()
     t.tokens, t.read_us, t.write_us, t.first_us = s.answer_tokens, s.prompt_us, s.answer_us,
                                                   s.first_us
     open.held, open.room, open.model = s.held_tokens, s.n_ctx, s.model
-    t.ran, t.model = s.ran, s.model
+    t.ran, t.model, t.gpu = s.ran, s.model, s.gpu
     last = t
     print(("xavier: answered %d tokens, %d of the conversation kept and %d read, %d held: %s")
           :format(s.answer_tokens, s.kept_tokens, s.prompt_tokens, s.held_tokens, hex(t.xavier)))
@@ -758,18 +759,20 @@ end
 local COMPARE_QUESTION = "Explain in a few sentences what an operating system does."
 local COMPARE_TOKENS = 48
 
--- The settings it tries: every loop this machine has at Auto's cores, then
--- the cores one way and the other, and one core plain as the reference.
+-- The settings it tries: the GPU, where there is one, then every loop this
+-- machine has at Auto's cores on the processor, the cores one way and the
+-- other, and one core plain as the reference.
 local function compare_runs(st)
   local runs, seen = {}, {}
-  local function add(cores, loops)
-    local key = cores .. loops
+  local function add(cores, loops, gpu)
+    local key = cores .. loops .. (gpu or 0)
     if not seen[key] and (loops == "auto" or st.loops_have[loops]) and cores <= st.processors then
       seen[key] = true
-      runs[#runs + 1] = { cores = cores, loops = loops }
+      runs[#runs + 1] = { cores = cores, loops = loops, gpu = gpu or 0 }
     end
   end
 
+  if st.gpu_have ~= 0 then add(st.cores, "auto", st.gpu_have) end
   add(st.cores, "avx2")
   add(st.cores, "base")
   if st.processors ~= st.cores then add(st.processors, "avx2") add(st.processors, "base") end
@@ -790,11 +793,11 @@ local function compare_next()
     return
   end
 
-  local ok, why = llm.set{ cores = run.cores, loops = run.loops }
+  local ok, why = llm.set{ cores = run.cores, loops = run.loops, gpu = run.gpu }
   local a = ok and llm.ask(COMPARE_QUESTION, { tokens = COMPARE_TOKENS })
 
   if not a then
-    c.rows[#c.rows + 1] = { cores = run.cores, loops = run.loops, why = tostring(why or "refused") }
+    c.rows[#c.rows + 1] = { cores = run.cores, loops = run.loops, gpu = run.gpu, why = tostring(why or "refused") }
     c.at = c.at + 1
     return compare_next()
   end
@@ -813,12 +816,13 @@ local function compare_step()
       local s = llm.stats() or {}
       local run = c.runs[c.at]
 
-      c.rows[#c.rows + 1] = { cores = run.cores, loops = run.loops,
+      c.rows[#c.rows + 1] = { cores = run.cores, loops = run.loops, gpu = run.gpu, gpu_name = s.gpu,
                               read = (s.prompt_tokens or 0) * 1e6 / math.max(1, s.prompt_us or 1),
                               write = (s.answer_tokens or 0) * 1e6 / math.max(1, s.answer_us or 1),
-                              ran = s.ran }
-      print(("xavier: compare %d cores %s: read %.1f, wrote %.1f tokens a second"):format(
-        run.cores, run.loops, c.rows[#c.rows].read, c.rows[#c.rows].write))
+                              first = (s.first_us or 0) / 1e6, ran = s.ran }
+      print(("xavier: compare %s: read %.1f, wrote %.1f tokens a second, the first word in %.2f s"):format(
+        run.gpu ~= 0 and ("the GPU, " .. tostring(s.gpu)) or (run.cores .. " cores " .. run.loops),
+        c.rows[#c.rows].read, c.rows[#c.rows].write, c.rows[#c.rows].first))
       c.at = c.at + 1
       c.answer = nil
       compared = c.rows
@@ -929,13 +933,13 @@ local function open_settings()
   gpu_switch(228, 1, "Read questions")
   gpu_switch(264, 2, "Write answers")
   note(300, st.gpu_have == 0 and "No GPU here the server can use: the model runs on the processor."
-                              or ("On %s, the same answer to the bit; Compare says where it pays."):format(st.gpu))
+                              or ("On %s, the same answer; Compare says where it pays."):format(st.gpu))
 
   -- Compare.
   label(340, "Compare")
   local status = note(372, "")
   local rows = {}
-  for i = 1, 7 do rows[i] = note(394 + (i - 1) * 18, "") end
+  for i = 1, 8 do rows[i] = note(394 + (i - 1) * 18, "") end
 
   local fastest = ui.button{ x = SW - 18 - 140, y = SH - 50, w = 140, text = "Use the fastest",
                              disabled = true, name = "Use the fastest" }
@@ -955,10 +959,11 @@ local function open_settings()
     local b = best()
     for i, l in ipairs(rows) do
       local r = compared[i]
-      l.text = r and (r.why and ("%d cores, %s: %s"):format(r.cores, LOOP_WORDS[r.loops], r.why)
-               or ("%s%d %s, %s: question %.1f tokens a second, answer %.1f"):format(
-                 r == b and "\u{2713} " or "", r.cores, r.cores == 1 and "core" or "cores",
-                 LOOP_WORDS[r.loops], r.read, r.write)) or ""
+      local where = r and (r.gpu ~= 0 and ("the GPU, " .. (r.gpu_name or st.gpu))
+                    or ("%d %s, %s"):format(r.cores, r.cores == 1 and "core" or "cores", LOOP_WORDS[r.loops]))
+      l.text = r and (r.why and ("%s: %s"):format(where, r.why)
+               or ("%s%s: first word %.2f s, question %.1f tokens a second, answer %.1f"):format(
+                 r == b and "\u{2713} " or "", where, r.first, r.read, r.write)) or ""
     end
     fastest.disabled = compare ~= nil or b == nil
     win.dirty = true
@@ -971,7 +976,7 @@ local function open_settings()
       local now = llm.settings()
       if not now then return end
       compare = { runs = compare_runs(now), at = 1, rows = {},
-                  before = { cores = now.settings.cores, loops = now.settings.loops } }
+                  before = { cores = now.settings.cores, loops = now.settings.loops, gpu = now.settings.gpu } }
       compared = compare.rows
       print(("xavier: comparing %d settings"):format(#compare.runs))
       compare_next()
@@ -982,8 +987,8 @@ local function open_settings()
   fastest.on_click = function()
     local b = best()
     if not b or compare then return end
-    llm.set{ cores = b.cores, loops = b.loops }
-    print(("xavier: the fastest kept, %d cores %s"):format(b.cores, b.loops))
+    llm.set{ cores = b.cores, loops = b.loops, gpu = b.gpu }
+    print(("xavier: the fastest kept, %s"):format(b.gpu ~= 0 and "the GPU" or (b.cores .. " cores " .. b.loops)))
     s:close()
     sheet = nil
     open_settings()

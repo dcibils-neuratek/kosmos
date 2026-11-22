@@ -26,6 +26,16 @@ MMV = {"FLOAT_TYPE": "float", "FLOAT_TYPEV2": "vec2"}
 MMV_F32 = {"B_TYPE": "float", "B_TYPEV2": "vec2", "B_TYPEV4": "vec4", "D_TYPE": "float"}
 
 
+# The question's products (V5): `mul_mm.comp` as the generator's
+# `matmul_shaders(fp16=false, ...)` gives it - floats throughout, an F32
+# accumulator, and B read four floats at a time - with the quantised types
+# one shader, the type a specialisation constant (`MmTypeA`).
+MM = {"FLOAT_TYPE": "float", "FLOAT_TYPEV2": "vec2", "FLOAT_TYPEV4": "vec4",
+      "FLOAT_TYPEV8": "mat2x4", "ACC_TYPE": "float", "ACC_TYPEV2": "vec2",
+      "ACC_TYPE_VEC4": "vec4", "LOAD_VEC_B": "4", "B_TYPE": "vec4",
+      "B_TYPE_SCALAR": "float", "B_TYPEV4": "vec4", "D_TYPE": "float"}
+
+
 def mmv(t):
     shader = "mul_mat_vec_%s.comp" % t if t.endswith("_k") else "mul_mat_vec.comp"
     return shader, dict(MMV, **MMV_F32, **{"DATA_A_" + t.upper(): "1"})
@@ -42,6 +52,9 @@ VARIANTS = {
     "mul_mat_vec_nc_f16_f32": ("mul_mat_vec_nc.comp", dict(A_TYPE="float16_t", A_TYPEV4="f16vec4",
                                                           B_TYPE="float", B_TYPEV4="vec4",
                                                           D_TYPE="float")),
+    "matmul_quant_f32_fp32": ("mul_mm.comp", dict(MM, MULMAT_QUANT="1")),
+    "matmul_f16_f32_fp32": ("mul_mm.comp", dict(MM, DATA_A_F16="1", LOAD_VEC_A="4")),
+    "matmul_f32_f32_fp32": ("mul_mm.comp", dict(MM, DATA_A_F32="1", LOAD_VEC_A="4")),
     # A layer's other steps.
     "norm_f32": ("norm.comp", dict(MMV, A_TYPE="float", D_TYPE="float")),
     "rms_norm_f32": ("rms_norm.comp", dict(MMV, A_TYPE="float", B_TYPE="float", D_TYPE="float",

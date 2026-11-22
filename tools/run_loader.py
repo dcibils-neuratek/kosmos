@@ -500,9 +500,9 @@ def main():
                   % heard[:400])
 
         said = None
+        posix_at = len(guest.seen)      # the message below is made even without CXX
 
         if CXX:
-            posix_at = len(guest.seen)
             said, _ = run("posixtest", "posixtest:", 180)
 
         posix_said[0] = said if CXX else "not in TinyCC's images"

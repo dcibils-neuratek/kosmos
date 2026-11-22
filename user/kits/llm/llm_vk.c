@@ -24,6 +24,17 @@ struct mmv_push {
   uint32_t ne02, ne12, broadcast2, broadcast3;
 };
 
+/* `vk_mat_mat_push_constants`: `mul_mm`'s, 68 bytes. The shader reads the
+ * first sixteen; `padded_N` is what the release sends after them. */
+struct mm_push {
+  uint32_t M, N, K, stride_a, stride_b, stride_d;
+  uint32_t batch_stride_a, batch_stride_b, batch_stride_d;
+  uint32_t base_work_group_z, num_batches, k_split;
+  uint32_t ne02, ne12, broadcast2, broadcast3;
+  uint32_t padded_N;
+};
+_Static_assert(sizeof(struct mm_push) == 68, "vk_mat_mat_push_constants is 68 bytes");
+
 /* `vk_op_unary_push_constants`: a source and a destination, each four
  * extents and four strides in elements, and the magic numbers the shader
  * divides an index by (`init_pushconst_fastdiv`). */
@@ -341,22 +352,30 @@ int llm_vk_rope_neox(struct llm_vk *g, struct kvk_span x, struct kvk_span pos, s
   return 1;
 }
 
+int llm_vk_cpy_f16_transposed(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n,
+                              uint32_t tokens, uint32_t stride, uint32_t at)
+{
+  if (n == 0 || tokens == 0 || stride == 0 || at + tokens > 0x10000) {
+    return 0;
+  }
+  /* The source `tokens` rows of `n`; the destination's first index a
+   * stride apart and its second one along, and `at` its misalignment in
+   * elements (`get_doffset`), which is how ggml says where a view starts
+   * inside a binding. */
+  struct unary_push p = unary_flat(n, tokens);
+  p.nb10 = stride;
+  p.nb11 = 1;
+  p.nb12 = p.nb13 = stride * n;
+  p.misalign_offsets = at;
+  struct kvk_span spans[2] = { x, out };
+  elementwise(g, LLM_VK_CPY_F16, spans, &p, n * tokens);
+  return 1;
+}
+
 int llm_vk_cpy_f16_strided(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n,
                            uint32_t stride, uint32_t at)
 {
-  if (n == 0 || stride == 0 || at > 0xffff) {
-    return 0;
-  }
-  /* The destination one row of `n` a stride apart, and `at` its
-   * misalignment in elements (`get_doffset`), which is how ggml says
-   * where a view starts inside a binding. */
-  struct unary_push p = unary_flat(n, 1);
-  p.nb10 = stride;
-  p.nb11 = p.nb12 = p.nb13 = stride * n;
-  p.misalign_offsets = at;
-  struct kvk_span spans[2] = { x, out };
-  elementwise(g, LLM_VK_CPY_F16, spans, &p, n);
-  return 1;
+  return llm_vk_cpy_f16_transposed(g, x, out, n, 1, stride, at);
 }
 
 int llm_vk_mmv_nc(struct llm_vk *g, struct kvk_span a, struct kvk_span b, struct kvk_span out,
@@ -401,6 +420,8 @@ void llm_vk_close(struct llm_vk *g)
   }
   for (int k = 0; k < LLM_VK_MMV_KINDS; k++) {
     kvk_compute_free(g->v, &g->mmv[k]);
+    kvk_compute_free(g->v, &g->mm[k]);
+    kvk_compute_free(g->v, &g->mm_s[k]);
   }
   for (int k = 0; k < LLM_VK_OPS; k++) {
     kvk_compute_free(g->v, &g->op[k]);
@@ -438,6 +459,43 @@ int llm_vk_open(struct llm_vk *g, struct kvk *v)
     if (!kvk_compute_make(v, &g->mmv[k], SPV[k].code, SPV[k].bytes, 5,
                           sizeof(struct mmv_push), spec, 3, "mmv")) {
       snprintf(g->why, sizeof(g->why), "the product's pipeline %d: %s", k, v->why);
+      llm_vk_close(g);
+      return 0;
+    }
+  }
+
+  /* The question's products (V5): `mul_mm` with `ggml_vk_load_shaders`'s
+   * medium tiles for a device without matrix cores - 64 by 64, 128 lanes,
+   * warps of `mm_warp_8` (the subgroup, at least 8 and at most 64), each
+   * making 32 by 32 in two passes of 4 by 2 - floats' K steps of 16 and the
+   * quantised types' of 32; then ALIGNED, always 0 here, so B is read a
+   * value at a time; and the quantised type, `MmTypeA`, for the one shader
+   * they share. */
+  const uint32_t warp = sub < 8 ? 8 : sub > 64 ? 64 : sub;
+  static const uint32_t MM_TYPE[LLM_VK_MMV_KINDS] = { 0, 1, 2, 8, 14 };   /* ggml's type ids */
+  for (int k = 0; k < LLM_VK_MMV_KINDS; k++) {
+    const int quant = k >= LLM_VK_MMV_Q4_0;
+    uint32_t spec[13] = { 128, 64, 64, quant ? 32 : 16, warp, 32, 2, 4, 2, 1, warp, 0,
+                          MM_TYPE[k] };
+    /* And a small tile, 32 by 32, for n up to 32 - every batch of a
+     * question - where a medium tile's 64 tokens would be mostly padding:
+     * warps of WM = min(warp, 32) rows by 32, as many as cover 32 rows, each
+     * in two passes of 2 by 2, which makes a warp's lanes exactly
+     * (WSUBM / TM) by (WSUBN / TN) at every width from 8 to 64. */
+    const uint32_t wm = warp < 32 ? warp : 32;
+    uint32_t small[13] = { warp * (32 / wm), 32, 32, quant ? 32 : 16, wm, 32, 2, 2, 2, 1, warp, 0,
+                           MM_TYPE[k] };
+    const uint32_t *code = quant ? llmvk_matmul_quant_f32_fp32
+                         : k == LLM_VK_MMV_F16 ? llmvk_matmul_f16_f32_fp32 : llmvk_matmul_f32_f32_fp32;
+    size_t bytes = quant ? sizeof(llmvk_matmul_quant_f32_fp32)
+                 : k == LLM_VK_MMV_F16 ? sizeof(llmvk_matmul_f16_f32_fp32)
+                                       : sizeof(llmvk_matmul_f32_f32_fp32);
+
+    if (!kvk_compute_make(v, &g->mm[k], code, bytes, 3, sizeof(struct mm_push), spec,
+                          quant ? 13 : 12, "mm") ||
+        !kvk_compute_make(v, &g->mm_s[k], code, bytes, 3, sizeof(struct mm_push), small,
+                          quant ? 13 : 12, "mm small")) {
+      snprintf(g->why, sizeof(g->why), "the question's product %d: %s", k, v->why);
       llm_vk_close(g);
       return 0;
     }
@@ -520,6 +578,34 @@ int llm_vk_mmv(struct llm_vk *g, uint32_t type, struct kvk_span w, uint32_t cols
   return 1;
 }
 
+int llm_vk_mm(struct llm_vk *g, uint32_t type, struct kvk_span w, uint32_t cols,
+              uint32_t rows, struct kvk_span x, uint32_t n, struct kvk_span out)
+{
+  int k = llm_vk_mmv_kind(type);
+
+  if (k < 0 || cols == 0 || rows == 0 || n == 0 || cols % BLOCK[k] != 0) {
+    return 0;
+  }
+
+  /* One batch, no split of K: the strides are a row's values for W and x
+   * and the output's rows for out, as `ggml_vk_matmul` gives them. */
+  struct mm_push p = {
+    .M = rows, .N = n, .K = cols, .stride_a = cols, .stride_b = cols, .stride_d = rows,
+    .batch_stride_a = cols * rows, .batch_stride_b = cols * n, .batch_stride_d = rows * n,
+    .num_batches = 1, .k_split = cols, .ne02 = 1, .ne12 = 1, .broadcast2 = 1, .broadcast3 = 1,
+    .padded_N = n,
+  };
+  struct kvk_span spans[3] = { w, x, out };
+
+  const uint32_t tile = n <= 32 ? 32 : 64;   /* `ggml_vk_guess_matmul_pipeline`'s small or medium */
+  if ((rows + tile - 1) / tile > g->v->max_groups[0] || (n + tile - 1) / tile > g->v->max_groups[1]) {
+    return 0;
+  }
+  kvk_compute_dispatch(g->v, tile == 32 ? &g->mm_s[k] : &g->mm[k], spans, &p, (rows + tile - 1) / tile,
+                       (n + tile - 1) / tile, 1);
+  return 1;
+}
+
 /* ------------------------------------------------------------------------ */
 /* A model on the GPU (V4)                                                    */
 /* ------------------------------------------------------------------------ */
@@ -565,7 +651,9 @@ void llm_vk_model_close(struct llm_vk_model *vm)
     }
   }
   struct kvk_buffer *vecs[] = { &vm->x, &vm->xn, &vm->qkv, &vm->att, &vm->prob, &vm->aout,
-                                &vm->ffo, &vm->ff, &vm->up, &vm->mlp, &vm->logits, &vm->pos };
+                                &vm->ffo, &vm->ff, &vm->up, &vm->mlp, &vm->logits, &vm->pos,
+                                &vm->bx, &vm->bxn, &vm->bq, &vm->bk, &vm->bv, &vm->baout,
+                                &vm->bffo, &vm->bff, &vm->bup, &vm->bmlp, &vm->bpos };
   for (size_t i = 0; i < sizeof(vecs) / sizeof(vecs[0]); i++) {
     kvk_buffer_free(v, vecs[i]);
   }
@@ -633,6 +721,12 @@ int llm_vk_model_open(struct llm_vk_model *vm, struct llm_vk *g, struct llm_mode
     { &vm->att, (uint64_t)m->n_head * m->n_ctx }, { &vm->prob, (uint64_t)m->n_head * m->n_ctx },
     { &vm->aout, E }, { &vm->ffo, E }, { &vm->ff, F }, { &vm->up, F }, { &vm->mlp, E },
     { &vm->logits, m->n_vocab }, { &vm->pos, 1 },
+    { &vm->bx, (uint64_t)LLM_BATCH * E }, { &vm->bxn, (uint64_t)LLM_BATCH * E },
+    { &vm->bq, (uint64_t)LLM_BATCH * E }, { &vm->bk, (uint64_t)LLM_BATCH * KV },
+    { &vm->bv, (uint64_t)LLM_BATCH * KV }, { &vm->baout, (uint64_t)LLM_BATCH * E },
+    { &vm->bffo, (uint64_t)LLM_BATCH * E }, { &vm->bff, (uint64_t)LLM_BATCH * F },
+    { &vm->bup, (uint64_t)LLM_BATCH * F }, { &vm->bmlp, (uint64_t)LLM_BATCH * E },
+    { &vm->bpos, LLM_BATCH },
   };
   for (size_t i = 0; i < sizeof(VECS) / sizeof(VECS[0]); i++) {
     if (!kvk_buffer_make_storage(v, VECS[i].b, VECS[i].floats * 4, "vector")) {
@@ -666,7 +760,7 @@ static int product(struct llm_vk_model *vm, const struct llm_tensor *w, const st
 /* A model's norm, from `x` into `out`: RMS and the weight in Qwen2's,
  * LayerNorm, the weight and the bias in phi-2's. */
 static int layer_norm(struct llm_vk_model *vm, const struct llm_tensor *w, const struct llm_tensor *b,
-                      struct kvk_span x, struct kvk_span out)
+                      struct kvk_span x, struct kvk_span out, uint32_t rows)
 {
   struct llm_vk *g = vm->g;
   const struct llm_model *m = vm->m;
@@ -674,14 +768,14 @@ static int layer_norm(struct llm_vk_model *vm, const struct llm_tensor *w, const
     return 0;
   }
   if (m->kind == LLM_ARCH_QWEN2) {
-    return llm_vk_rms_norm(g, x, whole(tensor_buffer(vm, w)), out, m->n_embd, 1, m->norm_eps);
+    return llm_vk_rms_norm(g, x, whole(tensor_buffer(vm, w)), out, m->n_embd, rows, m->norm_eps);
   }
-  int ok = llm_vk_norm(g, x, out, m->n_embd, 1, m->norm_eps);
+  int ok = llm_vk_norm(g, x, out, m->n_embd, rows, m->norm_eps);
   kvk_compute_barrier(g->v);
-  ok = ok && llm_vk_mul(g, out, whole(tensor_buffer(vm, w)), out, m->n_embd, 1, 1);
+  ok = ok && llm_vk_mul(g, out, whole(tensor_buffer(vm, w)), out, m->n_embd, rows, 1);
   if (b) {
     kvk_compute_barrier(g->v);
-    ok = ok && llm_vk_add(g, out, whole(tensor_buffer(vm, b)), out, m->n_embd, 1, 1);
+    ok = ok && llm_vk_add(g, out, whole(tensor_buffer(vm, b)), out, m->n_embd, rows, 1);
   }
   return ok;
 }
@@ -718,7 +812,7 @@ int llm_vk_step(struct llm_vk_model *vm, int32_t token)
   for (uint32_t l = 0; l < m->n_layer && ok; l++) {
     const struct llm_layer *L = &m->layers[l];
 
-    ok = ok && layer_norm(vm, L->norm_w, L->norm_b, x, xn);
+    ok = ok && layer_norm(vm, L->norm_w, L->norm_b, x, xn, 1);
     B();
 
     /* Q, K and V where the processor keeps them: K at E, V at 2E. */
@@ -765,7 +859,7 @@ int llm_vk_step(struct llm_vk_model *vm, int32_t token)
       B();
       ok = ok && llm_vk_add(g, ffo, x, x, E, 1, 1);
       B();
-      ok = ok && layer_norm(vm, L->ffn_norm_w, NULL, x, xn);
+      ok = ok && layer_norm(vm, L->ffn_norm_w, NULL, x, xn, 1);
       B();
       ok = ok && product(vm, L->gate_w, NULL, xn, ff) && product(vm, L->up_w, NULL, xn, up);
       B();
@@ -790,7 +884,7 @@ int llm_vk_step(struct llm_vk_model *vm, int32_t token)
     B();
   }
 
-  ok = ok && layer_norm(vm, m->out_norm_w, m->out_norm_b, x, xn);
+  ok = ok && layer_norm(vm, m->out_norm_w, m->out_norm_b, x, xn, 1);
   B();
   ok = ok && product(vm, m->out_w, m->out_b, xn, whole(&vm->logits));
   B();
@@ -809,5 +903,191 @@ int llm_vk_step(struct llm_vk_model *vm, int32_t token)
   }
   memcpy(m->logits, vm->logits.bytes, (size_t)m->n_vocab * 4);
   m->n_past++;
+  return 0;
+}
+
+/* Rows `first` to `first + rows` of a weight, by `n` tokens of `x`, into
+ * `out` a token a row of `rows`, and the bias's same rows added: a fused
+ * weight - phi-2's Q, K and V in one - read as the three it holds. */
+static int product_rows(struct llm_vk_model *vm, const struct llm_tensor *w, const struct llm_tensor *bias,
+                        uint32_t first, uint32_t rows, struct kvk_span x, uint32_t n, struct kvk_span out)
+{
+  struct kvk *v = vm->g->v;
+  const uint32_t cols = (uint32_t)w->ne[0];
+  const uint64_t rb = w->bytes / (uint64_t)w->ne[1];
+  const VkDeviceSize at = rb * first, bat = (VkDeviceSize)first * 4;
+
+  if ((v->storage_align && (at % v->storage_align != 0 || (bias && bat % v->storage_align != 0))) ||
+      first + rows > (uint32_t)w->ne[1]) {
+    snprintf(vm->why, sizeof(vm->why), "a weight's rows off the device's alignment");
+    return 0;
+  }
+  struct kvk_span ws = { tensor_buffer(vm, w)->buffer, at, rb * rows };
+  if (n > LLM_VK_MM_MIN) {
+    if (!llm_vk_mm(vm->g, w->type, ws, cols, rows, x, n, out)) {
+      return 0;
+    }
+  } else {
+    /* Up to `mul_mat_vec_max_cols` tokens, ggml's vector product: a tile
+     * of 32 tokens would be mostly padding, and cost as much as 32. */
+    int ok = 1;
+    for (uint32_t t = 0; t < n && ok; t++) {
+      struct kvk_span xt = { x.buffer, x.offset + (VkDeviceSize)t * cols * 4, (VkDeviceSize)cols * 4 };
+      struct kvk_span ot = { out.buffer, out.offset + (VkDeviceSize)t * rows * 4, (VkDeviceSize)rows * 4 };
+      if (v->storage_align && (xt.offset % v->storage_align != 0 || ot.offset % v->storage_align != 0)) {
+        snprintf(vm->why, sizeof(vm->why), "a token's row off the device's alignment");
+        return 0;
+      }
+      ok = llm_vk_mmv(vm->g, w->type, ws, cols, rows, xt, ot);
+    }
+    if (!ok) {
+      return 0;
+    }
+  }
+  if (bias) {
+    if (bias->type != LLM_F32) {
+      return 0;
+    }
+    struct kvk_span bs = { tensor_buffer(vm, bias)->buffer, bat, (VkDeviceSize)rows * 4 };
+    kvk_compute_barrier(v);
+    return llm_vk_add(vm->g, out, bs, out, rows, n, 1);
+  }
+  return 1;
+}
+
+static int product_all(struct llm_vk_model *vm, const struct llm_tensor *w, const struct llm_tensor *bias,
+                       struct kvk_span x, uint32_t n, struct kvk_span out)
+{
+  return product_rows(vm, w, bias, 0, (uint32_t)w->ne[1], x, n, out);
+}
+
+int llm_vk_batch(struct llm_vk_model *vm, const int32_t *tokens, uint32_t T)
+{
+  struct llm_model *m = vm->m;
+  struct llm_vk *g = vm->g;
+  struct kvk *v = g->v;
+  const uint32_t E = m->n_embd, D = m->head_dim, KV = m->kv_dim, H = m->n_head, F = m->n_ff;
+  const uint32_t pos = m->n_past;
+  const int qwen = m->kind == LLM_ARCH_QWEN2;
+  int ok = 1;
+
+  if (T == 0 || T > LLM_BATCH || pos + T > m->n_ctx) {
+    return -1;
+  }
+  for (uint32_t t = 0; t < T; t++) {
+    if (tokens[t] < 0 || (uint32_t)tokens[t] >= m->n_vocab) {
+      return -1;
+    }
+    llm_embedding(m, tokens[t], (float *)vm->bx.bytes + (size_t)t * E);
+    ((int32_t *)vm->bpos.bytes)[t] = (int32_t)(pos + t);
+  }
+
+  struct kvk_span x = whole(&vm->bx), xn = whole(&vm->bxn), q = whole(&vm->bq);
+  struct kvk_span k = whole(&vm->bk), vv = whole(&vm->bv), ffo = whole(&vm->bffo);
+  struct kvk_span ff = whole(&vm->bff), up = whole(&vm->bup), mlp = whole(&vm->bmlp);
+  struct kvk_span aout = whole(&vm->baout), bpos = whole(&vm->bpos);
+  struct kvk_span att = whole(&vm->att), prob = whole(&vm->prob);
+  struct kvk_span last = part(vm, &vm->bx, (uint64_t)(T - 1) * E, E, &ok);
+  VkDeviceSize krow = (VkDeviceSize)pos * KV * 2;
+  if (!ok || (v->storage_align && krow % v->storage_align != 0)) {
+    snprintf(vm->why, sizeof(vm->why), "a row off the device's alignment");
+    return -1;
+  }
+  if (!kvk_begin(v)) {
+    snprintf(vm->why, sizeof(vm->why), "%s", v->why);
+    return -1;
+  }
+#define B() kvk_compute_barrier(v)
+
+  for (uint32_t l = 0; l < m->n_layer && ok; l++) {
+    const struct llm_layer *L = &m->layers[l];
+
+    ok = ok && layer_norm(vm, L->norm_w, L->norm_b, x, xn, T);
+    B();
+    if (L->qkv_w) {
+      ok = ok && product_rows(vm, L->qkv_w, L->qkv_b, 0, E, xn, T, q) &&
+           product_rows(vm, L->qkv_w, L->qkv_b, E, KV, xn, T, k) &&
+           product_rows(vm, L->qkv_w, L->qkv_b, E + KV, KV, xn, T, vv);
+    } else {
+      ok = ok && product_all(vm, L->q_w, L->q_b, xn, T, q) && product_all(vm, L->k_w, L->k_b, xn, T, k) &&
+           product_all(vm, L->v_w, L->v_b, xn, T, vv);
+    }
+    B();
+    ok = ok && llm_vk_rope_neox(g, q, bpos, q, D, H, T, m->n_rot, m->rope_base) &&
+         llm_vk_rope_neox(g, k, bpos, k, D, m->n_head_kv, T, m->n_rot, m->rope_base);
+    B();
+    if (!qwen) {
+      ok = ok && llm_vk_scale(g, q, q, E * T, 1.0f / sqrtf((float)D), 0);
+    }
+
+    /* The batch's keys into their rows, its values down their columns. */
+    struct kvk_span kc = { vm->kc[l].buffer, krow, (VkDeviceSize)T * KV * 2 };
+    ok = ok && llm_vk_cpy_f16(g, k, kc, T * KV) &&
+         llm_vk_cpy_f16_transposed(g, vv, whole(&vm->vc[l]), KV, T, m->n_ctx, pos);
+    B();
+
+    /* Each token's attention over the positions up to its own: the
+     * processor's, a token at a time, with no mask to build. */
+    for (uint32_t t = 0; t < T && ok; t++) {
+      const uint32_t n = pos + t + 1;
+      struct kvk_span qt = part(vm, &vm->bq, (uint64_t)t * E, E, &ok);
+      struct kvk_span at = part(vm, &vm->baout, (uint64_t)t * E, E, &ok);
+      ok = ok && llm_vk_mmv_nc(g, whole(&vm->kc[l]), qt, att, D, n, KV, D, D, H / m->n_head_kv, H);
+      B();
+      ok = ok && llm_vk_soft_max(g, att, prob, n, H, qwen ? 1.0f / sqrtf((float)D) : 1.0f);
+      B();
+      ok = ok && llm_vk_mmv_nc(g, whole(&vm->vc[l]), prob, at, n, D, m->n_ctx, D * m->n_ctx, n,
+                               H / m->n_head_kv, H);
+      B();
+    }
+
+    ok = ok && product_all(vm, L->o_w, L->o_b, aout, T, ffo);
+    if (qwen) {
+      B();
+      ok = ok && llm_vk_add(g, ffo, x, x, E, T, T);
+      B();
+      ok = ok && layer_norm(vm, L->ffn_norm_w, NULL, x, xn, T);
+      B();
+      ok = ok && product_all(vm, L->gate_w, NULL, xn, T, ff) && product_all(vm, L->up_w, NULL, xn, T, up);
+      B();
+      ok = ok && llm_vk_swiglu(g, ff, up, ff, F * T);
+      B();
+      ok = ok && product_all(vm, L->down_w, NULL, ff, T, mlp);
+      B();
+      ok = ok && llm_vk_add(g, mlp, x, x, E, T, T);
+    } else {
+      ok = ok && product_all(vm, L->up_w, L->up_b, xn, T, ff);
+      B();
+      ok = ok && llm_vk_gelu(g, ff, ff, F * T);
+      B();
+      ok = ok && product_all(vm, L->down_w, L->down_b, ff, T, mlp);
+      B();
+      ok = ok && llm_vk_add(g, ffo, mlp, ffo, E, T, T);
+      B();
+      ok = ok && llm_vk_add(g, ffo, x, x, E, T, T);
+    }
+    B();
+  }
+
+  /* Only the last token's logits are wanted. */
+  ok = ok && layer_norm(vm, m->out_norm_w, m->out_norm_b, last, whole(&vm->xn), 1);
+  B();
+  ok = ok && product(vm, m->out_w, m->out_b, whole(&vm->xn), whole(&vm->logits));
+  B();
+#undef B
+
+  if (!ok) {
+    if (vm->why[0] == 0) {
+      snprintf(vm->why, sizeof(vm->why), "a batch step there is no pipeline or shape for");
+    }
+    kvk_submit(v);
+    return -1;
+  }
+  if (!kvk_submit(v)) {
+    snprintf(vm->why, sizeof(vm->why), "submitting: %s", v->why);
+    return -1;
+  }
+  memcpy(m->logits, vm->logits.bytes, (size_t)m->n_vocab * 4);
+  m->n_past += T;
   return 0;
 }

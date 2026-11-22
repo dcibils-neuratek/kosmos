@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -215,6 +216,75 @@ static void product(struct llm_vk *g, uint32_t type, uint32_t as, uint32_t cols,
            type == LLM_Q8_0 ? "Q8_0" : "Q6_K", as != type ? " read as another type" : "",
            rows, cols);
   verdict(what, nmse((const float *)out.bytes, want, rows), 1e-7, as != type);
+
+done:
+  kvk_buffer_free(v, &out);
+  kvk_buffer_free(v, &x);
+  kvk_buffer_free(v, &w);
+  free(values);
+  free(want);
+  free(xv);
+}
+
+/* A matrix product (V5): `n` tokens of `cols` floats against `rows` rows
+ * of `type` at once - the question's product, where the products above
+ * are one token's. Read as `as`'s blocks in the control, as they are. */
+static void matmul(struct llm_vk *g, uint32_t type, uint32_t as, uint32_t cols, uint32_t rows,
+                   uint32_t n)
+{
+  struct kvk *v = g->v;
+  struct kvk_buffer w = { 0 }, x = { 0 }, out = { 0 };
+  size_t rb = row_bytes(type, cols);
+  size_t outs = (size_t)rows * n;
+  double *values = malloc(sizeof(double) * cols * rows);
+  double *want = malloc(sizeof(double) * outs);
+  double *xv = malloc(sizeof(double) * cols * n);
+  char what[112];
+
+  if (!kvk_buffer_make_storage(v, &w, rb * rows * 2, "w") ||
+      !kvk_buffer_make_storage(v, &x, (VkDeviceSize)cols * n * 4, "x") ||
+      !kvk_buffer_make_storage(v, &out, (VkDeviceSize)outs * 4, "out")) {
+    printf("FAIL: buffers: %s\n", v->why);
+    failures++;
+    goto done;
+  }
+  for (size_t i = 0; i < (size_t)cols * n; i++) {
+    float f = uniform();
+    ((float *)x.bytes)[i] = f;
+    xv[i] = f;
+  }
+  for (uint32_t r = 0; r < rows; r++) {
+    make_row(type, cols, (uint8_t *)w.bytes + rb * r, values + (size_t)cols * r);
+  }
+  /* Token t's output is a row of `rows`, as the shader writes D. */
+  for (uint32_t t = 0; t < n; t++) {
+    for (uint32_t r = 0; r < rows; r++) {
+      double s = 0;
+      for (uint32_t c = 0; c < cols; c++) {
+        s += values[(size_t)cols * r + c] * xv[(size_t)cols * t + c];
+      }
+      want[(size_t)rows * t + r] = s;
+    }
+  }
+  memset(out.bytes, 0xff, outs * 4);   /* an output not written is a NaN */
+
+  struct kvk_span ws = { w.buffer, 0, 0 }, xs = { x.buffer, 0, 0 }, os = { out.buffer, 0, 0 };
+  if (!kvk_begin(v) || !llm_vk_mm(g, as, ws, cols, rows, xs, n, os)) {
+    printf("FAIL: recording the matrix product\n");
+    failures++;
+    goto done;
+  }
+  kvk_compute_barrier(v);
+  if (!kvk_submit(v)) {
+    printf("FAIL: submitting: %s\n", v->why);
+    failures++;
+    goto done;
+  }
+  snprintf(what, sizeof(what), "matrix product, %s%s, %u tokens by %u rows of %u",
+           type == LLM_F32 ? "F32" : type == LLM_F16 ? "F16" : type == LLM_Q4_0 ? "Q4_0" :
+           type == LLM_Q8_0 ? "Q8_0" : "Q6_K", as != type ? " read as another type" : "",
+           n, rows, cols);
+  verdict(what, nmse((const float *)out.bytes, want, outs), 1e-7, as != type);
 
 done:
   kvk_buffer_free(v, &out);
@@ -729,6 +799,26 @@ static double nmse_f(const float *got, const float *want, size_t n)
  * the way would, which must break what is held. (A cache started a
  * position on is not one: RoPE sees only the distances between tokens,
  * and phi-2's answer barely moved.) */
+/* The question into the GPU's cache: a token a step, or `batched` tokens
+ * at a time through `llm_vk_batch` (V5) - `LLM_BATCH`, as the server gives
+ * them, or fewer, so that a batch starts past position 0, as every turn
+ * of a conversation after the first does. */
+static int batched;
+
+static int feed(struct llm_vk_model *vm, const int32_t *q, int n)
+{
+  int r = 0;
+  /* What does not fill a batch first, so a full batch - its products
+   * matrix products, past `LLM_VK_MM_MIN` - starts past position 0. */
+  int first = batched && n % batched ? n % batched : batched;
+  for (int i = 0; r == 0 && i < n;) {
+    int take = !batched ? 1 : i == 0 ? (first < n ? first : n) : batched;
+    r = batched ? llm_vk_batch(vm, q + i, (uint32_t)take) : llm_vk_step(vm, q[i]);
+    i += take;
+  }
+  return r;
+}
+
 static int model(struct llm_vk *g, const char *path, int whole_answer, int control)
 {
   int fd = open(path, O_RDONLY);
@@ -772,10 +862,11 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
   }
 
   llm_reset(&m);
-  int r = 0;
-  for (int i = 0; r == 0 && i < nq - (control ? 1 : 0); i++) {
-    r = llm_vk_step(&vm, q[i]);
-  }
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  int r = feed(&vm, q, nq - (control ? 1 : 0));
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  double question_ms = (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6;
   double worst = 0;
   int agree = 0;
   for (int i = 0; r == 0 && i < ANSWER; i++) {
@@ -804,9 +895,7 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
   int own = whole_answer && !control ? 0 : ANSWER;
   if (whole_answer && !control && agree == ANSWER) {
     llm_reset(&m);
-    for (int i = 0; r == 0 && i < nq; i++) {
-      r = llm_vk_step(&vm, q[i]);
-    }
+    r = feed(&vm, q, nq);
     for (int i = 0; r == 0 && i < ANSWER; i++) {
       gpu[i] = llm_greedy(&m);
       if (i + 1 < ANSWER) {
@@ -830,9 +919,9 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
    * held instead. */
   int held = whole_answer ? agree == ANSWER && own == ANSWER : worst <= 1e-3;
   int ok = control ? !held : held;
-  printf("%s: %s, a %d-token question, %d answer tokens: every step's logits within %.3g of NMSE%s, "
+  printf("%s: %s, a %d-token question%s, %d answer tokens: every step's logits within %.3g of NMSE%s, "
          "the likeliest the processor's at %d of %d steps",
-         ok ? "PASS" : "FAIL", path, nq, ANSWER, worst, whole_answer ? "" : " (held to 1e-3)", agree, ANSWER);
+         ok ? "PASS" : "FAIL", path, nq, batched ? (batched >= nq ? " in one batch" : " in batches") : "", ANSWER, worst, whole_answer ? "" : " (held to 1e-3)", agree, ANSWER);
   if (whole_answer && !control) {
     if (agree == ANSWER) {
       printf(", the GPU's own answer the processor's for %d of %d tokens", own, ANSWER);
@@ -843,6 +932,7 @@ static int model(struct llm_vk *g, const char *path, int whole_answer, int contr
   if (control) {
     printf(" - the control, which must not hold");
   }
+  printf(" (the question in %.0f ms)", question_ms);
   printf("\n      \"%s\"\n", said);
   bad = !ok;
 
@@ -864,6 +954,11 @@ int main(int argc, char **argv)
       model_path = argv[++i];
     } else if (strcmp(argv[i], "--whole") == 0) {
       whole_answer = 1;
+    } else if (strcmp(argv[i], "--batch") == 0) {
+      batched = LLM_BATCH;
+      if (i + 1 < argc && atoi(argv[i + 1]) > 0 && atoi(argv[i + 1]) <= LLM_BATCH) {
+        batched = atoi(argv[++i]);
+      }
     }
   }
   struct kvk v;
@@ -902,6 +997,19 @@ int main(int argc, char **argv)
   for (size_t i = 0; i < sizeof(CASES) / sizeof(CASES[0]); i++) {
     uint32_t t = CASES[i].type;
     product(&g, t, control ? OTHER[t] : t, CASES[i].cols, CASES[i].rows);
+  }
+  /* The question's products: one token, a few, exactly a small tile's 32
+   * and a medium one's 64, one past each, and row counts no tile divides. */
+  static const struct { uint32_t type, cols, rows, n; } MATMULS[] = {
+    { LLM_F32, 256, 37, 1 },    { LLM_F32, 256, 100, 70 },
+    { LLM_F16, 512, 65, 7 },    { LLM_F16, 2560, 128, 64 },
+    { LLM_Q4_0, 2560, 300, 70 }, { LLM_Q4_0, 64, 3, 5 },
+    { LLM_Q8_0, 1024, 129, 33 }, { LLM_Q8_0, 1024, 129, 32 }, { LLM_Q4_0, 896, 4864, 15 },
+    { LLM_Q6_K, 1536, 200, 70 }, { LLM_Q6_K, 256, 7, 1 },
+  };
+  for (size_t i = 0; i < sizeof(MATMULS) / sizeof(MATMULS[0]); i++) {
+    uint32_t t = MATMULS[i].type;
+    matmul(&g, t, control ? OTHER[t] : t, MATMULS[i].cols, MATMULS[i].rows, MATMULS[i].n);
   }
   steps(&g, control);
 

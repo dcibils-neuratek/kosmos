@@ -41735,3 +41735,99 @@ runs more often: a change to `user/lib` or the window manager now runs
 the whole tree, as `CLAUDE.md` says it should. The slowest are Flight's,
 `x86-flight-747` 560 s and `x86-flight` 494 s, then `x86-cafesa3d-2`
 492 s; decision 6zp, the budget, is Diego's.
+
+## 18.991 A question read in one pass on the GPU (Xavier on Vulkan, V5)
+
+**In short:** a question is now read on the GPU as one batch. Each layer
+runs once for all of the question's tokens, and every weight is read once
+for the whole batch, where before it was read once per token. The
+products are llama.cpp's `mul_mm` matrix product, held to double precision
+on the Mac for every weight type. On lavapipe, which runs on this Mac's
+processor, Qwen 2.5 0.5B reads its 15-token question in 648 ms against
+1666 ms a token at a time, 2.6 times sooner. Its answer is still the
+processor's, all 32 tokens. Settings' GPU switch now moves the model
+between Vulkan and the processor, so Compare can measure the two side by
+side, and both Compare and the Monitor give the time to the first word.
+
+**What was built.**
+
+- `llm_vk_mm` (`user/kits/llm/llm_vk.c`): `mul_mm.comp` in its three
+  `fp32` forms, which `tools/vkshaders.py` compiles. One form covers the
+  quantised types (`MULMAT_QUANT`, with the type as specialisation
+  constant 12) and the other two cover F16 and F32. There are two tiles,
+  as `ggml_vk_guess_matmul_pipeline` chooses: a medium 64 by 64 tile, and
+  a small 32 by 32 one for up to 32 tokens. The small tile's warps follow
+  from the shader's own arithmetic. With WM = min(warp, 32) and BLOCK =
+  warp·32/WM, the number of warps covers the tile and each warp's lanes
+  are exactly (WSUBM/TM)·(WSUBN/TN), at every width from 8 to 64.
+  `ALIGNED` is 0, so B is read with bounds checks and a batch needs no
+  padding.
+- `llm_vk_batch`: up to `LLM_BATCH` (32) tokens through every layer.
+  phi-2's fused QKV weight is read as its three row ranges, so Q, K and V
+  come out contiguous. RoPE takes a position per token. All the keys go
+  into the cache at once, and all the values go down their columns in one
+  copy (`llm_vk_cpy_f16_transposed`, which `llm_vk_cpy_f16_strided` is
+  now the one-token case of). Each token attends over the positions up to
+  its own, using the same two attention products as a single step, so no
+  mask has to be built. Only the last token's logits are computed. Up to
+  8 tokens (`LLM_VK_MM_MIN`, ggml's `mul_mat_vec_max_cols`), the products
+  are vector products, one token at a time.
+- The LLM Kit's hook `llm_forward_batch` (`llm_core.c`): with it, a call
+  to `llm_step_batch` hands the whole batch over in one go.
+- The server: Vulkan is opened at start beside `gpu_look`, so Settings
+  sees a GPU and the model goes to it by default. A settings file can say
+  otherwise. Either GPU switch on means every step runs on Vulkan; both
+  off means the processor runs the model. A change takes effect as the
+  next question begins, and it forgets the conversation, because the two
+  sides keep separate caches. `ran_gpu` and the device's name now say
+  where an answer ran.
+- Compare tries the GPU first, then the processor's settings, and each
+  row gives the first word, the question's speed and the answer's. The
+  Monitor's "where it runs" and the assistant's footer name the GPU.
+
+**The tests** (`make host-llmvk-check`).
+
+- Eleven matrix products: one token, a few, exactly 32 and exactly 64,
+  one past each, and row counts that no tile divides. They cover all
+  five types and Qwen's 15 × 4864 × 896 shape. All are within 1e-12 of
+  NMSE against double precision, where the bound is 1e-7. In the control
+  each type's blocks are read as another type, and all eleven break.
+- The models' questions are read in a batch three ways: in one batch, in
+  batches of 9 for phi-2, and in batches of 10 for Qwen. In the last two
+  the remainder goes first, so the vector-product path runs at position
+  0, and a matrix-product batch starts past position 0, as every turn
+  after a conversation's first does. phi-2's logits and Qwen's whole
+  answer match those of a question read a token at a time. The control
+  drops a token from the batched question, and it breaks.
+
+**Measured on lavapipe** (the Mac's processor, so this is the shape of
+the gain rather than the M700's figure):
+
+| the question, 15 tokens, Qwen 0.5B | time |
+|---|---|
+| a token at a time | 1666 ms |
+| one batch, medium tile | 908 ms |
+| one batch, small tile | 648 ms |
+| 10 then 5 (matrix products, then vector products) | 960 ms |
+
+**Two measurements decided the design.**
+
+- **The medium tile cost the same at 6 tokens as at 64.** lavapipe is
+  bound by its arithmetic, and it computes the tile's padding as well.
+  Batches of 6 took 2737 ms, slower than reading a token at a time. The
+  small tile brought one batch from 908 to 648 ms.
+- **At 6 tokens, even the small tile only drew level with stepping.** So,
+  as in ggml, up to 8 tokens the products are vector products. With that,
+  no batch costs more than stepping.
+
+**The gate**: 162 suites in 954 s, 157 passing. Of the five that failed:
+
+- `x86-tcc` was mine. 18.990's diagnostic in `tools/run_loader.py` read
+  `posix_at`, but a TinyCC image never sets it, and the message is built
+  whether or not the check fails. It is now set on both paths.
+- The other four are flakes under load seen before: `x86-flight-land`,
+  `x86-jetski`, `x86-network` (one of 20 connections reset) and
+  `x86-display-4`.
+
+All five pass alone, in 192 s. Under the gate's load `x86-llm-vk` took
+447 s of its 540 s timeout; alone it takes about 130 s.

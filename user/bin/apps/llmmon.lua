@@ -191,6 +191,7 @@ local function app_name(process)
 end
 
 local function where_it_runs(s)
+  if (s.ran.gpu or 0) ~= 0 and s.gpu ~= "" then return "on " .. s.gpu end
   local loops = s.ran.loops == "avx2" and "AVX2" or s.ran.loops == "base" and "SSE2"
                 or s.ran.loops == "plain" and "plain loops" or s.ran.loops
   return ("%d core%s %s"):format(s.ran.cores, s.ran.cores == 1 and "" or "s", loops)

@@ -1316,7 +1316,13 @@ static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct
 void llm_forward(struct llm_model *m, llm_forward_fn *forward, void *ctx)
 {
   m->forward = forward;
+  m->forward_batch = NULL;
   m->forward_ctx = ctx;
+}
+
+void llm_forward_batch(struct llm_model *m, llm_forward_batch_fn *batch)
+{
+  m->forward_batch = m->forward ? batch : NULL;
 }
 
 void llm_offload(struct llm_model *m, llm_product_fn *product, llm_product_done_fn *done, void *ctx)
@@ -1792,6 +1798,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
   for (uint32_t t = 0; t < n; t++)
     if (tokens[t] < 0 || (uint32_t)tokens[t] >= m->n_vocab) return -1;
 
+  if (m->forward_batch && n > 1) return m->forward_batch(m->forward_ctx, tokens, n) != 0 ? -1 : 0;
   if (m->forward) {
     for (uint32_t t = 0; t < n; t++)
       if (m->forward(m->forward_ctx, tokens[t]) != 0) return -1;

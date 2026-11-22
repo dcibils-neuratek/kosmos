@@ -155,6 +155,11 @@ typedef int llm_product_done_fn(void *ctx);
  * processor's pass records - a passage, the streams - is kept. */
 typedef int llm_forward_fn(void *ctx, int32_t token);
 
+/* The same for a question's tokens at once (V5): `n` of them, up to
+ * `LLM_BATCH`, the last one's logits into `m->logits` and `n_past` `n` on,
+ * as `llm_step_batch` leaves them. */
+typedef int llm_forward_batch_fn(void *ctx, const int32_t *tokens, uint32_t n);
+
 struct llm_model {
   /* The file. */
   const uint8_t *file;
@@ -226,6 +231,7 @@ struct llm_model {
   llm_product_done_fn *product_done;
   /* The whole pass taken somewhere else, or NULL (`llm_forward`). */
   llm_forward_fn *forward;
+  llm_forward_batch_fn *forward_batch;   /* NULL: a batch a token at a time */
   void *forward_ctx;
   void *product_ctx;
 
@@ -354,6 +360,9 @@ void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t part
 void llm_offload(struct llm_model *m, llm_product_fn *product, llm_product_done_fn *done, void *ctx);
 /* Every step handed to `forward` (NULL: the processor's again). */
 void llm_forward(struct llm_model *m, llm_forward_fn *forward, void *ctx);
+/* And a batch handed to `batch` (V5), with `llm_forward`'s `ctx`; a later
+ * `llm_forward` takes it away again. */
+void llm_forward_batch(struct llm_model *m, llm_forward_batch_fn *batch);
 
 /*
  * **Which loops multiply the weights** (`docs/xavier.md`, *Settings*). Every

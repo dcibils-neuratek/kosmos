@@ -61,6 +61,8 @@ struct llm_vk {
   struct kvk_compute op[LLM_VK_OPS];
   struct kvk_compute mmv[LLM_VK_MMV_KINDS];
   uint32_t mmv_rows[LLM_VK_MMV_KINDS];   /* rows a workgroup makes */
+  /* The question's (V5), by the same kinds: medium tiles, and small. */
+  struct kvk_compute mm[LLM_VK_MMV_KINDS], mm_s[LLM_VK_MMV_KINDS];
   uint32_t lanes;                        /* lanes a workgroup, for the products */
   char why[128];
 };
@@ -80,6 +82,13 @@ int llm_vk_mmv_kind(uint32_t type);
  * product for. */
 int llm_vk_mmv(struct llm_vk *g, uint32_t type, struct kvk_span w, uint32_t cols,
                uint32_t rows, struct kvk_span x, struct kvk_span out);
+
+/* Recorded, for `n` inputs at once (V5, a question's tokens): `out[t][r] =
+ * sum over c of W[r][c] * x[t][c]`, x `n` rows of `cols` floats and out
+ * `n` rows of `rows` - llama.cpp's `mul_mm`, in tiles of 64 by 64. 1, or 0
+ * for a type or a shape there is no product for. */
+int llm_vk_mm(struct llm_vk *g, uint32_t type, struct kvk_span w, uint32_t cols,
+              uint32_t rows, struct kvk_span x, uint32_t n, struct kvk_span out);
 
 /* Every step below is recorded, as the product is, over floats laid out
  * row after row, `cols` a row; 1, or 0 for a shape there is none for. */
@@ -132,6 +141,10 @@ int llm_vk_cpy_f32(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uin
  * attention's second product reads it a row at a time. `at` under 65536. */
 int llm_vk_cpy_f16_strided(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n,
                            uint32_t stride, uint32_t at);
+/* The same for `tokens` rows of `n`, the next a column on:
+ * out[i * stride + at + t] = x[t * n + i]. */
+int llm_vk_cpy_f16_transposed(struct llm_vk *g, struct kvk_span x, struct kvk_span out, uint32_t n,
+                              uint32_t tokens, uint32_t stride, uint32_t at);
 
 /* Attention's products (`mul_mat_vec_nc`): for each of `channels` heads c,
  * out[c * rows + r] = sum over k < cols of A[(c / divisor) * a_channel +
@@ -156,6 +169,8 @@ struct llm_vk_model {
   struct kvk_buffer *w;                  /* by the tensor's index in `m->tensors` */
   struct kvk_buffer *kc, *vc;            /* a layer each */
   struct kvk_buffer x, xn, qkv, att, prob, aout, ffo, ff, up, mlp, logits, pos;
+  /* The same for a question's `LLM_BATCH` tokens at once, a token a row. */
+  struct kvk_buffer bx, bxn, bq, bk, bv, baout, bffo, bff, bup, bmlp, bpos;
   char why[160];
 };
 
@@ -167,5 +182,16 @@ void llm_vk_model_close(struct llm_vk_model *vm);
  * submitted once: the logits into `m->logits`, the cache a position on, as
  * `llm_step` leaves them. 0, or -1. */
 int llm_vk_step(struct llm_vk_model *vm, int32_t token);
+
+/* Past this many tokens a batch's products are matrix products, and up to
+ * it vector products a token at a time, as ggml's `mul_mat_vec_max_cols`. */
+#define LLM_VK_MM_MIN 8
+
+/* `n` tokens of a question through every layer at once (V5), up to
+ * `LLM_BATCH`: every product a matrix product, `llm_vk_mm`, so a weight is
+ * read once for all of them, and each token's attention over the
+ * positions up to its own. The last token's logits into `m->logits` and
+ * the cache `n` positions on, as `llm_step_batch` leaves them. 0, or -1. */
+int llm_vk_batch(struct llm_vk_model *vm, const int32_t *tokens, uint32_t n);
 
 #endif

@@ -284,6 +284,8 @@ static uint64_t up_us(void)
     return micros(kosmos_ticks() - started);
 }
 
+static const char *vk_name(void);      /* the Vulkan device's name, or NULL */
+
 static void put(char *to, size_t room, const char *from, size_t n)
 {
     memset(to, 0, room);
@@ -318,7 +320,8 @@ static void describe(struct llm_reply *rp)
     rp->cores = cores;
     rp->loops_have = llm_loops_have();
     rp->gpu_have = gpu_have;
-    if (gpu_have) put(rp->gpu, sizeof rp->gpu, "Intel HD Graphics", 17);
+    if (vk_name()) put(rp->gpu, sizeof rp->gpu, vk_name(), strlen(vk_name()));
+    else if (gpu_have) put(rp->gpu, sizeof rp->gpu, "Intel HD Graphics", 17);
     rp->ran_cores = ran_cores;
     rp->ran_loops = ran_loops;
     rp->ran_gpu = ran_gpu;
@@ -775,12 +778,24 @@ static bool vk_holding;
  * and a panic's last words, are this server's console's lines. */
 void posix_console(long capability);
 
+static bool vk_active;                  /* the model's steps Vulkan's, as Settings says */
+
 static int vk_forward(void *ctx, int32_t token)
 {
+    ran_gpu |= LLM_GPU_WRITE;
     return llm_vk_step(ctx, token);
 }
 
-static void vk_offer(void)
+static int vk_forward_batch(void *ctx, const int32_t *tokens, uint32_t n)
+{
+    ran_gpu |= LLM_GPU_READ;
+    return llm_vk_batch(ctx, tokens, n);
+}
+
+/* The device and its pipelines, once, at start, beside `gpu_look`: so that
+ * Settings can say there is a GPU, and the model goes to it by default -
+ * a file of settings kept says otherwise. */
+static void vk_look(void)
 {
     if (vk_state == 0) {
         posix_console(console);
@@ -800,7 +815,36 @@ static void vk_offer(void)
             return;
         }
         vk_state = 1;
+        gpu_have |= LLM_GPU_READ | LLM_GPU_WRITE;
+        settings.gpu = LLM_GPU_READ | LLM_GPU_WRITE;
     }
+}
+
+/*
+ * Settings' GPU switches, with the model on Vulkan: either on, every step
+ * there; both off, the processor's. Vulkan takes a whole step or none, so
+ * the two switches are one here; and each side keeps a cache of its own,
+ * so a change forgets the conversation, which the next question reads
+ * again. Taken between answers, as a question begins.
+ */
+static void vk_apply(void)
+{
+    bool on = vk_holding && settings.gpu != 0;
+
+    if (on == vk_active) return;
+
+    if (on) {
+        llm_forward(&model.m, vk_forward, &vk_model);
+        llm_forward_batch(&model.m, vk_forward_batch);
+    } else {
+        llm_forward(&model.m, NULL, NULL);
+    }
+    vk_active = on;
+    llm_held_reset(&model.m, &held);
+}
+
+static void vk_offer(void)
+{
     if (vk_state != 1) return;
 
     if (!llm_vk_model_open(&vk_model, &vk_ops, &model.m)) {
@@ -809,9 +853,9 @@ static void vk_offer(void)
         say(console, "\n");
         return;
     }
-    llm_forward(&model.m, vk_forward, &vk_model);
     vk_holding = true;
-    say(console, "llm: the model on Vulkan, ");
+    vk_apply();
+    say(console, vk_active ? "llm: the model on Vulkan, " : "llm: the model on Vulkan, Settings has it on the processor: ");
     say(console, vk_dev.device_name);
     say(console, "\n");
 }
@@ -819,11 +863,19 @@ static void vk_offer(void)
 static void vk_unload(void)
 {
     if (vk_holding) llm_vk_model_close(&vk_model);
-    vk_holding = false;
+    vk_holding = vk_active = false;
+}
+
+static const char *vk_name(void)
+{
+    return vk_state == 1 ? vk_dev.device_name : NULL;
 }
 #else
+static void vk_look(void) {}
+static void vk_apply(void) {}
 static void vk_offer(void) {}
 static void vk_unload(void) {}
+static const char *vk_name(void) { return NULL; }
 #endif
 
 /* One piece of the file; then, when it is all in, the kit's turn. */
@@ -1230,6 +1282,8 @@ static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
 
         length = rq->length;
     }
+
+    vk_apply();                         /* Settings' GPU switches, between answers */
 
     /* What the cache holds of it is kept; only the rest is to be read. */
     n = llm_prompt(&model.m, &held, text, length, ans.prompt, (int)model.m.n_ctx + 1, &kept);
@@ -1765,6 +1819,7 @@ void llm_server(long running_cap, long models_disk_ep, long console_ep, long mod
     if (cores == 0) cores = 1;
     gpu_ep = gpu_endpoint;
     gpu_look();
+    vk_look();
     settings_read();
 
     if ((endpoint = register_name(running_cap)) < 0) {

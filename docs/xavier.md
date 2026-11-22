@@ -1394,7 +1394,14 @@ the hold changes, and it is decision 1 below:
    one for the machine's GPU, and `opt/kosmos/llm=cpu` to keep it on the
    processor; `x86-llm-vk` holds the tiny F16 model's answers there.
 5. **V5, the question in `mul_mm`**: batches of the question's tokens.
-   Time to the first word reported in Compare and the Monitor.
+   Time to the first word reported in Compare and the Monitor. **Built**
+   (`testing.md` 18.991). `llm_vk_mm` uses llama.cpp's small and medium
+   tiles, held to double precision. `llm_vk_batch` reads up to 32 tokens a
+   layer at once, with each token attending up to its own position. On
+   lavapipe Qwen 0.5B reads its question 2.6 times sooner, and its answer
+   is still the processor's. Settings' GPU switch moves the model between
+   Vulkan and the processor, and Compare puts the GPU's row first, with
+   the first word on every row.
 6. **V6, the M700**: `llm-anv.elf` installed, init choosing it, and the
    models' answers held there. Then the speeds, writing and reading,
    beside four cores with AVX2. Needs a netboot, after Diego's Quake III
