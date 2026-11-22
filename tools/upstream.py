@@ -204,6 +204,21 @@ GIT = {
         "url": "https://github.com/AOMediaCodec/libavif.git",
         "commit": "c5240fc79fe5c2407e10afd35f5505ef6333ea49",
     },
+    # **Quake3e** (`docs/quake3e.md`): ec-'s Quake III Arena engine, with
+    # its Vulkan renderer, at main on 20 November 2026. It publishes no
+    # release that carries the renderer as built here, so a commit.
+    "quake3e": {
+        "url": "https://github.com/ec-/Quake3e.git",
+        "commit": "dec793de9677bc9c16c7027e8905c2d4f4643a19",
+    },
+    # **ioquake3's game code** (`docs/quake3e.md` Q3): the game, cgame and
+    # q3_ui of id's GPL release, kept building by ioquake3, at main on 21
+    # November 2026 - compiled native into `quake3.elf`, since the demo's
+    # own QVMs (1999) speak a user interface older than any 1.32 engine.
+    "ioq3": {
+        "url": "https://github.com/ioquake/ioq3.git",
+        "commit": "52088b9eae247d8e321c8dc1fb49a879652854f9",
+    },
 }
 
 

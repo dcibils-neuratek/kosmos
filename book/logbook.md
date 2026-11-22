@@ -6318,3 +6318,37 @@ Super brings the arrow back.
 **Measurements.** In the test, the mouse was moved far further than the
 screen is wide. The window received 15,952 pixels of movement, on a
 screen 1,920 wide. Before, it could not have received more than 1,920.
+
+## 21 November 2026 - Quake III in a window
+
+**In short:** Quake III Arena runs on Kosmos. It opens in a window on the
+desktop, shows its menu, and plays its maps, drawn by Vulkan. So far that
+is in QEMU, where the drawing is done in software. The M700's Intel GPU is
+next.
+
+**What.** Quake3e, a modern version of id Software's Quake III engine with
+a Vulkan renderer, is built for Kosmos without changing a line of it.
+Under it is a layer of Kosmos's own: the window, the keys, the mouse, the
+sound and the files. The game's data is the free Quake III demo of 1999:
+four maps and the menus.
+
+**Why.** Diego asked to play it. It is also the first real program to
+use, together, what the last weeks built: Vulkan in a window, the GPU
+driver, a mouse a game can keep, and the POSIX layer that lets ported
+code read files.
+
+**The surprise.** The demo carries its own copy of the game's code, and it
+is older than the engine. Its menu code speaks version 3 of an interface
+the engine has spoken as version 6 since 2001, so the engine refused it on
+the spot. The answer was to compile the game's code from source instead.
+id released that source in 2005, and the ioquake3 project keeps it
+building. It is compiled into Kosmos's image as ordinary machine code,
+which also makes it much faster than the demo's bytecode would have been.
+
+**Visible impact.** Opening Quake III Arena from the Deskbar shows its
+title, then its menu. Starting a map puts you in the arena, with its
+weapon and its health and armour.
+
+**Measurements.** In QEMU, on one emulated processor with software Vulkan,
+a map took about eight seconds to load. That says it works, not how fast
+it is; the M700 will say that.

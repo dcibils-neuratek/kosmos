@@ -725,6 +725,16 @@ SUITES = [
                         "tools/airports.py", "tools/installed.py", "user/bin/programs/wm.lua",
                         *MESA)),
 
+    # **Quake III Arena** (`docs/quake3e.md` Q2-Q3): Quake3e installed in
+    # /Home, opened on the desktop, its renderer on Vulkan in a Kosmos
+    # window and its user interface the native one compiled into the image,
+    # over a pak the suite makes - the game's own is not in the tree.
+    Suite("x86-quake3", ["python3", "tools/run_quake3.py", X86,
+                         "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_quake3.py", "user/installed/Quake3", "user/kits/vulkan",
+                        "user/kits/window", "user/bin/programs/wm.lua", "tools/upstream.py",
+                        *MESA)),
+
     Suite("x86-flight-land", ["python3", "tools/run_flight.py", "--land", X86,
                               "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_flight.py", "user/installed/Flight", "user/kits/3d",

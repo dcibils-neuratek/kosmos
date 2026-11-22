@@ -28,7 +28,10 @@ from. Where something is a guess, it says so.
   `mprotect(PROT_READ|PROT_EXEC)`. Kosmos's POSIX layer and Nebula allow
   exactly that: written first, then made executable, never both at once
   (`runtime/posix/mman.c`, `kernel/reserve.c`). The interpreter is there
-  as a fallback.
+  as a fallback. **Built, it went otherwise** (21 November): the demo's
+  QVMs are from 1999 and older than the engine's interface, so the three
+  modules are ioquake3's game code, compiled native into the image (§4,
+  *What happened*).
 - **The platform layer is Kosmos's own, about a thousand to fifteen hundred
   lines**, written the way Quake 1's is (`user/installed/Quake/quake_kosmos.c`,
   994 lines). It covers `Sys_*`, the Vulkan glue, input, and `SNDDMA_*`
@@ -277,6 +280,49 @@ times the JIT on the game's logic, which is a small part of a Quake III
 frame. That is a guess from how the engine is usually described, not a
 measurement here. Then switch to 2 and measure the difference.
 
+### What happened: the game's code is native (21 November 2026)
+
+**None of the above survived the demo.** Its three QVMs are from 1999,
+and the user interface's says it is version 3 where every 1.32 engine,
+Quake3e included, expects 6 - so Quake3e refuses it before anything is
+drawn: `ERROR: User Interface is version 3, expected 6`. No engine setting
+changes that; the demo's code is older than the engine's interface.
+
+**So the game's code is compiled from source, native, into `quake3.elf`.**
+ioquake3 keeps id's GPL game, cgame and q3_ui building against the 1.32
+interface, and its own README says the same thing: the demo's QVMs will not
+work, use the project's. It is fetched at a commit (`tools/upstream.py`,
+`ioq3`), and each module is compiled as released, from upstream's own list
+(`cmake/basegame.cmake`), with its define (`QAGAME`, `CGAME`, `UI`).
+
+**Three modules in one image** each have a `vmMain`, a `dllEntry`, a
+`q_shared.c` and a `bg_misc.c`, so linked as they are they would meet. Each
+is made one object (`ld -r`) in which everything is local but its two
+doors, renamed for it - `q3_game_vmMain`, `q3_game_dllEntry` and so on
+(`objcopy`, which renames before it decides what stays global, so `-G`
+names the new names). The engine loads a "library" the way it always does,
+asking `Sys_LoadLibrary` for `qagamex86_64.so` in its game folders, and
+`q3_kosmos.c` answers from a table of the three; `Sys_LoadFunction` hands
+back the doors. Nothing is linked dynamically, and nothing upstream is
+edited.
+
+**Two things a native game needs said** (`quake3.lua`): `vm_* 0`, and
+`sv_pure 0`, since a pure server allows only QVMs - which is right for a
+server strangers connect to and means nothing for a game on one machine.
+
+**And the demo needs no key.** id's 1.32 q3_ui recognised the demo (four
+arenas and one special) and never asked for a CD key; ioquake3's took that
+test out, so with the demo's paks it opened on a key screen the demo never
+had. The user interface is handed the engine's calls through
+`ui_calls`, which answers the key's question yes while the game is the
+demo (`fs_basegame demoq3`) - what the demo's own code did - and passes
+every other call, and every call for the full game, through unchanged.
+
+**What it gains**: the game's logic runs at the engine's speed rather
+than the interpreter's, which under TCG is the difference between a map
+loading and not, and no JIT (Q5) is needed for the demo at all. Q5 stays
+for a mod whose code exists only as QVMs.
+
 ## 5. Sound, input, files, network
 
 **Sound.** Quake III mixes into a DMA-style buffer it asks the platform
@@ -417,12 +463,25 @@ only their own suites.
   sees its release; it gets motion past the screen's edge with a relative
   QEMU mouse attached; and capture is gone after Super Tab. *Control*:
   without capture, motion stops at the edge.
-- **Q2 - Quake3e built, dedicated server first.** The release fetched and
+- **Q2 and Q3 - built on 21 November 2026, together** (`testing.md`
+  18.986). The dedicated server was not built first: the engine's whole
+  file list compiled unedited against the POSIX layer at once, so the
+  client went straight into a window. The platform is `q3_kosmos.c`,
+  `q3_vk.c`, `q3_input.c`, `q3_snd.c` and `q3_net.c`, with `quake3.lua` as
+  the loop; the game's code is ioquake3's, native (§4, *What happened*),
+  not QVMs. In QEMU on `lavapipe` it draws the demo's menu and plays The
+  Longest Yard. *Test* (`x86-quake3`, in the gate): over a pak the suite
+  makes - a `default.cfg` alone - the engine starts, finds the pak, opens
+  Vulkan (`VK_RENDERER:`), loads the native user interface, does not stop,
+  and the window holds a picture. *Control* (`--qvm`): the user interface
+  asked for as a QVM fails both the native check and the not-stopping one.
+  What was planned for these two steps follows, as it was written.
+- **Q2 (as planned) - Quake3e built, dedicated server first.** The release fetched and
   held to its sum, patches applied, `quake3e-ded`'s objects (no client, no
   renderer) linked with `q3_shared.c` and a loopback `q3_net.c` into an
   image. *Test* (`x86-q3-nogame`, as `x86-nogame` does for Doom and Quake 1): started with an empty `baseq3`, it reaches "no pak found",
   then `exit`, and is back in Lua with nothing left dead.
-- **Q3 - the client in a window on `lavapipe`.** `q3_vk.c`, `q3_input.c`,
+- **Q3 (as planned) - the client in a window on `lavapipe`.** `q3_vk.c`, `q3_input.c`,
   `q3_snd.c`, and `quake3.lua`. QVMs interpreted. *Test*: with
   OpenArena's paks (outside the gate, as `make quake-check` is), the menu
   is drawn. Then a `timedemo` of a demo in OpenArena's paks runs to its

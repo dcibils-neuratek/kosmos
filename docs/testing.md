@@ -41320,3 +41320,72 @@ the pointer, and looking around no longer needs a held button.
   483 s, `x86-flight-land` 376 s, `x86-flight` 353 s, with
   `x86-cafesa3d-2` 391 s; splitting Flight's suites is in the roadmap's
   6zp line of work.
+
+## 18.986 Quake III Arena in a Kosmos window (Quake3e Q2-Q3)
+
+**In short:** Quake III Arena runs on Kosmos. Quake3e, ec-'s engine with
+its Vulkan renderer, is compiled as released into an image of its own,
+`quake3.elf`, with lavapipe. The game's code is ioquake3's game, cgame and
+q3_ui, compiled native into the same image, because the Quake III demo's
+own QVMs (1999) are older than any 1.32 engine. In QEMU it draws the
+demo's main menu and plays The Longest Yard. `quake3-anv.elf`, with
+Intel's driver, is for the M700 (Q4).
+
+- **The engine** (`docs/quake3e.md` §2): upstream's file list less
+  `net_ip.c`, unedited. What this machine needs said before its headers is
+  `kosmos_q3.h`, forced in front of every file, and what it needs below
+  them is the platform in `user/installed/Quake3/`:
+  - `q3_kosmos.c`: start, frame, `Sys_*`;
+  - `q3_vk.c`: the window and its Vulkan surface;
+  - `q3_input.c`: keys, capture and motion (Q1's);
+  - `q3_snd.c`: the mixer onto the audio ring;
+  - `q3_net.c`: the loopback only.
+
+  `quake3.lua` is the loop, as `quake.lua` is Quake 1's.
+- **The game's code, native** (§4, *What happened*). Each of the three
+  modules is one object with everything local but its two doors, renamed
+  for it (`q3_game_vmMain`, ...). `Sys_LoadLibrary` answers the engine's
+  ask for `qagamex86_64.so` from a table. Nothing is linked dynamically,
+  and nothing upstream is edited. A local game is not pure (`sv_pure 0`),
+  since a pure server allows only QVMs. The demo is not asked for a CD
+  key, as its own code never asked.
+- **What was found on the way**, each visible only by running:
+  - make 3.81 took the platform's files with the userland's generic
+    `%.c.o` rule, which comes first and has no engine headers. They are a
+    static pattern now.
+  - `Sys_Microseconds` is upstream's, in `common.c`, not the platform's.
+  - `open` hands a program one word, so `quake3.lua` reads `quake3.args`
+    beside it for anything more. The engine's log arrives in pieces, so it
+    is printed a line at a time.
+  - The `+map` start failed where the menu had not, on `version 3,
+    expected 6`, because a pure server reloads the user interface as a QVM.
+- **The check**: `tools/run_quake3.py`, `x86-quake3`, 6 checks. It installs
+  `quake3.elf` and `quake3.lua` in `/Home/Apps/Quake3` over a pak the
+  suite makes (a `default.cfg` alone, since the game's paks are not in the
+  tree), opens it on the desktop over Telnet, and checks that:
+  - the engine starts (`Q3 1.32e kosmos-x86_64`);
+  - it finds its pak;
+  - the renderer opens Vulkan (`VK_RENDERER:`, then `finished R_Init`);
+  - the user interface is the native one (`VM_LoadDll(ui) succeeded!`);
+  - nothing stops it (no `ERROR:`);
+  - the window's picture, below its title bar, holds more than eight
+    colours.
+
+  All 6 passed. **Control**: `--qvm` asks for the user interface as a QVM,
+  which the made pak does not carry. It fails 2 of the 6: the native
+  check, and the not-stopping one (the engine could not make the user
+  interface). The picture check has no control of its own: the engine's
+  console draws in the window whether or not the user interface loaded.
+- **With the demo** (outside the gate; `--demo PAK`, `--map q3dm17`,
+  `--shot`), on one TCG processor with lavapipe:
+  - the main menu is drawn at 640 by 480;
+  - `+map q3dm17` loads the map, its bots' AAS and the native cgame
+    (`CL_InitCGame: 8.24 seconds`), then draws the arena, the weapon and
+    the HUD.
+- **The gate**: all 160 suites that ran passed, in 18:57, with
+  `x86-quake3` in 36 s. That is far over the ten-minute budget, and most of
+  the overrun came before any suite: building the images took 399 s,
+  because `sys_user.c` changed and every application's image was linked
+  again, the two new Quake III images among them. The slowest suites were
+  `x86-cafesa3d-2` 402 s and Flight's three, 341 to 386 s (the 6zp split,
+  still to do).

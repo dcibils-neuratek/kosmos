@@ -2846,6 +2846,7 @@ void kosmos_map_kit(lua_State *L);
 void kosmos_mail_kit(lua_State *L);
 void kosmos_doom_kit(lua_State *L) __attribute__((weak));
 void kosmos_quake_kit(lua_State *L) __attribute__((weak));
+void kosmos_quake3_kit(lua_State *L) __attribute__((weak));
 void kosmos_snes_kit(lua_State *L) __attribute__((weak));
 void kosmos_apptest_kit(lua_State *L) __attribute__((weak));
 void kosmos_cxxtest_kit(lua_State *L) __attribute__((weak));
@@ -2925,6 +2926,8 @@ static const struct {
      * makes of an image's licence. */
     { "doom",     kosmos_doom_kit, 1 },
     { "quake",    kosmos_quake_kit, 1 },
+    /* Quake III Arena, Quake3e on Vulkan (`docs/quake3e.md`). */
+    { "quake3",   kosmos_quake3_kit, 1 },
     { "snes",     kosmos_snes_kit, 1 },
     /* In no image but its own: the loader's test (`docs/elf.md`). */
     { "apptest",  kosmos_apptest_kit, 1 },

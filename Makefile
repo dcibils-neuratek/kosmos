@@ -4896,6 +4896,192 @@ $(UBUILD)/apps/k3dvk-anv.elf: $(USER_OBJS) $(K3DVK_OBJS) $(POSIX_OBJS) $(MESA_DI
 	    || { echo "apps: k3dvk-anv.elf does not have its kit"; rm -f $@; exit 1; }
 
 #
+# **Quake III Arena, from Quake3e** (`docs/quake3e.md`): an installed
+# application, as Quake 1 is, in `/Home/Apps/Quake3` beside `quake3.lua` and
+# the game's paks, and in no system image. GPL, as Quake 1 and Doom are.
+#
+# **Fetched, not committed**: ec-'s Quake3e at the commit `tools/upstream.py`
+# names (a commit is the publisher's sum), into `build/upstream/quake3e`,
+# and compiled as released. Nothing in it is edited: what this machine
+# needs said before its headers is `kosmos_q3.h`, forced in front of every
+# file, and what it needs below them is the platform in
+# `user/installed/Quake3/` - `q3_kosmos.c` (start, frame, `Sys_*`),
+# `q3_vk.c` (the window and Vulkan's surface), `q3_input.c`, `q3_snd.c`
+# and `q3_net.c` - in place of `unix_main.c`, `unix_shared.c` and SDL.
+#
+# **The engine's files are upstream's own list** (its Makefile's `Q3OBJ`
+# with `USE_VULKAN=1`, `USE_RENDERER_DLOPEN=0`), less `net_ip.c`, which a
+# game on one machine does not need and which reaches for `ioctl`
+# (`q3_net.c` is in its place until multiplayer, Q6), and less its own
+# libjpeg: libjpeg-turbo, W5's, is the system's one JPEG library
+# (`USE_SYSTEM_JPEG`). The QVMs are interpreted (`NO_VM_COMPILED`) until
+# the compiler is a step of its own (Q5).
+#
+# **Two images**, as Flight's door has: `quake3.elf` with lavapipe, which a
+# machine without an Intel GPU and QEMU run, and `quake3-anv.elf` with
+# Intel's driver, which init chooses on the M700 (`-- kosmos: image on
+# intel-gpu`). x86-64's alone for now: the mixer's SSE half is x86's, and
+# AArch64's suites wait (`CLAUDE.md`).
+#
+Q3E_SRC := build/upstream/quake3e
+Q3E_GOT := build/upstream/quake3e.got
+
+$(Q3E_GOT): tools/upstream.py
+	python3 tools/upstream.py fetch quake3e
+	@touch $@
+
+Q3E_ENGINE := \
+    client/cl_avi client/cl_cgame client/cl_cin client/cl_console client/cl_input \
+    client/cl_jpeg client/cl_keys client/cl_main client/cl_net_chan client/cl_parse \
+    client/cl_scrn client/cl_ui client/snd_adpcm client/snd_codec client/snd_codec_wav \
+    client/snd_dma client/snd_main client/snd_mem client/snd_mix client/snd_wavelet \
+    qcommon/cm_load qcommon/cm_patch qcommon/cm_polylib qcommon/cm_test qcommon/cm_trace \
+    qcommon/cmd qcommon/common qcommon/cvar qcommon/files qcommon/history qcommon/huffman \
+    qcommon/huffman_static qcommon/keys qcommon/md4 qcommon/md5 qcommon/msg \
+    qcommon/net_chan qcommon/puff qcommon/q_math qcommon/q_shared qcommon/unzip \
+    qcommon/vm qcommon/vm_interpreted \
+    server/sv_bot server/sv_ccmds server/sv_client server/sv_filter server/sv_game \
+    server/sv_init server/sv_main server/sv_net_chan server/sv_snapshot server/sv_world \
+    renderercommon/tr_font renderercommon/tr_image_bmp renderercommon/tr_image_jpg \
+    renderercommon/tr_image_pcx renderercommon/tr_image_png renderercommon/tr_image_tga \
+    renderercommon/tr_noise \
+    renderervk/tr_animation renderervk/tr_backend renderervk/tr_bsp renderervk/tr_cmds \
+    renderervk/tr_curve renderervk/tr_image renderervk/tr_init renderervk/tr_light \
+    renderervk/tr_main renderervk/tr_marks renderervk/tr_mesh renderervk/tr_model \
+    renderervk/tr_model_iqm renderervk/tr_scene renderervk/tr_shade renderervk/tr_shade_calc \
+    renderervk/tr_shader renderervk/tr_shadows renderervk/tr_sky renderervk/tr_surface \
+    renderervk/tr_world renderervk/vk renderervk/vk_flares renderervk/vk_vbo
+
+Q3E_BOTLIB := \
+    be_aas_bspq3 be_aas_cluster be_aas_debug be_aas_entity be_aas_file be_aas_main \
+    be_aas_move be_aas_optimize be_aas_reach be_aas_route be_aas_routealt be_aas_sample \
+    be_ai_char be_ai_chat be_ai_gen be_ai_goal be_ai_move be_ai_weap be_ai_weight be_ea \
+    be_interface l_crc l_libvar l_log l_memory l_precomp l_script l_struct
+
+Q3E_PLATFORM := q3_kosmos q3_vk q3_input q3_snd q3_net
+
+Q3E_OBJS := $(addprefix $(UBUILD)/q3e/,$(addsuffix .c.o,$(Q3E_ENGINE))) \
+            $(addprefix $(UBUILD)/q3e/botlib/,$(addsuffix .c.o,$(Q3E_BOTLIB))) \
+            $(UBUILD)/q3e/asm/snd_mix_x86_64.s.o \
+            $(addprefix $(UBUILD)/user/installed/Quake3/,$(addsuffix .c.o,$(Q3E_PLATFORM))) \
+            $(UBUILD)/q3g/game.o $(UBUILD)/q3g/cgame.o $(UBUILD)/q3g/ui.o
+
+# **The game code** (Q3): ioquake3's game, cgame and q3_ui - id's GPL
+# release - compiled native into the image, since the demo's own QVMs
+# (1999) speak a user interface older than any 1.32 engine. Each module is
+# upstream's list (`cmake/basegame.cmake`, the binary one), compiled as
+# released with its own define, and made one object whose only names
+# outside it are its two doors, renamed for it - `q3_game_vmMain` and
+# `q3_game_dllEntry` - so three modules that each have a `vmMain`, a
+# `q_shared.c` and a `bg_misc.c` sit in one image without meeting.
+# `q3_kosmos.c`'s `Sys_LoadLibrary` hands the engine those doors when it
+# asks for `qagamex86_64.so`.
+Q3G_SRC := build/upstream/ioq3
+Q3G_GOT := build/upstream/ioq3.got
+
+$(Q3G_GOT): tools/upstream.py
+	python3 tools/upstream.py fetch ioq3
+	@touch $@
+
+Q3G_SHARED := game/bg_misc game/bg_lib qcommon/q_math qcommon/q_shared
+Q3G_game := game/g_main game/ai_chat game/ai_cmd game/ai_dmnet game/ai_dmq3 game/ai_main \
+    game/ai_team game/ai_vcmd game/bg_pmove game/bg_slidemove game/g_active game/g_arenas \
+    game/g_bot game/g_client game/g_cmds game/g_combat game/g_items game/g_mem game/g_misc \
+    game/g_missile game/g_mover game/g_session game/g_spawn game/g_svcmds game/g_target \
+    game/g_team game/g_trigger game/g_utils game/g_weapon game/g_syscalls $(Q3G_SHARED)
+Q3G_cgame := cgame/cg_main game/bg_pmove game/bg_slidemove cgame/cg_consolecmds cgame/cg_draw \
+    cgame/cg_drawtools cgame/cg_effects cgame/cg_ents cgame/cg_event cgame/cg_info \
+    cgame/cg_localents cgame/cg_marks cgame/cg_particles cgame/cg_players cgame/cg_playerstate \
+    cgame/cg_predict cgame/cg_scoreboard cgame/cg_servercmds cgame/cg_snapshot cgame/cg_view \
+    cgame/cg_weapons cgame/cg_syscalls $(Q3G_SHARED)
+Q3G_ui := $(addprefix q3_ui/,ui_main ui_addbots ui_atoms ui_cdkey ui_cinematics ui_confirm \
+    ui_connect ui_controls2 ui_credits ui_demo2 ui_display ui_gameinfo ui_ingame ui_loadconfig \
+    ui_menu ui_mfield ui_mods ui_network ui_options ui_playermodel ui_players ui_playersettings \
+    ui_preferences ui_qmenu ui_removebots ui_saveconfig ui_serverinfo ui_servers2 ui_setup \
+    ui_sound ui_sparena ui_specifyserver ui_splevel ui_sppostgame ui_spskill ui_startserver \
+    ui_team ui_teamorders ui_video) ui/ui_syscalls $(Q3G_SHARED)
+Q3G_DEFINE_game := QAGAME
+Q3G_DEFINE_cgame := CGAME
+Q3G_DEFINE_ui := UI
+
+Q3G_CFLAGS := -std=gnu11 -w -Wno-error -DNDEBUG -include user/installed/Quake3/kosmos_q3game.h
+
+# One module: its files, then one object with two doors, rewritten in place.
+define Q3G_MODULE
+$$(UBUILD)/q3g/$(1)/%.c.o: $$(Q3G_GOT) user/installed/Quake3/kosmos_q3game.h \
+        user/installed/Quake3/kosmos_q3.h $$(UFLAGS_FILE)
+	@mkdir -p $$(dir $$@)
+	$$(CC) $$(POSIX_CFLAGS) $$(UCFLAGS) $$(Q3G_CFLAGS) -D$$(Q3G_DEFINE_$(1)) -c $$(Q3G_SRC)/code/$$*.c -o $$@
+
+$$(UBUILD)/q3g/$(1).o: $$(addprefix $$(UBUILD)/q3g/$(1)/,$$(addsuffix .c.o,$$(Q3G_$(1))))
+	$$(CROSS)ld -r $$^ -o $$@
+	$$(OBJCOPY) -G q3_$(1)_vmMain -G q3_$(1)_dllEntry --redefine-sym vmMain=q3_$(1)_vmMain \
+	    --redefine-sym dllEntry=q3_$(1)_dllEntry $$@
+endef
+
+$(foreach m,game cgame ui,$(eval $(call Q3G_MODULE,$(m))))
+
+# Upstream's code as it is: GNU C, its own warnings its own business.
+Q3E_CFLAGS := -std=gnu11 -w -Wno-error -DNDEBUG -DUSE_VULKAN_API -DNO_VM_COMPILED \
+              -DUSE_SYSTEM_JPEG -isystem $(W5_DIR)/include \
+              -include user/installed/Quake3/kosmos_q3.h
+
+# Kosmos's half: the engine's headers on the path, and every warning on but
+# for the unused parameters an interface it did not choose hands it.
+Q3E_PLATFORM_CFLAGS := -include user/installed/Quake3/kosmos_q3.h -DUSE_VULKAN_API \
+                       -iquote $(Q3E_SRC)/code/qcommon -iquote $(Q3E_SRC)/code/client \
+                       -iquote $(Q3E_SRC)/code/renderercommon -isystem build/mesa/tree/include \
+                       -Wno-unused-parameter
+
+$(UBUILD)/q3e/botlib/%.c.o: $(Q3E_GOT) user/installed/Quake3/kosmos_q3.h $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(Q3E_CFLAGS) -DBOTLIB -c $(Q3E_SRC)/code/botlib/$*.c -o $@
+
+$(UBUILD)/q3e/%.c.o: $(Q3E_GOT) user/installed/Quake3/kosmos_q3.h $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(Q3E_CFLAGS) -c $(Q3E_SRC)/code/$*.c -o $@
+
+# The mixer's SSE loop, as upstream assembles it.
+$(UBUILD)/q3e/asm/snd_mix_x86_64.s.o: $(Q3E_GOT)
+	@mkdir -p $(dir $@)
+	$(CC) -DELF -x assembler-with-cpp -c $(Q3E_SRC)/code/asm/snd_mix_x86_64.s -o $@
+
+Q3E_PLATFORM_OBJS := $(addprefix $(UBUILD)/user/installed/Quake3/,$(addsuffix .c.o,$(Q3E_PLATFORM)))
+
+# A static pattern, because the userland's own `%.c.o` comes first and
+# would otherwise take these without the engine's headers.
+$(Q3E_PLATFORM_OBJS): $(UBUILD)/user/installed/Quake3/%.c.o: user/installed/Quake3/%.c user/installed/Quake3/q3_kosmos.h \
+        user/installed/Quake3/kosmos_q3.h $(Q3E_GOT) $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(Q3E_PLATFORM_CFLAGS) -MMD -MP -c $< -o $@
+
+# The images, each to the two promises Doom's keeps: the game is in it, and
+# not in the system's.
+Q3E_IMAGES := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/quake3.elf $(UBUILD)/apps/quake3-anv.elf)
+
+$(UBUILD)/apps/quake3.elf: $(USER_OBJS) $(Q3E_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                           $(LLVM_DIR)/.built $(W5_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(Q3E_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/lavapipe.txt $(LLVM_DIR)/lib/libLLVM*.a \
+	    $(W5_DIR)/lib/libjpeg.a $(W5_DIR)/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_quake3_kit$$' \
+	    || { echo "apps: quake3.elf does not have Quake III"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_quake3_kit$$' \
+	    || { echo "apps: the system's image has Quake III in it"; rm -f $@; exit 1; }
+
+$(UBUILD)/apps/quake3-anv.elf: $(USER_OBJS) $(Q3E_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                               $(W5_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(Q3E_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/anv.txt \
+	    $(W5_DIR)/lib/libjpeg.a $(W5_DIR)/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_quake3_kit$$' \
+	    || { echo "apps: quake3-anv.elf does not have Quake III"; rm -f $@; exit 1; }
+
+#
 # **`anv`'s test image** (`docs/gpu3d.md` G7a): `anvtest.c` with Intel's
 # Vulkan driver linked in as `lavapipe` is in `vulkantest.elf` - its
 # object and archives the list `mesa_build.py` read from `anv`'s own link
@@ -5005,7 +5191,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
             $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
-            $(UBUILD)/apps/k3dvk.elf $(K3DVK_ANV_IMAGE) \
+            $(UBUILD)/apps/k3dvk.elf $(K3DVK_ANV_IMAGE) $(Q3E_IMAGES) \
             $(WEBCORE_IMAGE) $(VKCTS_IMAGE) $(ANVTEST_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \

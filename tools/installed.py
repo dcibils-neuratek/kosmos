@@ -33,7 +33,7 @@ INSTALLED = os.path.join(ROOT, "user", "installed")
 # /Home/roms.
 # What only one architecture builds: JetSki stands on WebCore, which is
 # built for x86-64 alone while AArch64's suites wait (`CLAUDE.md`).
-ONLY = {"JetSki": "x86_64"}
+ONLY = {"JetSki": "x86_64", "Quake3": "x86_64"}
 
 APPS = "/Home/Apps"
 
@@ -59,6 +59,8 @@ SYSTEM_IMAGES = {"webkit": "webkit.elf"}
 DATA = {
     "Doom": [("doom1.wad", "doom1.wad")],
     "Quake": [("id1/pak0.pak", "id1/pak0.pak")],
+    # Quake III's: the full game's first pak, or the demo's.
+    "Quake3": [("baseq3/pak0.pk3", "baseq3/pak0.pk3"), ("demoq3/pak0.pk3", "demoq3/pak0.pk3")],
 }
 
 # What an application carries from the tree's own vendored assets, beside
