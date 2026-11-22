@@ -2711,24 +2711,29 @@ static void take_report(struct controller *c, const uint32_t *event)
 }
 
 /*
- * A Report descriptor's bytes, thirty-two to a line and four lines at most.
- * What a mouse declared is what turns the next one read wrongly into a
- * reading rather than a guess: the ThinkPad's gaming mouse was worked out
- * from a photograph of its first report, and this would have said it.
+ * A descriptor's bytes, thirty-two to a line and `most` of them at most,
+ * under `what`. What a mouse declared is what turns the next one read
+ * wrongly into a reading rather than a guess: the ThinkPad's gaming mouse
+ * was worked out from a photograph of its first report, and this would have
+ * said it. A speaker's whole configuration is said the same way, so a real
+ * one becomes a fixture in `tools/test_uacdecode.c` (`usbaudio.md` U1).
  */
 static void say_descriptor(const struct controller *c, unsigned port,
-                           const uint8_t *bytes, unsigned length,
+                           const char *what, const uint8_t *bytes,
+                           unsigned length, unsigned most,
                            struct say_line *line)
 {
     unsigned from, i;
 
-    for (from = 0; from < length && from < 128u; from += 32u) {
+    for (from = 0; from < length && from < most; from += 32u) {
         about(line, c);
         say_text(line, " port ");
         say_dec(line, port);
 
         if (from == 0) {
-            say_text(line, ": its Report descriptor, ");
+            say_text(line, ": ");
+            say_text(line, what);
+            say_text(line, ", ");
             say_dec(line, length);
             say_text(line, " bytes:");
         } else {
@@ -2742,7 +2747,7 @@ static void say_descriptor(const struct controller *c, unsigned port,
             say_hex(line, bytes[i], 2u);
         }
 
-        if (from + 32u >= 128u && length > 128u) {
+        if (from + 32u >= most && length > most) {
             say_text(line, " ...");
         }
 
@@ -6548,6 +6553,8 @@ static void use_device(struct controller *c, struct device *d,
             if (audio.ok) {
                 c->kind_of[d->slot] = USB_KIND_AUDIO;
                 c->driven_of[d->slot] = true;
+                say_descriptor(c, d->port, "its configuration", d->buffer,
+                               total, 512u, line);
                 use_audio(c, d, &audio, line);
                 return;
             }
@@ -6838,7 +6845,8 @@ static void use_device(struct controller *c, struct device *d,
     if (found.report_length > 0 && found.report_length <= PAGE
         && control_in(c, d, GET_HID_DESCRIPTOR, DESC_REPORT, found.interface,
                       found.report_length)) {
-        say_descriptor(c, d->port, d->buffer, found.report_length, line);
+        say_descriptor(c, d->port, "its Report descriptor", d->buffer,
+                       found.report_length, 128u, line);
         usb_decode_mouse_report(d->buffer, found.report_length, &m->layout);
         why = "its Report descriptor lays out no relative X and Y";
 

@@ -4694,6 +4694,10 @@ def usb_audio(image, check):
                       out, re.M)
     setting = re.search(r"xhci: .* port \d+:   plays on 1\.1: 2 channels, 16 bits, "
                         r"48000 Hz, synchronous, 192 bytes an interval$", out, re.M)
+    # Its whole configuration, said so a real speaker's becomes a fixture:
+    # QEMU's is 113 bytes, starting with the configuration descriptor's own.
+    dumped = re.search(r"xhci: .* port \d+: its configuration, 113 bytes: 09 02 71 00 02 01",
+                       out, re.M)
     rows = [l for l in out.splitlines() if re.match(r"\S+ port \d+ +[0-9a-f]{4}:[0-9a-f]{4}", l)]
     shown = "\n    ".join(rows) or "(lsusb listed nothing)"
     said = "\n    ".join(l for l in out.splitlines() if "xhci:" in l and "port" in l) or "(nothing)"
@@ -4702,6 +4706,8 @@ def usb_audio(image, check):
     check(setting is not None,
           "the driver did not say the setting - 1.1, stereo, 16 bits, 48 kHz, "
           "synchronous, 192 bytes:\n    " + said)
+    check(dumped is not None,
+          "the driver did not say the speaker's configuration, 113 bytes:\n    " + said)
     check(any("46f4:0002" in l and "driven: audio" in l for l in rows),
           "lsusb did not list QEMU's speaker (46f4:0002) driven as audio:\n    " + shown)
 
