@@ -7,7 +7,7 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.12.8. Pushed to 0.11.507; 0.11.508 to
+Last updated: 2026-11-22, at 0.12.76. Pushed to 0.11.507; 0.11.508 to
 0.12.8 are committed on `main`, and go out with `make prepush`.
 
 ---
@@ -284,6 +284,19 @@ which wants the M700's look switched to Liquid Glass for a minute.
 ---
 
 ## Next
+
+**Paused V7 and designed three things, 22 November 2026** (Diego: "ok then
+i want to work on the other stuff we talked about", "start with usb
+audio", "can we parallelize tasks for usb audio, resulution and refresh
+rate selector configurator and new system monitor app"). V7's remainder is
+on the roadmap (Q4_0 reordered at load and dispatched, the logits' Q6_K,
+the GPU default if faster). Three designs, each a feature set, mockup,
+architecture and diagram, **waiting for Diego to agree before any code**:
+USB audio (`docs/usbaudio.md`, U1-U9, three decisions; U1 needs the
+Edifier speakers plugged into the M700), display modes
+(`docs/displaymodes.md`, D1-D9, seven decisions; 3440x1440 at 144 Hz
+probably past the HD 530), and System Monitor (`docs/sysmonitor.md`,
+S1-S11, seven decisions). Built in that order once agreed.
 
 **Reordered on 21 November 2026** (Diego: "Quake 3e port so I can play
 tomorrow", "Then Xavier with gpu support with vulkan", "Then we need to

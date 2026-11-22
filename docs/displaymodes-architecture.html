@@ -1,0 +1,160 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Display modes and what they stand on: Preferences' Displays page and the
+  `display` program over one Lua library, wm fitting the desktop to a new
+  size, the window server as the one door to the screen with the trial and
+  its fifteen seconds, the M700's display driver and the HAL's virtio-gpu
+  beneath it, the EDID kit, and Nebula's screen record. A mode chosen (M)
+  drawn through it. Drawn on 22 November 2026, before any of it is built;
+  `docs/displaymodes.md` is the argument and `docs/displaymodes.html` the
+  page.
+
+  Rendered to docs/displaymodes-architecture.png by headless Chrome at twice
+  its size, as docs/bluetooth-architecture.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/displaymodes-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/displaymodes-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos display modes architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Display modes - what they stand on</h1>
+<p class="sub">The page holds nothing: it asks through one Lua library, wm asks the window server, and the window server - the one process whose buffers must change with the screen - asks whoever drives the display: the M700's driver over its registers, or Nebula's HAL under QEMU. The monitor's bytes are decoded once, in C, by a kit of their own. A mode chosen (M) is on trial in the window server until it is kept, so a black screen undoes itself.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications and programs</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries and wm</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">M</span><span>a mode chosen</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications and programs</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1.3fr">
+        <div class="box new"><span class="tag">NEW</span><b>Preferences - the Displays page</b><p>the monitor named, its resolutions, the refresh rates of the one selected, what cannot be carried greyed with why; a choice painted at once <span class="f">M1</span>; the keep-or-go-back bar the rendering modes already have, one component for both</p></div>
+        <div class="box new"><span class="tag">NEW</span><b><code>display</code></b><p>the same at the prompt: list, set, keep. What the suites drive</p></div>
+        <div class="box"><b>This Machine, GPU Monitor, neofetch</b><p>the monitor's card, its refresh, a Display row - through the same library</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua (in the caller's process, and the window manager)</h2>
+      <div class="row" style="grid-template-columns:1fr 1.6fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>display.lua</code></b><p>the one door from Lua: <code>monitor()</code>, <code>modes()</code>, <code>set()</code>, <code>keep()</code> - wm's <code>display</code> request, as <code>rendering</code> is asked</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>wm - a new screen size</b><p>asks the window server <span class="f">M2</span>; then W and H, a back buffer of the new size, every window fitted as <code>scale.rescale</code> fits them, the strips, the dock, the wallpaper; every window told <code>screen</code> <span class="f">M6</span>. Reads <code>/Home/Preferences/display</code> as it starts</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new"><span class="tag">NEW</span><b>the window server - <code>windowserver.c</code></b><p>the one door to the screen: the monitor and its modes from memory (WS_OP_MODES); a mode asked for (WS_OP_MODE) set through the driver or the kernel <span class="f">M3</span>, its buffers made at the new size <span class="f">M5</span>, and <strong>on trial for fifteen seconds on its own clock</strong> - WS_OP_KEEP, or the mode before comes back <span class="f">M7</span></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1.6fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">NEW</span><b>intelgpu - the M700's display</b><p>GPU_OP_DISPLAY, GPU_OP_MODE_SET in <code>gpuproto.h</code>. The EDID over AUX (DisplayPort) or GMBUS (HDMI), read once at start. A mode: off in i915's order; timings, M/N; the DPLL's link rate; the link trained over AUX; CDCLK raised (D7); watermarks; on, the plane last <span class="f">M4</span></p></div>
+        <div class="box later-box"><span class="tag later">LATER</span><b>amdgpu - the Mac Pro</b><p>DCE 6's controllers, the same verbs and the same kit</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, in the process that links them)</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>user/kits/display/edid.c</code></b><p>the monitor's bytes decoded: name, maker, serial, size, every timing - base block, CTA-861, DisplayID. No allocation; held on the Mac by <code>test_edid</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>intelgpu_decode.c's sums</b><p>what a link and the display clock carry; M/N for a mode. Host-tested</p></div>
+        <div class="box"><b>the Graphics Kit</b><p>the back buffer and windows' surfaces, as now</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>the HAL's virtio-gpu</b><p>the EDID feature taken, GET_EDID once; a mode is a resource of the new size and SET_SCANOUT - what QEMU's gate drives</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>the screen's record</b><p><code>SYS_SCREEN_MODE</code> from the screen's holder: the console, a panic and <code>/Devices/screen</code> follow the mode</p></div>
+        <div class="box"><b>regions and IPC</b><p>the buffers at the new size; every request a message</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>M - a mode chosen</h3>
+      <ol><li><b>M1</b> The page paints the choice and posts <code>display</code> to wm.</li>
+          <li><b>M2</b> wm asks the window server, WS_OP_MODE.</li>
+          <li><b>M3</b> The window server asks the driver - or the HAL under QEMU - and holds wm's reply rather than waiting.</li>
+          <li><b>M4</b> The driver sets the mode: under 50 ms of registers, AUX and a vertical blank. Then <b>the monitor finds the signal: one to three seconds</b>, its own.</li>
+          <li><b>M5</b> Buffers of the new size, the kernel told the new screen.</li>
+          <li><b>M6</b> wm fits the desktop, composes a whole frame, tells every window.</li>
+          <li><b>M7</b> Fifteen seconds on trial: kept, or the mode before set the same way.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>The monitor and its modes</td><td>a message, one-shot, <code>struct display_mode</code> - under 2 KB</td></tr>
+        <tr><td>The EDID's bytes</td><td>driver or kernel to the window server only; never Lua</td></tr>
+        <tr><td>Set, keep, go back</td><td>messages, each asked by somebody</td></tr>
+        <tr><td>The pixels</td><td>regions, as now, made again at the new size</td></tr>
+        <tr><td>"The screen is W x H"</td><td>posted to every window, never waited on</td></tr>
+      </table></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>edid.c</td><td>amdgpu, the Pi's HDMI, This Machine's card, neofetch</td></tr>
+        <tr><td>the mode door</td><td>full-screen games (Doom, Quake, Flight), later</td></tr>
+        <tr><td>the keep bar</td><td>the rendering modes and this</td></tr>
+      </table></div>
+    <div class="card"><h3>Tested where</h3>
+      <table>
+        <tr><td>the Mac</td><td>the EDID kit, the link sums, M/N</td></tr>
+        <tr><td>QEMU, virtio-gpu</td><td>the list, a change, the revert, the keep, a restart</td></tr>
+        <tr><td>the M700 only</td><td>AUX or GMBUS, every register, the link, the refresh measured by <code>PIPE_FRMCOUNT</code></td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

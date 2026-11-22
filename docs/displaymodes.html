@@ -1,0 +1,261 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Display modes, on Preferences' Displays page: the monitor named from its
+  EDID, every mode it reports, the ones this machine can carry, and the
+  fifteen seconds to keep one. Drawn on 22 November 2026 from Diego's asks:
+  "my monitor is a 144hz monitr, will the screen preferecens panel allow me
+  to change resolution and refresh rate per the reported by the monitor?"
+  (18 October) and "i wan tot be able to switch resolutions and refresh
+  rates available for the monitor" (22 November). docs/displaymodes.md is
+  what it is made of; the look is docs/rendering.html's, the same page.
+
+  The monitor's name and its list are a 3440 x 1440 144 Hz ultrawide's as
+  such a monitor typically reports them - the real ones are what step D3
+  reads, and replace these. The pixel clocks are CVT reduced-blanking
+  estimates; the limits (DisplayPort 1.2 at four lanes, 675 MHz) are to be
+  read on the machine in D1.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Display modes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's night look. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-side: #1b2029; --a-sel: #2c3342;
+  --a-accent: #5b8def; --a-good: #4fb878; --a-warn: #e0a84a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 24px; max-width: 74ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 88ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 820px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+.win { width: 1060px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; position: relative; overflow: hidden; }
+.win.small { width: 860px; }
+.head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; flex: 1; }
+.lights { display: flex; gap: 7px; } .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.split { display: grid; grid-template-columns: 200px 1fr; }
+.side { background: var(--a-side); border-right: 1px solid var(--a-line); padding: 12px 8px; }
+.side div { padding: 7px 12px; border-radius: 7px; color: var(--a-dim); }
+.side div.on { background: var(--a-sel); color: var(--a-ink); }
+.side hr { border: 0; border-top: 1px solid var(--a-line); margin: 8px 6px; }
+.page { padding: 18px 22px 22px; }
+.group { font-family: var(--display); font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--a-faint); margin: 4px 2px 8px; }
+.rowcard { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; margin-bottom: 18px; }
+.row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 14px; border-bottom: 1px solid var(--a-line); }
+.row:last-child { border-bottom: 0; }
+.row span:last-child { color: var(--a-dim); text-align: right; }
+
+/* The monitor, named. */
+.monitor { display: grid; grid-template-columns: 112px 1fr 220px; gap: 18px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--a-line); }
+.screen { width: 112px; height: 50px; border: 3px solid #4a5468; border-radius: 5px; background: linear-gradient(135deg, #2b3f6e, #6b4f8f 60%, #c77b5a); position: relative; }
+.screen::after { content: ""; position: absolute; left: 46px; bottom: -12px; width: 14px; height: 9px; background: #4a5468; border-radius: 0 0 3px 3px; }
+.monitor b { font-size: 16px; }
+.monitor p { margin: 2px 0 0; color: var(--a-dim); font-size: 12.5px; }
+.now { text-align: right; font-variant-numeric: tabular-nums; }
+.now b { display: block; font-size: 15px; }
+.now small { color: var(--a-dim); font-size: 12px; }
+.now .ok { color: var(--a-good); }
+
+/* Resolutions, and the refresh rates of the chosen one. */
+.modes { display: grid; grid-template-columns: 300px 1fr; }
+.res { border-right: 1px solid var(--a-line); max-height: 392px; overflow: hidden; }
+.res div { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 7px 14px; border-bottom: 1px solid #2d3442; font-variant-numeric: tabular-nums; }
+.res div:last-child { border-bottom: 0; }
+.res div.on { background: #24304a; }
+.res b { font-weight: 500; }
+.res small { color: var(--a-faint); }
+.tag { font-size: 11px; border: 1px solid #4a5468; color: var(--a-dim); border-radius: 4px; padding: 0 6px; margin-left: 6px; vertical-align: 1px; }
+.tag.native { border-color: var(--a-good); color: var(--a-good); }
+.tag.now { border-color: var(--a-accent); color: #9fbaf5; }
+.rates { padding: 14px 16px; }
+.rates h4 { margin: 0 0 2px; font-size: 14px; font-weight: 600; }
+.rates .hint { color: var(--a-dim); font-size: 12.5px; margin: 0 0 12px; }
+.chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.chip { border: 1px solid #4a5468; border-radius: 8px; padding: 8px 10px; text-align: center; font-variant-numeric: tabular-nums; }
+.chip b { display: block; font-size: 17px; font-family: var(--display); }
+.chip small { color: var(--a-faint); font-family: var(--mono); font-size: 11px; }
+.chip.on { border-color: var(--a-accent); background: #24304a; }
+.chip.cur { border-style: dashed; }
+.chip.no { opacity: .45; }
+.why { margin-top: 12px; border: 1px solid #4a5468; border-radius: 8px; padding: 9px 12px; color: var(--a-dim); font-size: 12.5px; }
+.why b { color: var(--a-ink); font-weight: 600; }
+.carry { margin-top: 14px; display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 12.5px; color: var(--a-dim); }
+.carry span:nth-child(odd) { color: var(--a-faint); }
+.bar { height: 8px; border-radius: 4px; background: #333b4a; position: relative; margin-top: 5px; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--a-accent); }
+.bar u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--a-warn); }
+
+.keep { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: #2f3a52; border: 1px solid #4b5b7e;
+        border-radius: 10px; padding: 10px 14px; display: flex; gap: 14px; align-items: center; box-shadow: 0 12px 30px rgba(0,0,0,.45); font-size: 13.5px; white-space: nowrap; }
+.btn { border: 1px solid #5a6a8c; border-radius: 7px; padding: 4px 12px; }
+.btn.primary { background: var(--a-accent); border-color: var(--a-accent); color: #fff; }
+
+.term { background: #10131a; color: #d7dce4; border-radius: 10px; padding: 14px 18px; font: 12.5px/1.6 var(--mono); max-width: 860px; overflow-x: auto; white-space: pre; }
+.term .p { color: #7fb3ff; } .term .d { color: #8a93a3; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Display modes</h1>
+<p class="sub">The resolution and the refresh rate chosen from what the monitor says it can show, on Preferences' Displays page: the monitor named from its own EDID, every mode it reports, which of them this machine can carry and why not the rest, and fifteen seconds to keep a new one before it goes back by itself.</p>
+
+<div class="q"><b>Diego, 18 October 2026</b>: "my monitor is a 144hz monitr, will the screen preferecens panel allow me to change resolution and refresh rate per the reported by the monitor?"<br><b>22 November 2026</b>: "also i wanto to build a resolution selector for the screen as i wan tot be able to switch resolutions and refresh rates available for the monitor".</div>
+
+<h2>The Displays page on the M700</h2>
+<div class="scroller"><div class="win" id="w1"></div></div>
+<p class="cap"><b>The monitor first</b>: its name and maker as its EDID says them, its size from the millimetres it reports, how it is connected and at what link, and the mode in use - <b>the refresh measured</b> beside the one asked for, the pipe's frames counted over the last second. <b>Then every resolution it lists</b>, largest first, with its shape and <i>native</i> on its own; and for the one selected, <b>each refresh rate it is offered at</b>, with the pixel clock each needs in small type. <b>144 Hz is greyed</b> and the box under the rates says why, with a bar of what this machine's link and display engine carry and where the mode falls against it. The rendering modes stay below, unchanged (<code>docs/rendering.html</code>).</p>
+
+<h2>A mode just chosen</h2>
+<div class="scroller"><div class="win" id="w2"></div></div>
+<p class="cap"><b>The screen changes at once</b> - the monitor takes a second or two to find the signal, which is its own - and the bar counts fifteen seconds. <b>Nothing answered, and 60 Hz comes back</b>: the countdown is the window server's, so it runs out even if this window or the window manager has gone with the screen. <b>Keep it</b> remembers it for this monitor, by its maker, product and serial number, and it is set again at every boot; another monitor is left to the firmware. The same bar as the rendering modes', one component for both.</p>
+
+<h2>Under QEMU, with virtio-gpu</h2>
+<div class="scroller"><div class="win small" id="w3"></div></div>
+<p class="cap"><b>QEMU's own monitor</b>, from the EDID QEMU makes: its sizes offered and set as on the M700, the window on the Mac following. The refresh rate is QEMU's word and nothing more, and the page says so. This is what the gate drives - the list, a change, the revert, the keep.</p>
+
+<h2>A screen the firmware drew</h2>
+<div class="scroller"><div class="win small" id="w4"></div></div>
+<p class="cap"><b>ramfb under QEMU, the T14 and the Mac Pro today</b>: no list that cannot be acted on. The mode the firmware chose, that it cannot be changed while running, and the way to choose another at boot.</p>
+
+<h2>At the prompt</h2>
+<div class="term"><span class="p">/Home&gt;</span> display
+<span class="d">monitor   34" ultrawide (its EDID's name), DisplayPort, 4 lanes at 5.4 Gbit/s
+now       3440 x 1440 at 60 Hz, measured 59.97 Hz</span>
+3440 x 1440  21:9  native   144 Hz (cannot: 782 MHz, up to 675)  120  100  60*  50
+2560 x 1440  16:9           60
+2560 x 1080  21:9           60  50
+1920 x 1080  16:9           144  120  60  50
+1680 x 1050  16:10          60
+1280 x 1024  5:4            75  60
+1280 x  720  16:9           60  50
+1024 x  768  4:3            75  60
+ 800 x  600  4:3            75  60
+ 640 x  480  4:3            75  60
+<span class="p">/Home&gt;</span> display 3440x1440@120
+<span class="d">display: 3440 x 1440 at 120 Hz, on trial - "display keep" in 15 s, or 60 Hz comes back</span>
+<span class="p">/Home&gt;</span> display keep
+<span class="d">display: 3440 x 1440 at 120 Hz kept for this monitor, measured 119.96 Hz</span></div>
+</div>
+
+<script>
+const SIDE = `<div class="side">
+    <div>Appearance</div><div>Magnet</div><div class="on">Displays</div><div>Notifications</div><div>Sound</div><div>Power</div>
+    <hr><div>Network</div><div>Keyboard</div><div>Mouse</div><div>Startup</div><hr><div>File types</div><div>Date &amp; Time</div><div>System</div>
+  </div>`;
+const HEAD = `<div class="head"><span class="t">Preferences</span><span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span></div>`;
+
+const RES = [
+  ["3440 x 1440", "21:9", true],  ["2560 x 1440", "16:9"], ["2560 x 1080", "21:9"],
+  ["1920 x 1080", "16:9"], ["1680 x 1050", "16:10"], ["1280 x 1024", "5:4"],
+  ["1280 x 720", "16:9"], ["1024 x 768", "4:3"], ["800 x 600", "4:3"], ["640 x 480", "4:3"],
+];
+
+/* The rates of 3440 x 1440, each with the pixel clock it needs (CVT reduced
+ * blanking, estimated) and whether this machine carries it. */
+const RATES = [
+  { hz: 144, mhz: 782, no: true }, { hz: 120, mhz: 644 }, { hz: 100, mhz: 531 },
+  { hz: 60, mhz: 313, cur: true }, { hz: 50, mhz: 259 },
+];
+
+function page(chosen, now, measured) {
+  return `${HEAD}<div class="split">${SIDE}
+  <div class="page">
+    <div class="group">Screen</div>
+    <div class="rowcard">
+      <div class="monitor">
+        <div class="screen"></div>
+        <div><b>34" ultrawide</b><span class="tag">its EDID's name</span>
+          <p>Its maker's code and product number from the EDID · 800 x 335 mm · native 3440 x 1440</p>
+          <p>DisplayPort, 4 lanes at 5.4 Gbit/s · display clock 675 MHz at most</p></div>
+        <div class="now"><b>${now}</b><small>measured <span class="ok">${measured}</span></small></div>
+      </div>
+      <div class="modes">
+        <div class="res">${RES.map(([r, a, n], i) => `<div class="${i === 0 ? "on" : ""}"><b>${r}${n ? `<span class="tag native">native</span>` : ""}${i === 0 ? `<span class="tag now">in use</span>` : ""}</b><small>${a}</small></div>`).join("")}</div>
+        <div class="rates">
+          <h4>3440 x 1440 - refresh rate</h4>
+          <p class="hint">What the monitor offers at this size. Chosen, it is tried at once and kept when you say so.</p>
+          <div class="chips">${RATES.map(r => `<div class="chip${r.hz === chosen ? " on" : ""}${r.cur ? " cur" : ""}${r.no ? " no" : ""}"><b>${r.hz} Hz</b><small>${r.mhz} MHz</small></div>`).join("")}</div>
+          <div class="why"><b>144 Hz needs 782 MHz; this GPU carries up to 675.</b> The monitor offers it, and the HD 530's DisplayPort 1.2 and its display engine cannot drive it at this size. At 1920 x 1080 it can.</div>
+          <div class="carry">
+            <span>This machine carries</span><span>up to 675 MHz a pixel clock (the display engine), 720 MHz on this link</span>
+            <span>${chosen} Hz needs</span><span>${RATES.find(r => r.hz === chosen).mhz} MHz
+              <div class="bar"><i style="width:${Math.round(RATES.find(r => r.hz === chosen).mhz / 8)}%"></i><u style="left:${Math.round(675 / 8)}%"></u></div></span>
+          </div>
+        </div>
+      </div>
+      <div class="row"><span>Kept for this monitor</span><span>3440 x 1440 at 60 Hz, set at every boot</span></div>
+      <div class="row"><span>Scale</span><span>100%</span></div>
+      <div class="row"><span>Brightness</span><span>Not on this screen</span></div>
+    </div>
+
+    <div class="group">Rendering - how the desktop is drawn</div>
+    <div class="rowcard">
+      <div class="row"><span>Mode</span><span>Blitter copy · tried at once; kept when you say so</span></div>
+    </div>
+    <div style="height:56px"></div>
+  </div>
+</div>`;
+}
+
+document.getElementById("w1").innerHTML = page(60, "3440 x 1440 at 60 Hz", "59.97 Hz");
+document.getElementById("w2").innerHTML = page(120, "3440 x 1440 at 120 Hz", "119.96 Hz") +
+  `<div class="keep"><span>Keeping <b>3440 x 1440 at 120 Hz</b> in 12 s</span><span class="btn primary">Keep it</span><span class="btn">Go back to 60 Hz</span></div>`;
+
+document.getElementById("w3").innerHTML = `${HEAD}<div class="split">${SIDE}
+  <div class="page">
+    <div class="group">Screen</div>
+    <div class="rowcard">
+      <div class="monitor" style="grid-template-columns:112px 1fr 180px">
+        <div class="screen" style="width:88px;height:56px"></div>
+        <div><b>QEMU Monitor</b><span class="tag">virtio-gpu</span>
+          <p>QEMU's own EDID · native 1920 x 1080</p>
+          <p>The refresh rate is QEMU's word; nothing scans out</p></div>
+        <div class="now"><b>1920 x 1080</b><small>at 75 Hz, as QEMU says</small></div>
+      </div>
+      <div class="modes" style="grid-template-columns:240px 1fr">
+        <div class="res">${["1920 x 1080", "1600 x 1200", "1440 x 900", "1280 x 1024", "1280 x 800", "1024 x 768", "800 x 600", "640 x 480"]
+          .map((r, i) => `<div class="${i === 4 ? "on" : ""}"><b>${r}${i === 0 ? `<span class="tag native">native</span><span class="tag now">in use</span>` : ""}</b><small></small></div>`).join("")}</div>
+        <div class="rates"><h4>1280 x 800 - refresh rate</h4>
+          <p class="hint">QEMU offers one at every size.</p>
+          <div class="chips" style="grid-template-columns:repeat(4,1fr)"><div class="chip on"><b>75 Hz</b><small>QEMU's</small></div></div></div>
+      </div>
+    </div>
+  </div></div>`;
+
+document.getElementById("w4").innerHTML = `${HEAD}<div class="split">${SIDE}
+  <div class="page">
+    <div class="group">Screen</div>
+    <div class="rowcard">
+      <div class="row"><span>Resolution</span><span>1920 x 1080, as the firmware chose it</span></div>
+      <div class="row"><span>Changing it</span><span>Not while running on this screen. To choose another at boot,<br>write <code>video=1280x800</code> in <code>\\boot\\kosmos.cmdline</code> on the stick</span></div>
+      <div class="row"><span>Scale</span><span>100%</span></div>
+    </div>
+  </div></div>`;
+</script>
+</body>
+</html>

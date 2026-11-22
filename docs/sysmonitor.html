@@ -1,0 +1,498 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  System Monitor: every monitor in one window. Drawn on 22 November 2026
+  from Diego's ask: "i want to have 1 place to see all the system
+  complnents usage in a way i can see all at once, or specigic components
+  with specific graphs the wey i can see the gpu now with each part and its
+  clock, devuce name, power in watts, etc". roadmap.md, "System Monitor,
+  every monitor in one place". docs/sysmonitor.md is the feature set, the
+  inventory of every metric today and the architecture; this is the
+  window. The numbers are made up in the shape of the M700 - an i7-6700,
+  8 GB, HD Graphics 530 at 350 to 1150 MHz, a SATA disk, an I219-V - and
+  the GPU page's are those testing.md read while the LLM server answered
+  on the GPU (1100 MHz, 93-100% busy, never in RC6, 15-18 W).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as Monitor and its siblings are drawn. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-side: #1b2029; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-graph: #16181d; --a-sel: #2f3747;
+  --user: #34c759; --kernel: #ff453a;          /* Monitor's, the same in every look */
+  --in: #4fb3ff; --out: #ffa64d;               /* io_in, io_out: every monitor's pair */
+  --gpu: #b98cff; --sleep: #3d4a63; --mem: #4fb3ff; --disp: #5fd08a;
+  --heat: #ff8a5c; --watt: #f2c94c;            /* new: a temperature and a power */
+  --s-cpu: #4f7fd6; --s-gpu: #9d74e8; --s-display: #4fb878;   /* composing.png's stages */
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 80ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 92ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 860px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 980px; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+
+/* ---------------------------------------------------------------- the window */
+.win { width: 1180px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; position: relative; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .s { color: var(--a-dim); font-size: 12.5px; flex: 1; white-space: nowrap; }
+.seg { display: flex; border: 1px solid var(--a-line); border-radius: 7px; overflow: hidden; height: 28px; }
+.seg span { padding: 0 11px; display: grid; place-items: center; color: var(--a-dim); font-size: 12px; border-left: 1px solid var(--a-line); }
+.seg span:first-child { border-left: 0; }
+.seg span.on { background: var(--a-sel); color: var(--a-ink); font-weight: 500; }
+.btn { height: 28px; display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid var(--a-line); border-radius: 7px; color: var(--a-ink); font-size: 12.5px; }
+.dots { color: var(--a-dim); font-weight: 700; letter-spacing: 1px; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lg { display: flex; gap: 12px; color: var(--a-dim); font-size: 12px; }
+.lg i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
+
+.frame { display: grid; grid-template-columns: 206px 1fr; min-height: 640px; }
+.nav { background: var(--a-side); border-right: 1px solid var(--a-line); padding: 12px 8px; }
+.nav h5 { margin: 12px 10px 6px; font-size: 10.5px; color: var(--a-faint); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.nav h5:first-child { margin-top: 2px; }
+.nav div { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 10px; border-radius: 7px; color: var(--a-ink); font-size: 12.8px; white-space: nowrap; }
+.nav div.on { background: var(--a-sel); }
+.nav div.in { padding-left: 27px; color: var(--a-dim); height: 28px; font-size: 12.3px; }
+.nav div i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.nav div span { margin-left: auto; color: var(--a-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.main { padding: 16px 18px 14px; min-width: 0; }
+
+/* Overview tiles */
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.tile { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 12px 14px 12px; min-width: 0; }
+.tile.w2 { grid-column: span 2; }
+.tile.w3 { grid-column: span 3; }
+.tile .top { display: flex; align-items: flex-start; gap: 12px; }
+.tile .kind { color: var(--a-faint); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; }
+.tile .name { font-family: var(--display); font-size: 17px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .fx { color: var(--a-dim); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.tile .big { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+.tile .big b { display: block; font-family: var(--display); font-size: 22px; line-height: 1.1; }
+.tile .big span { font-size: 11.5px; color: var(--a-dim); }
+.nums { display: flex; gap: 16px; margin: 8px 0 8px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.nums div small { display: block; color: var(--a-faint); font-size: 10.5px; }
+.nums div b { font-weight: 500; font-size: 13.5px; }
+
+/* the chip, the kit's processor_chip */
+.chip { width: 46px; height: 46px; border-radius: 7px; background: linear-gradient(145deg,#3c4556,#262c39); border: 1px solid #4a5468; position: relative; flex: none; }
+.chip::before { content: ""; position: absolute; inset: 9px; border-radius: 4px; background: #1d2633; border: 1px solid #56627a; }
+.chip b { position: absolute; inset: 0; display: grid; place-items: center; font: 600 11px var(--display); color: #9fd4ff; }
+.chip.g::before { background: #2a1f3f; border-color: var(--gpu); }
+.chip.g b { color: var(--gpu); }
+.chip.big { width: 64px; height: 64px; }
+.chip.big::before { inset: 12px; }
+.chip.big b { font-size: 13px; padding-bottom: 6px; }
+.chip small { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 500 7.5px var(--mono); color: var(--a-dim); }
+.pic { width: 46px; height: 46px; border-radius: 8px; border: 1px solid #4a5468; background: #262c39; display: grid; place-items: center; color: var(--a-dim); font: 600 10px var(--display); flex: none; }
+
+/* graphs: the kit's, on a ground dark in every look */
+.graph { position: relative; height: 84px; background: var(--a-graph); border-radius: 8px; overflow: hidden; }
+.graph .cols { position: absolute; inset: 2px; display: flex; gap: 1px; align-items: stretch; }
+.graph .cols i { flex: 1; position: relative; }
+.graph .cols i u, .graph .cols i s { position: absolute; left: 0; right: 0; display: block; }
+.graph .mid { position: absolute; left: 2px; right: 2px; top: 50%; height: 1px; background: #2c3340; }
+.graph .scale { position: absolute; left: 6px; top: 4px; font-size: 10.5px; color: var(--a-faint); font-family: var(--mono); background: rgba(22,24,29,.88); padding: 0 4px; border-radius: 3px; z-index: 1; }
+.graph .scale.b { top: auto; bottom: 4px; }
+.graph .scale.r { left: 6px; right: auto; }
+.graph svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.graph .note { position: absolute; inset: 0; display: grid; place-items: center; color: var(--a-faint); font-size: 12px; text-align: center; padding: 0 30px; }
+.small .graph { height: 34px; border-radius: 6px; }
+.g8 { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.g8 .graph { height: 40px; border-radius: 5px; }
+.g8 small { display: block; color: var(--a-faint); font-size: 10.5px; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.g4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.g2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.gname { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin: 0 2px 4px; white-space: nowrap; }
+.gname b { font-weight: 600; }
+.gname span { color: var(--a-dim); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+
+.heading { display: flex; justify-content: space-between; align-items: baseline; margin: 16px 2px 8px; gap: 12px; }
+.heading b { font-size: 14px; }
+.heading span { color: var(--a-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* a card, the kit's meter_card */
+.card { display: grid; grid-template-columns: 64px 1fr auto auto auto; gap: 18px; align-items: center;
+        background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 12px 16px; }
+.card .maker { color: var(--a-dim); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; }
+.card .model { font-family: var(--display); font-size: 21px; font-weight: 600; line-height: 1.15; }
+.card .facts { color: var(--a-dim); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.card .feat { font-size: 11.5px; color: var(--a-dim); margin-top: 2px; }
+.card .feat em { font-style: normal; color: #5fd08a; }
+.rate { text-align: right; font-variant-numeric: tabular-nums; }
+.rate b { display: block; font-family: var(--display); font-size: 21px; line-height: 1.15; }
+.rate span { font-size: 11.5px; color: var(--a-dim); }
+
+.engines { display: flex; gap: 8px; margin: 0 2px 8px; flex-wrap: wrap; }
+.eng { border: 1px solid var(--a-line); border-radius: 6px; padding: 2px 9px; color: var(--a-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.eng b { color: var(--a-ink); font-weight: 500; }
+.eng.off { opacity: .55; }
+
+.split { display: grid; grid-template-columns: minmax(0, 1fr) 236px; }
+.split .left { padding-right: 18px; border-right: 1px solid var(--a-line); min-width: 0; }
+.split .right { padding-left: 16px; }
+.right h5 { margin: 2px 0 10px; font-size: 10.5px; color: var(--a-faint); text-transform: uppercase; letter-spacing: .08em; }
+.fact { margin-bottom: 11px; }
+.fact small { display: block; color: var(--a-dim); font-size: 11.5px; }
+.fact b { font-family: var(--display); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fact b em { font-style: normal; color: var(--a-dim); font-weight: 500; font-size: 13.5px; }
+.fact .why { color: var(--a-faint); font-size: 11px; line-height: 1.35; }
+.stages { display: flex; gap: 2px; margin-top: 5px; }
+.stages i { flex: 1; height: 12px; border-radius: 3px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12px; color: var(--a-dim); margin-top: 6px; }
+.kv span:nth-child(even) { color: var(--a-ink); font-variant-numeric: tabular-nums; }
+
+.rows { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.rows th { text-align: left; color: var(--a-faint); font-weight: 500; font-size: 11.5px; padding: 4px 8px; border-bottom: 1px solid var(--a-line); }
+.rows td { padding: 0 8px; height: 27px; color: var(--a-dim); white-space: nowrap; }
+.rows td:first-child { color: var(--a-ink); }
+.rows td.r, .rows th.r { text-align: right; }
+.pbar { display: inline-block; width: 90px; height: 6px; background: #343c4b; border-radius: 3px; vertical-align: 1px; margin-right: 8px; position: relative; overflow: hidden; }
+.pbar i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--user); }
+.pbar i.k { background: var(--kernel); }
+
+.lanes { display: grid; gap: 3px; }
+.lane { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 8px; font-size: 11.5px; color: var(--a-dim); }
+.lane div { height: 12px; display: flex; gap: 0; background: #181b21; border-radius: 3px; overflow: hidden; }
+.lane div i { flex: 1; }
+.mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mini div { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 9px; padding: 8px 12px; }
+.mini b { display: block; font-family: var(--display); font-size: 19px; font-variant-numeric: tabular-nums; }
+.mini span { color: var(--a-dim); font-size: 11.5px; }
+.foot { color: var(--a-dim); font-size: 12px; margin: 12px 2px 0; }
+.link { color: #8fb8ff; }
+.none { color: var(--a-faint); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>System Monitor</h1>
+<p class="sub">Every monitor Kosmos has in one window: the whole machine at a glance on the Overview, and a page for each part - its device's name, its clocks, its power, its temperature and its history. Process Viewer, GPU Monitor, Disk Monitor and Network Monitor become pages of it. Monitor becomes its CPU page. Every row they show today keeps a place, and <code>docs/sysmonitor.md</code> counts them all.</p>
+
+<div class="q"><b>Diego, 22 November 2026</b>: "i want to have 1 place to see all the system complnents usage in a way i can see all at once, or specigic components with specific graphs the wey i can see the gpu now with each part and its clock, devuce name, power in watts, etc." And: "i dont want to loose any of the metrics we have now, but i do want to have a single place tthat consolidates all monitors and then i can expan on each one with specific metrics and history of consumption, usage, temperature, etc."</div>
+
+<h2>The Overview, on the M700</h2>
+<div class="scroller"><div class="win" id="overview"></div></div>
+<p class="cap"><b>The sidebar always shows</b>, one row for each part of this machine, each with a live number. Disks has a row for each drive, and the Heat and power row shows the package's temperature. <b>The Overview is a tile for each part</b>: its device's name, the one or two numbers that matter now, and the history window's graph - a small graph for each core, memory, the GPU's busy, each drive's and the network's in and out mirrored. A part the machine does not have gets no tile: the M700 has no battery, and under QEMU there is no GPU tile. <b>The busiest programs</b> are Processes' top five. A click on any tile opens its page. <b>The header</b> holds the history window for every page at once (1 minute, 10 minutes, 1 hour). The dots hold the pace and bytes or bits, as every monitor's do today.</p>
+
+<h2>The CPU page: Monitor, with its temperature, its power and who ran</h2>
+<div class="scroller"><div class="win" id="cpu"></div></div>
+<p class="cap"><b>Monitor's window, whole</b>: the chip with its maker's mark, the model, its features (virtualization green), the clock now, and a graph for each core with the kernel's time in red under the thread's own in green, each core's speed and share above it. <b>New beside each core: its temperature</b>, which Nebula already reads on every core's tick. <b>New under them: the package's temperature against TjMax, and its power against PL1 and PL2</b>, over the history window. Monitor computes TjMax, PL1 and PL2 and has never drawn them. <b>And who ran</b>: the Scheduler's lanes and its three numbers, read-only. The Scheduler stays the place to change them.</p>
+
+<h2>The GPU page: each part, its clock, its name, its power</h2>
+<div class="scroller"><div class="win" id="gpu"></div></div>
+<p class="cap"><b>GPU Monitor's window, whole</b>, while Xavier answers on the GPU over ten minutes: the card with the device's name and id, its range and its clock now, a chip for each engine with its share, busy, the clock and its sleep, memory, the display, who holds its memory, and down the right the facts. <b>New: the power in watts as a graph</b>, not only as the number now, and <b>the temperature</b>. An Intel GPU on the die has no sensor of its own, so the package's stands in, and the page says it is the package's. Over ten minutes a column is ten seconds: its bar is the mean, and the tick above it is the highest second, so a short spike still shows.</p>
+
+<h2>Where each window goes</h2>
+<table class="plain">
+  <tr><th>Today</th><th>In System Monitor</th><th>Rows (<code>sysmonitor.md</code>)</th></tr>
+  <tr><td>Monitor</td><td>becomes System Monitor; its window is the CPU page</td><td>1-18</td></tr>
+  <tr><td>Process Viewer</td><td>the Processes page: every column, sorting, End; then retired</td><td>19-41</td></tr>
+  <tr><td>GPU Monitor</td><td>the GPU page; then retired</td><td>42-60</td></tr>
+  <tr><td>Disk Monitor</td><td>the Disks page, a sidebar row a drive; then retired</td><td>61-74</td></tr>
+  <tr><td>Network Monitor</td><td>the Network page; then retired</td><td>75-86</td></tr>
+  <tr><td>LLM Monitor</td><td>its meters on the LLM page; the window kept for Inside and Story</td><td>87-95</td></tr>
+  <tr><td>Scheduler</td><td>who ran, on the CPU page; the window kept, it is a preference</td><td>96-99</td></tr>
+  <tr><td>The Deskbar's meters</td><td>kept; a click opens the Overview</td><td>100-103</td></tr>
+</table>
+</div>
+
+<script>
+function seeded(n) { let s = n * 9301 + 49297; return () => (s = (s * 9301 + 49297) % 233280) / 233280; }
+const LIGHTS = `<span class="lights"><i style="background:#3fbf4f"></i><i style="background:#f2b233"></i><i style="background:#ee5048"></i></span>`;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function head(sub, windowChoice, extra) {
+  const seg = ["1 min", "10 min", "1 hour"].map(w => `<span class="${w === windowChoice ? "on" : ""}">${w}</span>`).join("");
+  return `<div class="head"><span class="t">System Monitor</span><span class="s">${sub}</span>${extra || ""}
+    <span class="seg">${seg}</span><span class="dots">&middot;&middot;&middot;</span>${LIGHTS}</div>`;
+}
+
+function nav(on) {
+  const r = (id, name, colour, value, cls) =>
+    `<div class="${on === id ? "on" : ""} ${cls || ""}"><i style="background:${colour}"></i>${name}<span>${value}</span></div>`;
+  return `<div class="nav">
+    ${r("overview", "Overview", "#8a94a6", "")}
+    <h5>The machine</h5>
+    ${r("cpu", "CPU", "var(--user)", "23%")}
+    ${r("memory", "Memory", "var(--mem)", "1.9 GB")}
+    ${r("procs", "Processes", "#8a94a6", "43")}
+    ${r("gpu", "GPU", "var(--gpu)", on === "gpu" ? "96%" : "4%")}
+    ${r("disks", "Disks", "var(--in)", "")}
+    ${r("home", "Internal drive", "transparent", "1.2 MB/s", "in")}
+    ${r("tmp", "Temporary", "transparent", "18 KB/s", "in")}
+    ${r("net", "Network", "var(--out)", "382 KB/s")}
+    ${r("llm", "LLM", "#d98cff", on === "gpu" ? "9.6 t/s" : "idle")}
+    <h5>Across them</h5>
+    ${r("heat", "Heat and power", "var(--heat)", on === "gpu" ? "58 °C" : "44 °C")}
+  </div>`;
+}
+
+/* A stacked graph: kernel at the floor, user on top - Monitor's. */
+function stacked(seed, n, busy, opts) {
+  const r = seeded(seed); let out = "";
+  for (let i = 0; i < n; i++) {
+    const burst = (i > n * .62 && i < n * .78) ? busy * 1.6 : 0;
+    const u = clamp(busy + burst + (r() - .5) * busy, 0, 92);
+    const k = clamp((busy + burst) / 4 + (r() - .5) * 3, 0, 100 - u);
+    out += `<i><u style="bottom:0;height:${k}%;background:var(--kernel)"></u><s style="bottom:${k}%;height:${u}%;background:var(--user)"></s></i>`;
+  }
+  return `<div class="graph"${opts && opts.h ? ` style="height:${opts.h}px"` : ""}><div class="cols">${out}</div></div>`;
+}
+
+/* A single series, with the highest of each column as a tick above its mean. */
+function single(seed, n, f, colour, h, scale, peaks) {
+  const r = seeded(seed); let out = "";
+  for (let i = 0; i < n; i++) {
+    const v = clamp(f(i, r), 0, 100);
+    const p = peaks ? clamp(v + 4 + r() * 10, 0, 99) : 0;
+    out += `<i><u style="bottom:0;height:${v}%;background:${colour};opacity:.85"></u>` +
+           (peaks ? `<s style="bottom:${p}%;height:2px;background:${colour}"></s>` : "") + `</i>`;
+  }
+  return `<div class="graph" style="height:${h}px"><div class="cols">${out}</div>${scale ? `<span class="scale r">${scale}</span>` : ""}</div>`;
+}
+
+/* In above the line and out below, on one scale - Network's and Disk's. */
+function mirrored(seed, n, a, b, h, top, bottom) {
+  const r = seeded(seed); let out = "";
+  for (let i = 0; i < n; i++) {
+    const burst = (i > n * .3 && i < n * .45) ? 1 : 0;
+    const up = clamp(a * (0.3 + r() * .7) + burst * 30, 0, 49);
+    const down = clamp(b * (0.3 + r() * .7) + burst * 6, 0, 49);
+    out += `<i><u style="bottom:50%;height:${up}%;background:var(--in)"></u><s style="top:50%;height:${down}%;background:var(--out)"></s></i>`;
+  }
+  return `<div class="graph" style="height:${h}px"><div class="mid"></div><div class="cols">${out}</div>` +
+         (top ? `<span class="scale">${top}</span><span class="scale b">${bottom}</span>` : "") + `</div>`;
+}
+
+/* A line: a temperature, against its limit drawn dashed. */
+function line(seed, n, f, colour, h, limitAt, labels) {
+  const r = seeded(seed); const pts = [];
+  for (let i = 0; i < n; i++) pts.push(`${(i / (n - 1) * 100).toFixed(2)},${(100 - clamp(f(i, r), 0, 100)).toFixed(2)}`);
+  const area = `0,100 ${pts.join(" ")} 100,100`;
+  return `<div class="graph" style="height:${h}px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">
+      ${limitAt != null ? `<line x1="0" x2="100" y1="${100 - limitAt}" y2="${100 - limitAt}" stroke="#6b7486" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>` : ""}
+      <polygon points="${area}" fill="${colour}" opacity=".14"/>
+      <polyline points="${pts.join(" ")}" fill="none" stroke="${colour}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+    </svg>${labels || ""}</div>`;
+}
+
+/* ------------------------------------------------------------- the Overview */
+const cores8 = [23, 31, 12, 40, 18, 9, 27, 14];
+const coreGraphs = cores8.map((b, c) =>
+  `<div><small>Core ${c + 1} · ${b}%</small>${stacked(c + 3, 30, b * .8, { h: 40 })}</div>`).join("");
+
+const busiest = [
+  ["windowserver", "server", 9, 2, "24.1 MB"],
+  ["jetski", "app", 6, 1, "312 MB"],
+  ["wm", "server", 3, 1, "9.8 MB"],
+  ["net", "server", 2, 1, "6.4 MB"],
+  ["sysmon", "app", 1, 0, "7.2 MB"],
+];
+
+document.getElementById("overview").innerHTML = head("Overview · the last minute", "1 min") + `<div class="frame">${nav("overview")}
+  <div class="main"><div class="tiles">
+    <div class="tile w2">
+      <div class="top"><div class="chip"><b>intel</b></div>
+        <div><div class="kind">CPU</div><div class="name">Core i7-6700</div><div class="fx">8 processors · rated 3.40 GHz</div></div>
+        <div class="big"><b style="color:var(--user)">23%</b><span>busy</span></div>
+        <div class="big"><b>3.41 GHz</b><span>now</span></div>
+        <div class="big"><b>44 °C</b><span>12.4 W</span></div></div>
+      <div class="g8" style="margin-top:10px">${coreGraphs}</div>
+    </div>
+    <div class="tile">
+      <div class="top"><div><div class="kind">Heat and power</div><div class="name">44 °C · 12.4 W</div><div class="fx">the package, of 100 °C and 65 W</div></div></div>
+      <div class="nums"><div><small>CPU package</small><b>12.4 W</b></div><div><small>GPU (PP1)</small><b>0.4 W</b></div><div><small>Hottest core</small><b>46 °C</b></div><div><small>Battery</small><b class="none">none</b></div></div>
+      ${line(5, 60, (i, r) => 40 + Math.sin(i / 6) * 3 + r() * 2 + (i > 37 && i < 47 ? 8 : 0), "var(--heat)", 40, null)}
+    </div>
+    <div class="tile">
+      <div class="top"><div class="pic" style="color:var(--mem)">RAM</div>
+        <div><div class="kind">Memory</div><div class="name">1.9 GB of 7.9 GB</div><div class="fx">Nebula 64 MB · GPU buffers 19 MB</div></div></div>
+      <div style="margin-top:10px">${single(9, 60, (i, r) => 23 + (i > 20 ? 1.5 : 0) + r() * .6, "var(--mem)", 40, "8 GB")}</div>
+    </div>
+    <div class="tile">
+      <div class="top"><div class="chip g"><b>GPU</b></div>
+        <div><div class="kind">GPU</div><div class="name">HD Graphics 530</div><div class="fx">350 MHz of 1150 · asleep 91% · 0.4 W</div></div>
+        <div class="big"><b style="color:var(--gpu)">4%</b><span>busy</span></div></div>
+      <div style="margin-top:10px">${single(11, 60, (i, r) => (i > 37 && i < 47 ? 30 + r() * 20 : r() * 5), "var(--gpu)", 40)}</div>
+    </div>
+    <div class="tile">
+      <div class="top"><div class="pic">ETH</div>
+        <div><div class="kind">Network</div><div class="name">Intel I219-V</div><div class="fx">192.168.1.35 · MTU 1500</div></div></div>
+      <div class="nums"><div><small>In</small><b style="color:var(--in)">340 KB/s</b></div><div><small>Out</small><b style="color:var(--out)">42 KB/s</b></div></div>
+      ${mirrored(13, 60, 22, 8, 40)}
+    </div>
+    <div class="tile">
+      <div class="top"><div><div class="kind">Disks</div><div class="name">2 drives</div><div class="fx">reading · writing, now</div></div></div>
+      <div class="small" style="margin-top:6px">
+        <div class="gname"><b>Internal drive</b><span>1.2 MB/s · 80 KB/s</span></div>${mirrored(17, 60, 20, 6, 34)}
+        <div class="gname" style="margin-top:6px"><b>Temporary</b><span>18 KB/s · 2 KB/s</span></div>${mirrored(19, 60, 4, 2, 34)}
+      </div>
+    </div>
+    <div class="tile">
+      <div class="top"><div><div class="kind">LLM</div><div class="name">phi-2 · Q4_0</div><div class="fx">1.6 GB · on HD Graphics 530</div></div>
+        <div class="big"><b>idle</b><span>9.6 tokens/s last</span></div></div>
+      <div style="margin-top:10px">${single(23, 60, (i, r) => (i > 37 && i < 47 ? 55 + r() * 15 : 0), "#d98cff", 40)}</div>
+    </div>
+    <div class="tile">
+      <div class="top"><div><div class="kind">The busiest programs</div></div><div class="big"><span class="link">All 43 ›</span></div></div>
+      <table class="rows" style="margin-top:2px">
+        ${busiest.map(([n, k, u, kk, m]) => `<tr><td>${n}</td><td><span class="pbar" style="width:54px"><i class="k" style="width:${kk * 4}%"></i><i style="left:${kk * 4}%;width:${u * 4}%"></i></span>${u + kk}%</td><td class="r">${m}</td></tr>`).join("")}
+      </table>
+    </div>
+  </div>
+  <div class="foot">A column a second; the newest at the right. Up 2 h 14 min.</div>
+  </div></div>`;
+
+/* ------------------------------------------------------------- the CPU page */
+const speeds = [3.41, 3.41, 3.40, 3.90, 3.41, 3.40, 3.41, 3.40];
+const temps = [43, 44, 41, 46, 43, 44, 41, 46];
+const cpuGraphs = cores8.map((b, c) =>
+  `<div><div class="gname"><b>Core ${c + 1}</b><span>${speeds[c].toFixed(2)} GHz · ${temps[c]} °C · ${b}%</span></div>${stacked(c + 31, 60, b * .8, { h: 78 })}</div>`).join("");
+
+const BAND = { input: "#ff6b6b", audio: "#f2c94c", display: "#5fd08a", game: "#ff8a5c", normal: "#4f8fe8", low: "#7b8494", idle: "#181b21" };
+function lanes() {
+  let out = "";
+  for (let c = 0; c < 8; c++) {
+    const r = seeded(c + 71); let cells = "";
+    for (let i = 0; i < 100; i++) {
+      const x = r();
+      const b = x < .55 ? "idle" : x < .78 ? "normal" : x < .9 ? "display" : x < .95 ? "low" : x < .98 ? "audio" : "input";
+      cells += `<i style="background:${BAND[b]}"></i>`;
+    }
+    out += `<div class="lane">Core ${c + 1}<div>${cells}</div></div>`;
+  }
+  return `<div class="lanes">${out}</div>`;
+}
+
+document.getElementById("cpu").innerHTML = head("CPU · the last 10 minutes", "10 min",
+  `<span class="lg"><span><i style="background:var(--user)"></i>User</span><span><i style="background:var(--kernel)"></i>Kernel</span></span>`) +
+  `<div class="frame">${nav("cpu")}<div class="main">
+    <div class="card"><div class="chip big"><b>intel</b><small>i7-6700</small></div>
+      <div><div class="model">Core i7-6700</div><div class="facts">8 processors · rated 3.40 GHz · 4 cores, 2 threads each</div>
+        <div class="feat"><em>VT-x</em> · SSE4.2 · AVX2 · AES-NI · RDRAND</div></div>
+      <div class="rate"><b style="color:var(--user)">23%</b><span>busy</span></div>
+      <div class="rate"><b>3.41 GHz</b><span>now, across all cores</span></div>
+      <div class="rate"><b>44 °C · 12.4 W</b><span>the package</span></div></div>
+
+    <div class="heading"><b>The last 10 minutes</b><span>8 processors · 23% busy · a column ten seconds</span></div>
+    <div class="g4">${cpuGraphs}</div>
+
+    <div class="g2" style="margin-top:14px">
+      <div><div class="gname"><b>The package's temperature</b><span>44 °C · hottest core 46 °C · slows at 100 °C</span></div>
+        ${line(41, 60, (i, r) => 40 + (i > 30 && i < 42 ? 18 : 0) + r() * 3, "var(--heat)", 92, 100,
+          `<span class="scale r">100 °C</span><span class="scale b">30 °C</span>`)}</div>
+      <div><div class="gname"><b>The package's power</b><span>12.4 W · PL1 65 W sustained · PL2 81 W a burst · never held</span></div>
+        ${single(43, 60, (i, r) => 14 + (i > 30 && i < 42 ? 40 : 0) + r() * 5, "var(--watt)", 92, "81 W", true)}</div>
+    </div>
+
+    <div class="heading"><b>Who ran, the last two seconds</b><span>a lane a core, a colour a band · <span class="link">Change in Scheduler ›</span></span></div>
+    <div class="g2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+      ${lanes()}
+      <div class="mini" style="grid-template-columns:1fr; gap:6px">
+        <div><b>3,412</b><span>switches a second</span></div>
+        <div><b>0.4 ms</b><span>the keys' longest wait</span></div>
+        <div><b>off</b><span>game mode</span></div>
+      </div>
+    </div>
+    <div class="foot">Ten minutes: a column ten seconds, its mean as the bar and its busiest second as the tick. Balanced scheduling.</div>
+  </div></div>`;
+
+/* ------------------------------------------------------------- the GPU page */
+/* Over ten minutes: four answers from Xavier, each 40-90 s of the render
+   engine at 93-100% and 1100 MHz; between them the GT asleep in RC6. */
+const answering = i => (i > 6 && i < 12) || (i > 21 && i < 27) || (i > 38 && i < 46) || (i > 53);
+const BUFS = [
+  ["windowserver", "the screen, buffer 1", "1720 × 1440", "9.5 MB", "scanned out"],
+  ["the firmware", "the screen, buffer 0", "1720 × 1440", "9.5 MB", "scanned out"],
+  ["wm", "the pointer", "64 × 64", "16 KB", "cursor plane"],
+];
+
+document.getElementById("gpu").innerHTML = head("GPU · the last 10 minutes", "10 min") + `<div class="frame">${nav("gpu")}<div class="main">
+  <div class="split"><div class="left">
+    <div class="card" style="grid-template-columns:64px 1fr auto auto auto"><div class="chip big g"><b>GPU</b></div>
+      <div><div class="maker">Intel</div><div class="model">HD Graphics 530</div><div class="facts">8086:1912 · 350 to 1150 MHz · PCI 00:02.0</div></div>
+      <div class="rate"><b style="color:var(--gpu)">96%</b><span>busy, now</span></div>
+      <div class="rate"><b>1100 MHz</b><span>of 1150</span></div>
+      <div class="rate"><b style="color:var(--watt)">16.4 W</b><span>now</span></div></div>
+
+    <div class="heading"><b>Busy</b><span>each engine by its own clock</span></div>
+    <div class="engines"><span class="eng">Render <b>96%</b></span><span class="eng">Blitter <b>0.4%</b></span><span class="eng off">Video <b>-</b></span><span class="eng off">Video enhance <b>-</b></span></div>
+    ${single(51, 60, (i, r) => answering(i) ? 92 + r() * 7 : r() * 3, "var(--gpu)", 72, "100%", true)}
+
+    <div class="g2" style="margin-top:12px">
+      <div><div class="gname"><b>Clock, and asleep</b><span><span style="color:var(--gpu)">1100 MHz</span> · asleep 48% of 10 min</span></div>
+        ${(() => { const r = seeded(53); let out = "";
+          for (let i = 0; i < 60; i++) { const on = answering(i); const mhz = on ? 93 + r() * 2 : 30 + r() * 4; const sl = on ? 0 : 60 + r() * 30;
+            out += `<i><u style="bottom:0;height:${sl}%;background:var(--sleep)"></u><s style="bottom:0;height:${on ? mhz : 0}%;background:var(--gpu);opacity:.85"></s></i>`; }
+          return `<div class="graph" style="height:84px"><div class="cols">${out}</div><span class="scale r">1150 MHz</span></div>`; })()}</div>
+      <div><div class="gname"><b>Power</b><span><span style="color:var(--watt)">16.4 W</span> · 15 to 18 W answering · 0.0 W asleep</span></div>
+        ${single(55, 60, (i, r) => answering(i) ? 76 + r() * 14 : r() * 2, "var(--watt)", 84, "20 W", true)}</div>
+      <div><div class="gname"><b>Temperature</b><span>58 °C, the package's</span></div>
+        ${line(57, 60, (i, r) => answering(i) ? 52 + r() * 4 : 38 + r() * 3, "var(--heat)", 84, 100, `<span class="scale r">100 °C</span>`)}</div>
+      <div><div class="gname"><b>Memory</b><span style="color:var(--mem)">19.0 MB in 3 buffers</span></div>
+        ${single(59, 60, (i, r) => 7.4 + r() * .3, "var(--mem)", 84, "256 MB")}</div>
+    </div>
+
+    <div class="heading"><b>The display</b><span>17 flips a second of 60 frames · no underrun</span></div>
+    ${single(61, 60, (i, r) => 20 + r() * 18, "var(--disp)", 56, "60 a second")}
+
+    <div class="heading"><b>Who holds its memory</b><span>3 buffers</span></div>
+    <table class="rows"><tr><th>Holder</th><th>Buffer</th><th>Size</th><th class="r">Memory</th><th>For</th></tr>
+      ${BUFS.map(([h, b, s, m, f]) => `<tr><td>${h}</td><td>${b}</td><td>${s}</td><td class="r">${m}</td><td>${f}</td></tr>`).join("")}
+    </table>
+  </div>
+  <div class="right">
+    <h5>Now</h5>
+    <div class="fact"><small>Utilisation</small><b>96% <em>render · blitter 0.4%</em></b></div>
+    <div class="fact"><small>Clock</small><b>1100 MHz <em>/ 1150 MHz</em></b></div>
+    <div class="fact"><small>Asleep (RC6)</small><b>0%</b></div>
+    <div class="fact"><small>Power</small><b style="color:var(--watt)">16.4 W</b><div class="why">RAPL's graphics plane, PP1</div></div>
+    <div class="fact"><small>Temperature</small><b>58 °C</b><div class="why">the package's; an Intel GPU on the die has no sensor of its own</div></div>
+    <div class="fact"><small>Memory</small><b>19.0 MB <em>in 3 buffers</em></b></div>
+    <div class="fact"><small>Display</small><b>1720 × 1440 <em>60 Hz</em></b></div>
+    <div class="fact"><small>Rendering mode</small><b style="font-size:16px">Page flips</b>
+      <div class="stages"><i style="background:var(--s-cpu)"></i><i style="background:var(--s-cpu)"></i><i style="background:var(--s-cpu)"></i><i style="background:var(--s-cpu)"></i><i style="background:var(--s-display)"></i><i style="background:var(--s-display)"></i></div>
+      <div class="why" style="margin-top:4px">Needs the GPU's display engine</div></div>
+    <h5 style="margin-top:16px">The device</h5>
+    <div class="kv">
+      <span>Name</span><span>Intel HD Graphics 530</span>
+      <span>Vulkan</span><span>1.4, Mesa anv</span>
+      <span>OpenGL ES</span><span>not yet</span>
+      <span>Device</span><span>8086:1912</span>
+      <span>PCI</span><span>00:02.0</span>
+      <span></span><span class="link">In About This Machine ›</span>
+    </div>
+  </div></div>
+  <div class="foot">Ten minutes: a column ten seconds, its mean as the bar and its busiest second as the tick; the newest at the right.</div>
+  </div></div>`;
+</script>
+</body>
+</html>

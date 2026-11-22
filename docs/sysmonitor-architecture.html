@@ -1,0 +1,190 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  System Monitor, and what it stands on: the application on top, its pages
+  moved out of the monitors it replaces, the new Lua library that turns
+  readings into rates, the new C kit that keeps history and draws it, the
+  servers, drivers and kernel calls that count today, and what is later -
+  the recorder and the sensors not yet read. The busiest path - the
+  Overview, once a second - drawn through it (O). Drawn on 22 November 2026,
+  before any of it is built; `docs/sysmonitor.md` is the argument and
+  `docs/sysmonitor.html` the window.
+
+  Rendered to docs/sysmonitor-architecture.png by headless Chrome at twice
+  its size, as docs/netmonitor-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos System Monitor architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 1000px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .row + .row { margin-top: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .gone { border-style: dashed !important; background: #f6f5f1 !important; }
+  .gone b { color: var(--dim); }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .pages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .pages span { font-size: 12.5px; border: 1px solid var(--app-line); border-radius: 6px; padding: 1px 8px; background: #f4f8ff; color: var(--app-ink); }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+  .side td.y { color: #1f7a45; } .side td.n { color: #a0522d; }
+</style>
+</head>
+<body>
+<h1>System Monitor - what it stands on</h1>
+<p class="sub">It counts nothing itself. Nebula, the GPU's driver, the network server, each drive's server and the LLM server count, as they do for today's monitors. System Monitor asks each of them once a pace. A new library turns two readings into rates, a new C kit keeps the history and draws it, and the pages are the old windows' bodies moved in. Four windows go once every row they show has a place here.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new or moved</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>later, or retired</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">O</span><span>the Overview, once a second</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box new"><span class="tag">NEW</span><b>System Monitor - <code>sysmon.lua</code>, which was Monitor</b><p>The sidebar, the Overview and a page for each part. It asks every source once a pace <span class="f">O2</span> and pushes a column into each series <span class="f">O3</span>; the page that shows is painted <span class="f">O4</span>. It needs <code>processes</code> (End) and <code>network</code>.</p>
+          <div class="pages"><span>Overview</span><span>CPU</span><span>Memory</span><span>Processes</span><span>GPU</span><span>Disks</span><span>Network</span><span>LLM</span><span>Heat and power</span></div></div>
+      </div>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box"><b>LLM Monitor</b><p>kept for Inside and Story; its meters read <code>meters.lua</code></p></div>
+        <div class="box"><b>Scheduler</b><p>kept, a preference; draws with <code>ui.lanes</code></p></div>
+        <div class="box"><b>About This Machine</b><p>kept, the inventory; a page's card opens it</p></div>
+        <div class="box"><b>Deskbar, Pewter's bar</b><p>meters kept, on <code>meters.lua</code>; a click opens the Overview</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box gone"><span class="tag later">S9</span><b>Process Viewer</b><p>retired: its rows on Processes</p></div>
+        <div class="box gone"><span class="tag later">S9</span><b>GPU Monitor</b><p>retired: its rows on GPU</p></div>
+        <div class="box gone"><span class="tag later">S9</span><b>Disk Monitor</b><p>retired: its rows on Disks</p></div>
+        <div class="box gone"><span class="tag later">S9</span><b>Network Monitor</b><p>retired: its rows on Network</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in its process)</h2>
+      <div class="row" style="grid-template-columns:1.25fr 1fr 1fr">
+        <div class="box new"><span class="tag">MOVED</span><b>The pages - <code>user/lib/sysmon/</code></b><p>a file a page, each a view and a <code>sample</code>: the bodies of <code>sysmon</code>, <code>procs</code>, <code>gpumon</code>, <code>diskmon</code> and <code>netmon</code> moved in; Overview, Memory and Heat and power new</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>meters.lua</b><p>two readings of a source and the seconds between them, giving the rates <span class="f">O3</span>. The differences five windows and the bars each work out today, in one place</p></div>
+        <div class="box"><b>ui.lua</b><p>window, header, <code>ui.sidebar</code>, <code>ui.columns</code>, <code>meter_card</code>, the chip, device pictures; <code>ui.history</code> becomes the Series Kit's door; <b style="display:inline;font-size:13px">ui.lanes</b> moved out of the Scheduler</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:repeat(5,1fr)">
+        <div class="box"><b>pulse.lua</b><p>name, features, speeds, heat; <code>pulse.split</code> from Monitor</p></div>
+        <div class="box"><b>gpu.lua</b><p><code>stats</code>, <code>since</code>, <code>vendor</code></p></div>
+        <div class="box"><b>procshare, prockind</b><p>a process's share, its kind</p></div>
+        <div class="box"><b>drivelist, netshares</b><p>the drives, the shares</p></div>
+        <div class="box"><b>hardware, rendering</b><p>the card's name; the stages</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>C kits (in its process)</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Series Kit - <code>/Kosmos/Kits/series</code></b><p>numbers over time in flat rings, never in Lua tables: three steps (a pace, 10 s, 60 s), each column its mean and its highest, gaps kept as gaps; <code>series:draw</code> into a surface, stacked, mirrored or as a line - one call a graph <span class="f">O4</span>. Its ring is a declared shape, <code>seriesring.h</code>, the same in the window's memory or a recorder's region</p></div>
+        <div class="box"><b>gfx</b><p>the surface, fills, text <span class="f">O4</span></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers - each counts what it owns, and answers a declared shape</h2>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box"><b>devices server</b><p><code>/Devices/memory</code>, <code>/Devices/kernel</code> (the pools), <code>/Devices/battery</code> <span class="f">O2</span></p></div>
+        <div class="box"><b>intelgpu</b><p><code>GPU_OP_STATS</code>: clock, RC6, each engine's busy time, flips, frames, its buffers and their holders <span class="f">O2</span></p></div>
+        <div class="box"><b>network server - <code>net.c</code></b><p><code>NET_OP_STATS</code>: totals, dropped, a page of connections; <code>NET_OP_INFO</code> <span class="f">O2</span></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box"><b>each drive's server</b><p><code>diskfs</code>, <code>ramfs</code>, <code>smbfs</code>, the sticks': <code>.device</code> <span class="f">O2</span> and <code>.programs</code> (its page only)</p></div>
+        <div class="box"><b>LLM server</b><p><code>llm.stats</code>: the model, tokens, who asked <span class="f">O2</span></p></div>
+        <div class="box"><b>window manager</b><p>the windows and how each draws, the rendering mode, game mode - asked only while their page shows</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1.2fr 1fr">
+        <div class="box later-box"><span class="tag later">DECISION 2</span><b>The recorder</b><p>a C server sampling the totals every second from boot, writing the rings into a region the Deskbar and System Monitor map read-only - history since the machine started, and no server asked by a window</p></div>
+        <div class="box later-box"><span class="tag later">LATER</span><b>Sensors not yet read</b><p>the disk's model and size; the link's speed; the AMD GPU's temperature; SMART in <code>ahci</code>; fans (the EC, a Super I/O chip)</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box"><b>sys.cpuload</b><p>each core's busy and idle, user and kernel time, APERF/MPERF, its temperature <span class="f">O2</span></p></div>
+        <div class="box"><b>sys.info</b><p>the package's temperature, TjMax, RAPL energy, PP1 (the GPU), PL1, PL2, held <span class="f">O2</span></p></div>
+        <div class="box"><b>sys.processes, sched_lane</b><p>every process; who ran, switches, the keys' wait</p></div>
+        <div class="box"><b>sys.kill, regions</b><p>End, with <code>needs processes</code>; a region for the recorder</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box later-box"><span class="tag later">LATER</span><b>RAPL's PP0 and DRAM planes; PP1 on Tiger Lake</b><p>small, beside PP1, once each model is checked against Linux's <code>intel_rapl</code></p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>O - the Overview, once a second</h3>
+      <ol><li><b>O1</b> The window kit's clock, at the pace.</li>
+          <li><b>O2</b> The totals asked: two syscalls to Nebula, and about a dozen messages, one to each counting server - each a fixed shape. A source slow to answer is asked less often until a call with a deadline exists.</li>
+          <li><b>O3</b> <code>meters.lua</code> takes the differences; about 80 numbers pushed into the Series Kit's rings, no table made for history.</li>
+          <li><b>O4</b> The page that shows is painted: cards and text by <code>gfx</code>, each graph one <code>series:draw</code> in C.</li>
+          <li><b>O5</b> The surface committed to the window manager.</li></ol>
+      <p style="font-size:13px;color:var(--dim);margin-top:6px">Aim: the whole second under 5 ms on the M700, to be measured in S3, not claimed.</p></div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>Each reading</td><td>a reply to one request, asked once a pace</td></tr>
+        <tr><td>The lists</td><td>a page into a region the caller owns, only while their page shows</td></tr>
+        <tr><td>History, in the window</td><td>its own memory; nothing crosses</td></tr>
+        <tr><td>History, by a recorder</td><td>a region: one writer, readers only read, the head index the one word both touch</td></tr>
+      </table></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>Series Kit</td><td>every monitor's graphs, through <code>ui.history</code>; the bars' meters; LLM Monitor; later Music's levels</td></tr>
+        <tr><td><code>meters.lua</code></td><td>the Deskbar's and Pewter's indicators; LLM Monitor; the programs at the prompt</td></tr>
+        <tr><td><code>ui.lanes</code></td><td>the Scheduler and the CPU page</td></tr>
+      </table></div>
+    <div class="card"><h3>Heat and power, today</h3>
+      <table>
+        <tr><td>Each core's, the package's °C</td><td class="y">M700, T14, Mac Pro</td></tr>
+        <tr><td>The package's watts, PL1, PL2</td><td class="y">M700, T14, Mac Pro</td></tr>
+        <tr><td>The GPU's watts (PP1)</td><td class="y">M700 only</td></tr>
+        <tr><td>The battery's charge</td><td class="y">T14</td></tr>
+        <tr><td>The GPU's own °C</td><td class="n">none on Intel's die; AMD's in its log only</td></tr>
+        <tr><td>A disk's °C, fans</td><td class="n">not read: new driver work</td></tr>
+        <tr><td>QEMU</td><td class="n">none of these: the pages say so</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

@@ -863,7 +863,10 @@ of today's monitors is lost**: the design opens with an inventory of
 each one's, and none of those applications goes before its every row has
 a place here. Feature set, mockup, architecture and diagram, agreed
 before code. After USB audio and the resolution selector, unless Diego
-puts it sooner.
+puts it sooner. **Designed on 22 November, for Diego to agree**:
+`docs/sysmonitor.md` (the inventory - 103 rows over nine windows and bars,
+every one placed - the feature set, architecture, steps S1-S11, seven
+decisions), `docs/sysmonitor.html` and `docs/sysmonitor-architecture.png`.
 
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64
@@ -4650,7 +4653,12 @@ processors, and still what follows USB:
    so the list is the monitor's own. Today the firmware chooses (60 Hz,
    and 3440x1440 or 1720x1440 by boot). **Next after USB audio** (Diego,
    22 November: "i wan tot be able to switch resolutions and refresh rates
-   available for the monitor"). **Cafesa3D's ray tracer on the
+   available for the monitor"). **Designed on 22 November, for Diego to
+   agree**: `docs/displaymodes.md` (feature set, architecture, steps D1-D9,
+   seven decisions), `docs/displaymodes.html` and
+   `docs/displaymodes-architecture.png`. 3440x1440 at 144 Hz is probably
+   past the HD 530's DisplayPort 1.2 and display clock; D1 reads what the
+   M700 really has. **Cafesa3D's ray tracer on the
    GPU's 24 execution units** (Diego, the same day: "can we make cafesa3d
    use the gpu rendering for faster raytracing using the 24 Execution
    Units?"): GPU compute - the render engine's GPGPU pipeline, a context,
@@ -13033,6 +13041,11 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   again first, its chooser and the formats on the page. **Next after
   Xavier on Vulkan** (Diego, 22 November: "I want to do usb audio so i can
   test my edifier usb speakers which they work with audio over usb").
+  **Designed on 22 November, for Diego to agree**: `docs/usbaudio.md`
+  (feature set, architecture, steps U1-U9, three decisions),
+  `docs/usbaudio.html` (Mixer with its choosers) and
+  `docs/usbaudio-architecture.png`. U1 reads the Edifier speakers'
+  descriptors on the M700.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
 - **Music, as VOX is**, Diego's, 14 September: "the music player is really

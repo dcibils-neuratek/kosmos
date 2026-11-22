@@ -1,0 +1,146 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  USB audio and the choice of device: Mixer over one Lua library, the
+  audio server holding a list of outputs, the USB driver feeding a
+  speaker's isochronous endpoint from a ring the server writes, and the
+  kernel as it is. The busiest path - a period - drawn through it (P), and
+  a plug (U). Drawn on 22 November 2026, before any of it is built;
+  `docs/usbaudio.md` is the argument and `docs/usbaudio.html` the window.
+
+  Rendered to docs/usbaudio-architecture.png by headless Chrome at twice
+  its size, as docs/netmonitor-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos USB audio architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>USB audio - what it stands on</h1>
+<p class="sub">A USB speaker is one more place for the mix to go, not a second mixer. Programs write to their rings as they do now and never learn which device plays. The audio server mixes, converts to the device's format and writes periods into a ring; the USB driver feeds the speaker's isochronous endpoint from it, at the speaker's clock. A period (P) never leaves C; Mixer (U) only lists and chooses.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">P</span><span>a period</span><span class="f">U</span><span>a speaker plugged in</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Mixer - <code>mixer.lua</code>, redrawn</b><p>the Output and Input choosers, each device's format and what it offers, Master, Playing, the input's meter. Redraws when told the list changed <span class="f">U4</span></p></div>
+        <div class="box"><b>Music, JetSki, every program</b><p>write their own ring, as now; never told the device <span class="f">P1</span></p></div>
+        <div class="box"><b>notify</b><p>"Plugged in", "unplugged" <span class="f">U3</span></p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in the caller's process)</h2>
+      <div class="row" style="grid-template-columns:1fr 2fr">
+        <div class="box"><b>ui.lua</b><p>window, cards, dropdown, slider</p></div>
+        <div class="box new"><span class="tag">NEW</span><b><code>audio.lua</code>, three calls more</b><p><code>devices()</code>, <code>choose()</code>, <code>watch()</code>: <code>AUDIO_OP_DEVICES</code>, <code>_CHOOSE</code> and <code>_WATCH</code> in <code>audioproto.h</code>'s shape</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>audio - <code>audio.c</code>, in the AUDIO band</b><p>streams and the mix as now <span class="f">P2</span>; new: a list of outputs and inputs, one chosen and kept by name; the mix converted to the device's rate, size and channels <span class="f">P3</span> and written to its ring <span class="f">P4</span>; moved to the machine's own device when a speaker goes</p></div>
+        <div class="box"><b>HD Audio, virtio-sound</b><p>through <code>SYS_SND_WRITE</code>, as now: the machine's own output</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:2fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">NEW</span><b>xhci.c - isochronous OUT</b><p>a speaker's Audio Streaming interface claimed <span class="f">U1</span>; a TD a millisecond (or a microframe) filled from the ring <span class="f">P5</span>; an asynchronous device's feedback endpoint read and each TD sized from it; the speaker's HID buttons as volume keys</p></div>
+        <div class="box"><b>xhci.c - isochronous IN</b><p>the camera's, built; a microphone's at U9</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C)</h2>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box new"><span class="tag">NEW</span><b>uac_decode.c</b><p>UAC1 and UAC2 descriptors in, a device's formats out; held on the Mac <span class="f">U2</span></p></div>
+        <div class="box"><b>pcmconvert.h</b><p>the resampler <code>sys.pcm</code> and the Playback Kit share <span class="f">P3</span></p></div>
+        <div class="box"><b>usb_decode.c</b><p>HID reports, for the speaker's buttons</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>regions</b><p>each program's ring; the server's ring to xhci <span class="f">P4</span></p></div>
+        <div class="box"><b>pulses</b><p>"room" from xhci, "a period is in" from the server; neither waits</p></div>
+        <div class="box"><b>IPC</b><p>a device arrived or left; Mixer's requests</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>P - a period</h3>
+      <ol><li><b>P1</b> A program writes 256 frames to its ring and says nothing.</li>
+          <li><b>P2</b> The server, woken by xhci's "room", sums every stream with its gain.</li>
+          <li><b>P3</b> 44.1 kHz to 48 kHz, 16 bits to the device's: one pass, in C, vectorised.</li>
+          <li><b>P4</b> Into the USB ring; a pulse to xhci.</li>
+          <li><b>P5</b> xhci copies the next millisecond, 192 bytes, into the TD the controller needs next. The speaker's clock sets the pace.</li></ol></div>
+    <div class="card"><h3>U - a speaker plugged in</h3>
+      <ol><li><b>U1</b> xhci enumerates it, as any device, and sees an Audio Streaming interface.</li>
+          <li><b>U2</b> uac_decode.c reads what it offers; xhci tells the server, with the ring's region.</li>
+          <li><b>U3</b> The server adds it; if it was the one chosen last, the mix moves there. A notification names it.</li>
+          <li><b>U4</b> Mixer, watching, is pulsed and redraws.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>Samples</td><td>regions: a program's ring, the USB ring</td></tr>
+        <tr><td>Wake-ups</td><td>pulses, one way each</td></tr>
+        <tr><td>Devices, the choice</td><td>messages in <code>audioproto.h</code>'s shape</td></tr>
+        <tr><td>A device came or went</td><td>xhci to the server, on an endpoint init hands only to it</td></tr>
+      </table></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>isochronous OUT</td><td>later: a USB MIDI or video device, Bluetooth audio's dongle</td></tr>
+        <tr><td>the device list</td><td>Mixer, the Deskbar's volume, This Machine's cards</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>
