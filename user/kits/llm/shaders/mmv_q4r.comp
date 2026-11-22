@@ -1,0 +1,102 @@
+#version 450
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+
+/*
+ * Q4_0's vector product over a reordered matrix (Xavier on Vulkan, V7).
+ *
+ * ggml's Q4_0 block is 18 bytes - a half's scale, then 32 values in 16
+ * bytes of nibbles - so a block never sits on a 16-byte boundary and
+ * llama.cpp's shader reads it two bytes at a time. Here the matrix is laid
+ * out again when it is loaded, as Intel's SYCL backend does: every block's
+ * 16 bytes of nibbles first, each one load, and then every block's scale,
+ * two to a word. The values are ggml's: byte j's low nibble is the block's
+ * value j, its high nibble value j + 16, each less 8 and times the scale -
+ * worked as scale * (the nibbles' sum against x, less 8 times x's sum).
+ *
+ * A workgroup makes ROWS rows for TOKENS inputs at once - a question's,
+ * eight at a time - its lanes taking a row's blocks in turn, each block's
+ * weights read once for every input and each input's 32 values once for
+ * every row; a row's lanes are
+ * summed by subgroupAdd, then across the subgroups in shared memory -
+ * the form that runs on an HD 530 (`testing.md` 18.992).
+ */
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+
+layout(local_size_x_id = 0) in;
+layout(constant_id = 1) const uint ROWS = 4;
+layout(constant_id = 2) const uint TOKENS = 1;         /* inputs a dispatch, 1 to 8 */
+
+layout(binding = 0) readonly buffer Q { uvec4 q[]; };   /* the nibbles, a block a load */
+layout(binding = 1) readonly buffer S { uint s[]; };    /* the scales, two halves a word */
+layout(binding = 2) readonly buffer X { vec4 x[]; };    /* TOKENS rows of a row's values */
+layout(binding = 3) writeonly buffer D { float d[]; };  /* TOKENS rows of `rows` */
+
+layout(push_constant) uniform P {
+    uint blocks;            /* a row's */
+    uint rows;
+} p;
+
+shared float part[ROWS * TOKENS * 64];
+
+void main()
+{
+    const uint lane = gl_LocalInvocationID.x;
+    const uint first = gl_WorkGroupID.x * ROWS;
+    const uint xrow = p.blocks * 8;                     /* a token's input, in vec4s */
+    float acc[ROWS * TOKENS];
+
+    for (uint i = 0; i < ROWS * TOKENS; i++) {
+        acc[i] = 0.0;
+    }
+
+    for (uint b = lane; b < p.blocks; b += gl_WorkGroupSize.x) {
+        uvec4 w[ROWS];
+        float scale[ROWS];
+
+        for (uint r = 0; r < ROWS; r++) {
+            const uint at = min(first + r, p.rows - 1) * p.blocks + b;
+            w[r] = q[at];
+            scale[r] = unpackHalf2x16(s[at >> 1])[at & 1];
+        }
+
+        for (uint t = 0; t < TOKENS; t++) {
+            vec4 xv[8];
+            for (uint i = 0; i < 8; i++) {
+                xv[i] = x[t * xrow + b * 8 + i];
+            }
+            const float xs = dot(xv[0] + xv[1] + xv[2] + xv[3] + xv[4] + xv[5] + xv[6] + xv[7], vec4(1.0));
+
+            for (uint r = 0; r < ROWS; r++) {
+                float sum = 0.0;
+                for (uint c = 0; c < 4; c++) {
+                    const uint v = w[r][c];
+                    const vec4 lo = vec4(uvec4(v, v >> 8, v >> 16, v >> 24) & 0xfu);
+                    const vec4 hi = vec4(uvec4(v >> 4, v >> 12, v >> 20, v >> 28) & 0xfu);
+                    sum += dot(lo, xv[c]) + dot(hi, xv[4 + c]);
+                }
+                acc[r * TOKENS + t] += scale[r] * (sum - 8.0 * xs);
+            }
+        }
+    }
+
+    for (uint i = 0; i < ROWS * TOKENS; i++) {
+        const float t = subgroupAdd(acc[i]);
+        if (subgroupElect()) {
+            part[i * 64 + gl_SubgroupID] = t;
+        }
+    }
+    barrier();
+
+    for (uint i = lane; i < ROWS * TOKENS; i += gl_WorkGroupSize.x) {
+        const uint r = i / TOKENS, t = i % TOKENS;
+        if (first + r < p.rows) {
+            float sum = 0.0;
+            for (uint k = 0; k < gl_NumSubgroups; k++) {
+                sum += part[i * 64 + k];
+            }
+            d[t * p.rows + first + r] = sum;
+        }
+    }
+}

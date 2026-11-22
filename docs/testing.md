@@ -42111,3 +42111,62 @@ failures are kept in `build/gate/failed/`.
   i915's indices.
 - **`hw_give` has no null `PIPE_CONTROL` before a VF invalidate**, which
   i915 has on Gen9. Seen only in reading.
+
+## 18.995 What bounds 1.5B on the HD 530, and Q4_0 laid out again (Xavier on Vulkan, V7, measured, not yet used)
+
+**In short:** this measures what limits Qwen 1.5B on the M700's GPU, and
+builds the fix for its largest part, which nothing uses yet. The GPU reads
+memory at no more than 14.6 GB/s, and llama.cpp's products reach 9-11. A
+shader of our own over Q4_0 laid out again reaches 13.0 GB/s, on 89% of
+the ceiling, with the same answers.
+
+**Where a 1.5B token's 96.8 ms goes** (`opt/kosmos/llm_profile=1`, the
+step's GPU time by line):
+
+| step | GPU time | weights | read at |
+|---|---|---|---|
+| gate and up | 38.7 ms | 433 MB | 11.2 GB/s |
+| down | 22.0 ms | 217 MB | 9.9 GB/s |
+| the logits (Q6_K) | 20.0 ms | 182 MB | 9.1 GB/s |
+| Q, K and V | 6.7 ms | 50 MB | 7.4 GB/s |
+| out | 3.8 ms | 37 MB | 9.8 GB/s |
+| all else | 5.6 ms | | |
+
+**The ceiling.** `readbw.comp`, the kit's own shader, reads the logits'
+weights sixteen bytes a load and does nothing else. It reaches 13.9 to
+14.7 GB/s at every workgroup size from 64 to 256 lanes and every count
+from 24 to 384 workgroups, so 14.6 GB/s is the memory's, not the
+shape's. The M700 has 8 GB, most likely one DIMM: single-channel
+DDR4-2133 is 17 GB/s at peak. That is inferred; the DIMMs were not read.
+Four cores reach about 11.8 GB/s at 12.77 tokens a second.
+
+**Q4_0 laid out again.** ggml's block is 18 bytes, a half's scale then 16
+bytes of nibbles, so no block sits on a 16-byte boundary and llama.cpp's
+shader reads it two bytes at a time. `llm_vk_q4r_reorder` puts every
+block's 16 bytes first and every scale after, as Intel's SYCL backend
+does, and `mmv_q4r.comp` reads a block in one load. Every layer's `up`,
+28 of them:
+
+| | time | read at |
+|---|---|---|
+| llama.cpp's, as built (64 lanes, 8 rows, `subgroupAdd`) | 22.6 ms | 9.6 GB/s |
+| reordered, 32 lanes by 4 rows | 16.7 ms | 13.0 GB/s |
+| reordered, 64 by 4 | 17.0 ms | 12.8 GB/s |
+| reordered, 128 by 4 | 29.1 ms | 7.4 GB/s |
+| reordered, 256 by 4 | 53.4 ms | 4.1 GB/s |
+
+Every shape gave the built product's answer. Over a whole token this
+would take Q4_0's products from about 71 ms to 53, about 12.8 tokens a
+second, level with the processor. The logits laid out the same way, about
+72 ms, would put the GPU ahead.
+
+*The check*: `test_llmvk` holds the reordered product to the double
+reference at 8960x1536, 1536x8960, 3x64, 151936x1536 and 37x896, NMSE
+under 1e-7 (2.3e-14 to 4.4e-14 on lavapipe). *Control*: the matrix not
+laid out again fails all five. The shader also takes up to eight inputs a
+dispatch (`TOKENS`), for a question; that is not yet dispatched.
+`host-llmvk` and `x86-llm-vk` pass.
+
+**Not yet used**: the model's buffers are still ggml's, and the products
+still llama.cpp's. Laying out every Q4_0 tensor at load and dispatching
+the reordered product for a token and for a question is the next step.

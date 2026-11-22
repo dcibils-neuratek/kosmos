@@ -20,6 +20,10 @@ import sys
 
 import scratch
 
+# The kit's own shaders, beside llama.cpp's: named "kosmos/NAME.comp".
+OWN = "kosmos/"
+OWN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "user", "kits", "llm", "shaders")
+
 # The generator's `base_dict` for matrix-vector products, and the rest of
 # each variant's defines, as `vulkan-shaders-gen.cpp` gives them.
 MMV = {"FLOAT_TYPE": "float", "FLOAT_TYPEV2": "vec2"}
@@ -77,11 +81,16 @@ VARIANTS = {
     "rope_neox_f32": ("rope_neox.comp", dict(A_TYPE="float", ROPE_D_TYPE="float")),
     "cpy_f32_f16": ("copy.comp", dict(A_TYPE="float", D_TYPE="float16_t")),
     "cpy_f32_f32": ("copy.comp", dict(A_TYPE="float", D_TYPE="float")),
+    # The kit's own, not llama.cpp's: memory's speed alone (V7).
+    "readbw": (OWN + "readbw.comp", {}),
+    "mmv_q4r": (OWN + "mmv_q4r.comp", {}),
 }
 
 
 def compile_one(src, name, shader, defines, work):
     """The SPIR-V words of one variant."""
+    if shader.startswith(OWN):
+        src, shader = OWN_DIR, shader[len(OWN):]
     with open(os.path.join(src, shader)) as f:
         text = f.read()
     first, rest = text.split("\n", 1)

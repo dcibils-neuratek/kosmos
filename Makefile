@@ -2722,7 +2722,7 @@ $(LLMVK_GOT): tools/upstream.py
 	python3 tools/upstream.py fetch ggml-vulkan
 	@touch $@
 
-$(LLMVK_HEADER): tools/vkshaders.py $(LLMVK_GOT)
+$(LLMVK_HEADER): tools/vkshaders.py $(LLMVK_GOT) $(wildcard user/kits/llm/shaders/*.comp)
 	@mkdir -p $(dir $@)
 	python3 tools/vkshaders.py build/upstream/ggml-vulkan/ggml/src/ggml-vulkan/vulkan-shaders $@
 

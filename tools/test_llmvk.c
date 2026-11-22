@@ -231,6 +231,72 @@ done:
   free(xv);
 }
 
+/* Q4_0 reordered (V7): `rows` rows of `cols` made as ggml's, laid out
+ * again, and held to the same reference. The control lays out nothing. */
+static void product_q4r(struct llm_vk *g, uint32_t cols, uint32_t rows, int control)
+{
+  struct kvk *v = g->v;
+  struct kvk_buffer w = { 0 }, x = { 0 }, out = { 0 };
+  size_t rb = row_bytes(LLM_Q4_0, cols);
+  uint8_t *ggml = malloc(rb * rows);
+  double *values = malloc(sizeof(double) * cols);
+  double *want = malloc(sizeof(double) * rows);
+  double *xv = malloc(sizeof(double) * cols);
+  char what[96];
+
+  if (!kvk_buffer_make_storage(v, &w, llm_vk_q4r_bytes(cols, rows) + 4, "w") ||
+      !kvk_buffer_make_storage(v, &x, (VkDeviceSize)cols * 4, "x") ||
+      !kvk_buffer_make_storage(v, &out, (VkDeviceSize)rows * 4, "out")) {
+    printf("FAIL: buffers: %s\n", v->why);
+    failures++;
+    goto done;
+  }
+  for (uint32_t c = 0; c < cols; c++) {
+    float f = uniform();
+    ((float *)x.bytes)[c] = f;
+    xv[c] = f;
+  }
+  for (uint32_t r = 0; r < rows; r++) {
+    make_row(LLM_Q4_0, cols, ggml + rb * r, values);
+    double s = 0;
+    for (uint32_t c = 0; c < cols; c++) {
+      s += values[c] * xv[c];
+    }
+    want[r] = s;
+  }
+  if (control) {
+    memcpy(w.bytes, ggml, rb * rows);
+  } else {
+    llm_vk_q4r_reorder(ggml, cols, rows, w.bytes);
+  }
+  memset(out.bytes, 0xff, (size_t)rows * 4);
+
+  struct kvk_span ws = { w.buffer, 0, 0 }, xs = { x.buffer, 0, 0 }, os = { out.buffer, 0, 0 };
+  if (!kvk_begin(v) || !llm_vk_mmv_q4r(g, ws, cols, rows, xs, os)) {
+    printf("FAIL: recording the reordered product\n");
+    failures++;
+    goto done;
+  }
+  kvk_compute_barrier(v);
+  if (!kvk_submit(v)) {
+    printf("FAIL: submitting: %s\n", v->why);
+    failures++;
+    goto done;
+  }
+  snprintf(what, sizeof(what), "product, Q4_0 reordered%s, %u rows of %u",
+           control ? " - not laid out again" : "", rows, cols);
+  verdict(what, nmse((const float *)out.bytes, want, rows), 1e-7, control);
+
+done:
+  kvk_buffer_free(v, &out);
+  kvk_buffer_free(v, &x);
+  kvk_buffer_free(v, &w);
+  free(ggml);
+  free(values);
+  free(want);
+  free(xv);
+}
+
 /* A matrix product (V5): `n` tokens of `cols` floats against `rows` rows
  * of `type` at once - the question's product, where the products above
  * are one token's. Read as `as`'s blocks in the control, as they are. */
@@ -1065,6 +1131,14 @@ int main(int argc, char **argv)
   for (size_t i = 0; i < sizeof(CASES) / sizeof(CASES[0]); i++) {
     uint32_t t = CASES[i].type;
     product(&g, t, control ? OTHER[t] : t, CASES[i].cols, CASES[i].rows);
+  }
+  /* Q4_0 reordered (V7): an HD 530's three widths, a short row, and the
+   * logits' rows; its control lays nothing out again and must fail. */
+  {
+    static const uint32_t QR[][2] = { { 1536, 8960 }, { 8960, 1536 }, { 64, 3 }, { 1536, 151936 }, { 896, 37 } };
+    for (unsigned i = 0; i < sizeof(QR) / sizeof(QR[0]); i++) {
+      product_q4r(&g, QR[i][0], QR[i][1], control);
+    }
   }
   /* The question's products: one token, a few, exactly a small tile's 32
    * and a medium one's 64, one past each, and row counts no tile divides. */

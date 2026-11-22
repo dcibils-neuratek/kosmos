@@ -65,6 +65,9 @@ struct llm_vk {
   /* The question's (V5), by the same kinds: medium tiles, and small. */
   struct kvk_compute mm[LLM_VK_MMV_KINDS], mm_s[LLM_VK_MMV_KINDS];
   uint32_t lanes;                        /* lanes a workgroup, for the products */
+  /* Q4_0 over a reordered matrix (V7, `mmv_q4r.comp`), and its shape. */
+  struct kvk_compute q4r;
+  uint32_t q4r_lanes, q4r_rows;
   char why[128];
 };
 
@@ -83,6 +86,17 @@ int llm_vk_mmv_kind(uint32_t type);
  * product for. */
 int llm_vk_mmv(struct llm_vk *g, uint32_t type, struct kvk_span w, uint32_t cols,
                uint32_t rows, struct kvk_span x, struct kvk_span out);
+
+/* Q4_0 laid out again for `llm_vk_mmv_q4r` (V7): every block's 16 bytes
+ * of nibbles, row after row, and then every block's scale - the same
+ * bytes as ggml's, `rows` of `cols` values, in another order. */
+uint64_t llm_vk_q4r_bytes(uint32_t cols, uint32_t rows);
+void llm_vk_q4r_reorder(const uint8_t *ggml, uint32_t cols, uint32_t rows, uint8_t *out);
+
+/* Recorded: the product of `llm_vk_mmv` over a matrix so laid out, `w`
+ * from its start. 1, or 0 for a shape it cannot take. */
+int llm_vk_mmv_q4r(struct llm_vk *g, struct kvk_span w, uint32_t cols, uint32_t rows,
+                   struct kvk_span x, struct kvk_span out);
 
 /* Recorded, for `n` inputs at once (V5, a question's tokens): `out[t][r] =
  * sum over c of W[r][c] * x[t][c]`, x `n` rows of `cols` floats and out

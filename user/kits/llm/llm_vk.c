@@ -423,6 +423,7 @@ void llm_vk_close(struct llm_vk *g)
     kvk_compute_free(g->v, &g->mm[k]);
     kvk_compute_free(g->v, &g->mm_s[k]);
   }
+  kvk_compute_free(g->v, &g->q4r);
   for (int k = 0; k < LLM_VK_OPS; k++) {
     kvk_compute_free(g->v, &g->op[k]);
   }
@@ -498,6 +499,18 @@ int llm_vk_open(struct llm_vk *g, struct kvk *v)
     g->mmv_rows[k] = each;
     if (!mmv_make(v, &g->mmv[k], k, sum, lanes, each)) {
       snprintf(g->why, sizeof(g->why), "the product's pipeline %d: %s", k, v->why);
+      llm_vk_close(g);
+      return 0;
+    }
+  }
+
+  /* Q4_0 reordered (V7): 64 lanes making 4 rows until measured. */
+  {
+    const uint32_t spec[2] = { 64, 4 };
+    g->q4r_lanes = spec[0];
+    g->q4r_rows = spec[1];
+    if (!kvk_compute_make(v, &g->q4r, llmvk_mmv_q4r, sizeof(llmvk_mmv_q4r), 4, 8, spec, 2, "q4r")) {
+      snprintf(g->why, sizeof(g->why), "the reordered product's pipeline: %s", v->why);
       llm_vk_close(g);
       return 0;
     }
@@ -614,6 +627,44 @@ int llm_vk_mmv(struct llm_vk *g, uint32_t type, struct kvk_span w, uint32_t cols
   }
   kvk_compute_dispatch(g->v, &g->mmv[k], spans, &p,
                        (elements + g->mmv_rows[k] - 1) / g->mmv_rows[k], 1, z);
+  return 1;
+}
+
+uint64_t llm_vk_q4r_bytes(uint32_t cols, uint32_t rows)
+{
+  return (uint64_t)rows * (cols / 32) * 18;
+}
+
+void llm_vk_q4r_reorder(const uint8_t *ggml, uint32_t cols, uint32_t rows, uint8_t *out)
+{
+  const uint64_t blocks = (uint64_t)rows * (cols / 32);
+  uint8_t *scales = out + blocks * 16;
+
+  for (uint64_t i = 0; i < blocks; i++) {
+    memcpy(scales + i * 2, ggml + i * 18, 2);
+    memcpy(out + i * 16, ggml + i * 18 + 2, 16);
+  }
+}
+
+int llm_vk_mmv_q4r(struct llm_vk *g, struct kvk_span w, uint32_t cols, uint32_t rows,
+                   struct kvk_span x, struct kvk_span out)
+{
+  const uint32_t blocks = cols / 32;
+  const VkDeviceSize nibbles = (VkDeviceSize)rows * blocks * 16;
+  const uint32_t align = g->v->storage_align ? g->v->storage_align : 16;
+
+  if (cols == 0 || rows == 0 || cols % 32 != 0 || (w.offset + nibbles) % align != 0 ||
+      (rows + g->q4r_rows - 1) / g->q4r_rows > g->v->max_groups[0]) {
+    return 0;
+  }
+  const struct kvk_span spans[4] = {
+    { w.buffer, w.offset, nibbles },
+    { w.buffer, w.offset + nibbles, ((VkDeviceSize)rows * blocks * 2 + 3) & ~(VkDeviceSize)3 },
+    x, out,
+  };
+  const uint32_t push[2] = { blocks, rows };
+
+  kvk_compute_dispatch(g->v, &g->q4r, spans, push, (rows + g->q4r_rows - 1) / g->q4r_rows, 1, 1);
   return 1;
 }
 
@@ -1332,6 +1383,164 @@ static void tune_width(struct llm_vk_model *vm, const struct llm_tensor **w, uin
   }
 }
 
+/* Memory's speed alone (V7): the logits' weights read by `readbw.comp`,
+ * sixteen bytes a load, at a few workgroup sizes and counts - what the
+ * products could reach on the same buffer, if they did nothing but read. */
+static void tune_bandwidth(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx)
+{
+  static const uint32_t LOCAL[] = { 64, 128, 256 };
+  static const uint32_t GROUPS[] = { 24, 48, 96, 192, 384 };
+  struct kvk *v = vm->g->v;
+  const struct llm_tensor *t = vm->m->out_w;
+  const uint32_t n = (uint32_t)(t->bytes / 16);
+  char line[160];
+
+  for (uint32_t i = 0; i < sizeof(LOCAL) / sizeof(LOCAL[0]); i++) {
+    struct kvk_compute c;
+    const uint32_t spec[1] = { LOCAL[i] };
+
+    memset(&c, 0, sizeof(c));
+    if (!kvk_compute_make(v, &c, llmvk_readbw, sizeof(llmvk_readbw), 2, 4, spec, 1, "readbw")) {
+      said(ctx, "memory's speed: no pipeline");
+      return;
+    }
+    for (uint32_t j = 0; j < sizeof(GROUPS) / sizeof(GROUPS[0]); j++) {
+      const struct kvk_span spans[2] = { whole(tensor_buffer(vm, t)), whole(&vm->logits) };
+      double ms = 0;
+      int ok = 1;
+
+      if ((uint64_t)GROUPS[j] * LOCAL[i] > vm->m->n_vocab) {
+        continue;                             /* a word a lane, in the logits */
+      }
+      for (uint32_t pass = 0; pass < 3 && ok; pass++) {   /* the first warms */
+        ok = kvk_begin(v);
+        if (ok) {
+          kvk_time_start(v);
+          kvk_compute_dispatch(v, &c, spans, &n, GROUPS[j], 1, 1);
+          kvk_compute_barrier(v);
+          kvk_time_end(v);
+          ok = kvk_submit(v);
+          if (pass > 0) {
+            ms += kvk_time_ms(v) / 2;
+          }
+        }
+      }
+      snprintf(line, sizeof(line), "memory's speed, %u lanes by %u workgroups: %llu MB in %llu us, %llu MB/s",
+               LOCAL[i], GROUPS[j], (unsigned long long)(t->bytes >> 20), (unsigned long long)(ms * 1000),
+               (unsigned long long)(ok && ms > 0 ? (double)t->bytes / (ms * 1000) : 0));
+      said(ctx, line);
+    }
+    kvk_compute_free(v, &c);
+  }
+}
+
+/* Q4_0 reordered (V7) against what is built: every layer's up laid out
+ * again in a buffer of its own, timed at a few shapes, and its answer held
+ * to the built product's for the last layer. */
+static void tune_q4r(struct llm_vk_model *vm, const struct llm_tensor **w, uint32_t count,
+                     llm_vk_said_fn *said, void *ctx)
+{
+  static const uint32_t LANES[] = { 32, 64, 128, 256 };
+  static const uint32_t ROWS[] = { 1, 2, 4, 8 };
+  struct llm_vk *g = vm->g;
+  struct kvk *v = g->v;
+  const uint32_t cols = (uint32_t)w[0]->ne[0], rows = (uint32_t)w[0]->ne[1];
+  struct kvk_buffer *b = calloc(count, sizeof(*b));
+  float *want = malloc((size_t)rows * 4);
+  const struct kvk_compute built = g->q4r;
+  const uint32_t built_lanes = g->q4r_lanes, built_rows = g->q4r_rows;
+  char line[160];
+  uint32_t made = 0;
+  double ms;
+  int ok = b && want && w[0]->type == LLM_Q4_0;
+
+  for (; ok && made < count; made++) {
+    ok = kvk_buffer_make_storage(v, &b[made], llm_vk_q4r_bytes(cols, rows) + 4, "q4r");
+    if (ok) {
+      llm_vk_q4r_reorder(w[made]->data, cols, rows, b[made].bytes);
+    }
+  }
+  if (!ok) {
+    said(ctx, "reordered: no room for the layers");
+    goto done;
+  }
+
+  /* The built product's answer for the last layer, and its time. */
+  ms = 0;
+  for (uint32_t pass = 0; pass < 2 && ok; pass++) {
+    ms = 0;
+    for (uint32_t j = 0; j < count && ok; j++) {
+      ok = kvk_begin(v);
+      if (ok) {
+        kvk_time_start(v);
+        ok = llm_vk_mmv(g, LLM_Q4_0, whole(tensor_buffer(vm, w[j])), cols, rows, whole(&vm->x), whole(&vm->ff));
+        kvk_compute_barrier(v);
+        kvk_time_end(v);
+        ok = kvk_submit(v) && ok;
+        ms += kvk_time_ms(v);
+      }
+    }
+  }
+  memcpy(want, vm->ff.bytes, (size_t)rows * 4);
+  snprintf(line, sizeof(line), "reordered: every layer's up as built, %llu us",
+           (unsigned long long)(ms * 1000));
+  said(ctx, line);
+
+  for (uint32_t i = 0; i < sizeof(LANES) / sizeof(LANES[0]) && ok; i++) {
+    for (uint32_t r = 0; r < sizeof(ROWS) / sizeof(ROWS[0]) && ok; r++) {
+      const uint32_t spec[2] = { LANES[i], ROWS[r] };
+      struct kvk_compute c;
+
+      memset(&c, 0, sizeof(c));
+      if (!kvk_compute_make(v, &c, llmvk_mmv_q4r, sizeof(llmvk_mmv_q4r), 4, 8, spec, 2, "q4r")) {
+        snprintf(line, sizeof(line), "reordered, %u lanes %u rows: no pipeline", LANES[i], ROWS[r]);
+        said(ctx, line);
+        continue;
+      }
+      g->q4r = c;
+      g->q4r_lanes = LANES[i];
+      g->q4r_rows = ROWS[r];
+      memset(vm->ff.bytes, 0xff, (size_t)rows * 4);
+      for (uint32_t pass = 0; pass < 2 && ok; pass++) {
+        ms = 0;
+        for (uint32_t j = 0; j < count && ok; j++) {
+          ok = kvk_begin(v);
+          if (ok) {
+            kvk_time_start(v);
+            ok = llm_vk_mmv_q4r(g, whole(&b[j]), cols, rows, whole(&vm->x), whole(&vm->ff));
+            kvk_compute_barrier(v);
+            kvk_time_end(v);
+            ok = kvk_submit(v) && ok;
+            ms += kvk_time_ms(v);
+          }
+        }
+      }
+      double err = 0, all = 0;
+      for (uint32_t k = 0; k < rows; k++) {
+        const double d = (double)((float *)vm->ff.bytes)[k] - want[k];
+        err += d * d;
+        all += (double)want[k] * want[k];
+      }
+      snprintf(line, sizeof(line), "reordered, %u lanes %u rows: %llu us, %llu MB/s%s", LANES[i], ROWS[r],
+               (unsigned long long)(ms * 1000),
+               (unsigned long long)(ms > 0 ? (double)llm_vk_q4r_bytes(cols, rows) * count / (ms * 1000) : 0),
+               !ok ? ", it would not run" : err <= 1e-7 * all ? "" : ", ANOTHER ANSWER");
+      said(ctx, line);
+      g->q4r = built;
+      g->q4r_lanes = built_lanes;
+      g->q4r_rows = built_rows;
+      kvk_compute_free(v, &c);
+    }
+  }
+
+done:
+  for (uint32_t j = 0; b && j < made; j++) {
+    kvk_buffer_free(v, &b[j]);
+  }
+  free(b);
+  free(want);
+}
+
 void llm_vk_tune(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx)
 {
   const struct llm_model *m = vm->m;
@@ -1351,6 +1560,8 @@ void llm_vk_tune(struct llm_vk_model *vm, llm_vk_said_fn *said, void *ctx)
   for (uint32_t l = 0; l < layers; l++) {
     ff[l] = m->layers[l].up_w;
   }
+  tune_bandwidth(vm, said, ctx);
+  tune_q4r(vm, ff, layers, said, ctx);
   tune_width(vm, ff, layers, said, ctx);
   tune_weight(vm, ff, layers, "every layer's up", whole(&vm->ff), vm->ff.bytes, want, said, ctx);
   tune_weight(vm, out, 3, "the logits thrice", whole(&vm->logits), vm->logits.bytes, want, said, ctx);

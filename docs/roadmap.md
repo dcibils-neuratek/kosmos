@@ -815,7 +815,13 @@ before another shader is changed. **Built so far** (0.12.74, `testing.md`
 at every run, where 0.12.10 trusted the engine to hold it across the GT's
 sleep. 0.5B now writes 21.84 tok/s on the GPU against the processor's 22.0
 and reads 1.16 times sooner; 1.5B 10.33 against 12.77. Still to do: 1.5B,
-where gate, up and down are the work.
+where gate, up and down are the work. **Measured for 1.5B** (0.12.75, 18.995): the GPU reads
+memory at 14.6 GB/s at most; llama.cpp's products at 9-11. Q4_0 laid out
+again with a shader of the kit's own reaches 13.0, built and held to the
+references and **not yet used**. Next: every Q4_0 tensor laid out at load,
+the reordered product for a token and for a question (eight inputs a
+dispatch), then the logits' Q6_K the same way. Paused 22 November for the
+three designs below (Diego: "ok then i want to work on the other stuff").
 
 *Found in V7, and open:*
 - **A hang reset leaves the GPU 3-5% slower** until a restart (0.5B 21.02
