@@ -41276,3 +41276,47 @@ exceeded.
 - **The gate**: all 126 suites that ran passed, in 9:27, with
   `test_llmsame` among `host`'s checks, `host-llm` held to llama.cpp as
   before, and `x86-xavier` with its 37 checks.
+
+## 18.985 Pointer capture (Quake3e Q1, 0.12.65)
+
+**In short:** a window can now ask the window manager for the mouse to
+itself. While it has it, the arrow stays still and every movement goes to
+the window as motion, with no screen edge to stop it. That is how a game
+looks around. Super gives it back, and so do a focus change, hiding the
+window and closing it. Quake 1 is the first user: its first click takes
+the pointer, and looking around no longer needs a held button.
+
+- **The path.** The board counts relative movement beside the position
+  (`pointer_state`'s `dx`, `dy`, both boards). `SYS_POINTER` and the
+  console server carry it, as they carry the wheel. The window manager
+  sends it to the captured window as `motion`, in screen pixels with the
+  remainder kept (`WM_EV_MOTION` on the Window Kit's frame path,
+  `KW_MOTION`). A tablet has no relative movement, so there the change of
+  place stands in. Clicks while captured go to the window's middle,
+  wherever the arrow is.
+- **Only asked, never taken.** `kw_capture` and `wmproto.capture` ask.
+  Only the focused window is granted it, and the window is told either
+  way (`WM_EV_CAPTURE`, `KW_CAPTURE`). The window manager gives it back
+  itself: Super, focus, hide and close are its decisions, never only the
+  program's (`docs/quake3e.md` §8, *capture that does not let go*).
+- **The check**: `tools/run_capture.py`, `x86-capture`, 5 checks. It
+  boots with a PS/2 mouse alone, relative as the M700's USB mouse is.
+  A program opens a window and asks for the pointer, then:
+  - QEMU's mouse moves 8,000 counts right and 2,000 down;
+  - the window has to receive more than twice the screen's width;
+  - a click has to arrive at the window's middle;
+  - Super has to give the pointer back, and nothing after that may reach
+    the window.
+
+  It passed with 15,952 by 2,647 pixels of motion on a screen 1,920
+  wide. **Control**: `--no-capture`, the same program not asking, fails
+  4 of the 5 checks (no motion, no press, nothing to give back).
+- **Not yet checked by a suite**: the release on a focus change and on
+  hiding. Both are in `pointer.lua`'s first lines, and Q3's suite will
+  drive one.
+- **The gate**: all 159 suites that ran passed, in 13:48 - over the
+  ten-minute budget, with the kernel, the console and the window manager
+  changed so every suite ran. The slowest were Flight's: `x86-flight-747`
+  483 s, `x86-flight-land` 376 s, `x86-flight` 353 s, with
+  `x86-cafesa3d-2` 391 s; splitting Flight's suites is in the roadmap's
+  6zp line of work.

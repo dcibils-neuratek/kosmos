@@ -1446,6 +1446,8 @@ void syscall_dispatch(struct syscall_frame *sc)
             out->buttons = state.buttons;
             out->moved   = state.moved;
             out->wheel   = state.wheel;
+            out->dx      = state.dx;
+            out->dy      = state.dy;
 
             /*
              * And what the buttons *did*, which the state above cannot

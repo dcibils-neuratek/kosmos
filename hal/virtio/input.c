@@ -666,6 +666,8 @@ static bool hal_pointer_poll_locked(struct pointer_state *out)
     out->buttons = cursor.buttons;
     out->moved   = cursor.moved ? 1u : 0u;
     out->wheel   = cursor.wheel;
+    out->dx      = 0;               /* a tablet says where, never how far */
+    out->dy      = 0;
 
     cursor.moved = false;
     cursor.wheel = 0;

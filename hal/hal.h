@@ -648,6 +648,18 @@ struct pointer_state {
      * however quickly they came (`roadmap.md` 5zv). Reading resets it.
      */
     int32_t  wheel;
+
+    /*
+     * **How far a relative device moved since the last look**, in the same
+     * units as `x` and `y` and **not clamped at the range's edges** - which
+     * the position is, so a pointer held against the screen's side says
+     * nothing more however far the mouse goes. A game looking about with
+     * the mouse needs the movement and not the place (`docs/quake3e.md`,
+     * Q1): this is it, counted as the wheel is, and reading resets it. Zero
+     * from an absolute device, a tablet, which says where it is and never
+     * how far.
+     */
+    int32_t  dx, dy;
 };
 
 /*

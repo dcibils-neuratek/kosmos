@@ -6289,3 +6289,32 @@ long answer two words are close enough that the last digit decides.
 Kosmos's does, and a new test holds the Mac's answer and an Intel
 answer to the same byte. A second, smaller failure was a test limit
 that had simply been guessed too low.
+
+## 21 November 2026 - The mouse, kept
+
+**In short:** a game can now have the mouse to itself. While it does,
+the arrow stays where it was and every movement turns the view, with no
+edge of the screen to stop at. Quake uses it first, and Quake III will
+next.
+
+**What.** A pointer on a screen stops at the screen's edge, so a game
+that turns with the mouse could turn only so far. Quake got round it by
+looking around only while a button was held. Now a window can ask the
+window manager for the pointer. The mouse's movement is then counted as
+movement, not as a place, and sent to that window alone, however far it
+goes. Super gives it back, and so do clicking another window, hiding it
+or closing it.
+
+**Why.** It is the first thing Quake III needs from the desktop.
+Without it, mouse-look does not work. It belongs to the window manager
+and not to the game, because a game that kept the pointer would take it
+from the person using the machine. So the window manager decides when
+to give it back, whatever the game wants.
+
+**Visible impact.** In Quake, the first click in the window takes the
+mouse, and from then on moving it looks around, with no button held.
+Super brings the arrow back.
+
+**Measurements.** In the test, the mouse was moved far further than the
+screen is wide. The window received 15,952 pixels of movement, on a
+screen 1,920 wide. Before, it could not have received more than 1,920.

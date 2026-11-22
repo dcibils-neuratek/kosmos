@@ -355,6 +355,19 @@ static void take_size(lua_State *L, struct kw_window *w, int width, int height)
     lua_settop(L, top);
 }
 
+int kw_capture(struct kw_window *w, int on)
+{
+    struct wm_frame_request rq = { WM_FRAME_CAPTURE, 0, on ? 1 : 0, 0, 0, 0, 0 };
+    struct wm_frame_reply rp;
+
+    if (w == NULL || !w->open) {
+        return 0;
+    }
+
+    rq.window = (uint32_t)w->handle;
+    return frame_call(w, &rq, &rp) == 0;
+}
+
 int kw_poll(struct kw_window *w, struct kw_event *e, unsigned wait_ms)
 {
     if (w == NULL) {
@@ -431,6 +444,15 @@ int kw_poll(struct kw_window *w, struct kw_event *e, unsigned wait_ms)
                      * character cannot say (a game's, Flight's yoke). */
                     ev.type = KW_RAWKEY;
                     ev.key = f->a;
+                    ev.action = f->action == WM_ACT_PRESS ? KW_PRESS : KW_RELEASE;
+                    break;
+                case WM_EV_MOTION:
+                    ev.type = KW_MOTION;
+                    ev.dx = f->a;
+                    ev.dy = f->b;
+                    break;
+                case WM_EV_CAPTURE:
+                    ev.type = KW_CAPTURE;
                     ev.action = f->action == WM_ACT_PRESS ? KW_PRESS : KW_RELEASE;
                     break;
                 default:

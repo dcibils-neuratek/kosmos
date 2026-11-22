@@ -33,6 +33,7 @@
 
 #define WM_FRAME_COMMIT  1u     /* x, y, w, h: what changed */
 #define WM_FRAME_POLL    2u     /* wait_ticks: how long to hold the answer */
+#define WM_FRAME_CAPTURE 3u     /* x: 1 to have the pointer to itself, 0 to give it back */
 
 /* The most events one answer carries: `EVENTS_PER_REPLY` in `wm.lua`. */
 #define WM_FRAME_EVENTS  12u
@@ -53,6 +54,8 @@ struct wm_frame_request {           /* "<I4I4i4i4I4I4I4" */
 #define WM_EV_RESIZE     4u     /* a, b: the new width and height */
 #define WM_EV_CLOSE      5u
 #define WM_EV_RAWKEY     6u     /* a: the keycode; action: press or release */
+#define WM_EV_MOTION     7u     /* a, b: how far, in screen pixels, under capture */
+#define WM_EV_CAPTURE    8u     /* action: press when taken, release when given back */
 
 #define WM_ACT_PRESS     1u
 #define WM_ACT_RELEASE   2u

@@ -144,6 +144,8 @@ return function(ctx)
     end
   end
 
+  local CAPTURE_BUTTONS = { [1] = "left", [2] = "right" }
+
   local function pointer_pass(p)
     if not p then return end
 
@@ -154,6 +156,69 @@ return function(ctx)
 
     local nx = (p.x - p.min_x) * (W - 1) // range_x
     local ny = (p.y - p.min_y) * (H - 1) // range_y
+
+    --
+    -- **A window that has the pointer** (`OUT.release_capture` in
+    -- `wm.lua`, `docs/quake3e.md` Q1): the arrow stays where it was, and the
+    -- movement, the buttons and the wheel all go to that window - the
+    -- movement as `motion`, in screen pixels with what did not make a
+    -- whole one kept for the next pass, and unclamped, which is the point.
+    -- A press goes to the window's middle, wherever the pointer is. Given
+    -- back first if the window has lost the focus or gone.
+    --
+    local cap = OUT.captured
+
+    if cap and (by_handle[cap.handle] ~= cap or cap ~= focused_window() or cap.hidden) then
+      OUT.release_capture("the focus went elsewhere")
+      cap = nil
+    end
+
+    if cap then
+      local dx, dy = p.dx, p.dy
+
+      if dx == nil then
+        -- A click replayed from the board's queue: its buttons, below, and
+        -- no movement - the pass after it carries that.
+      elseif dx ~= 0 or dy ~= 0 then
+        local fx = OUT.capture_rx + dx * (W - 1)
+        local fy = OUT.capture_ry + dy * (H - 1)
+        local mx, my = fx // range_x, fy // range_y
+
+        OUT.capture_rx, OUT.capture_ry = fx - mx * range_x, fy - my * range_y
+
+        if mx ~= 0 or my ~= 0 then post(cap, { type = "motion", dx = mx, dy = my }) end
+      else
+        -- A tablet - QEMU's, a viewer's - says where and never how far, so
+        -- its change of place stands in for the movement, edges and all: a
+        -- game is still turned, as far as the screen allows. The place is
+        -- kept apart from the arrow's, which stays still.
+        local px, py = OUT.capture_px or nx, OUT.capture_py or ny
+
+        if nx ~= px or ny ~= py then
+          post(cap, { type = "motion", dx = nx - px, dy = ny - py })
+        end
+
+        OUT.capture_px, OUT.capture_py = nx, ny
+      end
+
+      local cx, cy = cap.w // 2, cap.h // 2
+
+      for bit, name in pairs(CAPTURE_BUTTONS) do
+        local was, is = (PT.buttons & bit) ~= 0, (p.buttons & bit) ~= 0
+
+        if was ~= is then
+          post(cap, { type = "mouse", action = is and "press" or "release",
+                      button = name, x = cx, y = cy })
+        end
+      end
+
+      if (p.wheel or 0) ~= 0 then
+        post(cap, { type = "wheel", n = p.wheel, x = cx, y = cy })
+      end
+
+      PT.buttons = p.buttons
+      return
+    end
 
     local was_down = (PT.buttons & 1) ~= 0
     local is_down = (p.buttons & 1) ~= 0

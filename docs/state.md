@@ -285,6 +285,13 @@ which wants the M700's look switched to Liquid Glass for a minute.
 
 ## Next
 
+**Reordered on 21 November 2026** (Diego: "Quake 3e port so I can play
+tomorrow", "Then Xavier with gpu support with vulkan", "Then we need to
+work on the daily driver requirements"): **Quake3e** (`docs/quake3e.md`,
+Q1-Q4 to play on the M700; Q1, pointer capture, built in 0.12.65), **Xavier on Vulkan** (designed first), then
+**the daily-driver list** in item 3's order below. The order below stands
+under that.
+
 In this order, agreed on 18 November 2026 (`roadmap.md`, *A daily driver*,
 *The order agreed on 18 November 2026*):
 

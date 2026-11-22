@@ -58,6 +58,9 @@
 static struct spinlock pointer_lock = SPINLOCK("pointer");
 
 static uint32_t x = RANGE / 2;
+
+/* Moved since the last look, unclamped: `hal.h`'s `dx` and `dy`. */
+static int64_t moved_x, moved_y;
 static uint32_t y = RANGE / 2;
 static uint32_t held[PC_POINTER_SOURCES];
 static bool     present[PC_POINTER_SOURCES];
@@ -132,6 +135,8 @@ void pc_pointer_move(enum pc_pointer_source from, int dx, int dy, int turned,
     if (dx != 0 || dy != 0) {
         x = along((int64_t)x + (int64_t)dx * scale);
         y = along((int64_t)y + (int64_t)dy * scale);
+        moved_x += (int64_t)dx * scale;
+        moved_y += (int64_t)dy * scale;
         moved = true;
     }
 
@@ -193,8 +198,11 @@ bool pc_pointer_read(struct pointer_state *out)
         out->buttons = buttons;
         out->moved = moved ? 1u : 0u;
         out->wheel = wheel;
+        out->dx = (int32_t)(moved_x > INT32_MAX ? INT32_MAX : moved_x < -INT32_MAX ? -INT32_MAX : moved_x);
+        out->dy = (int32_t)(moved_y > INT32_MAX ? INT32_MAX : moved_y < -INT32_MAX ? -INT32_MAX : moved_y);
         moved = false;
         wheel = 0;
+        moved_x = moved_y = 0;
     }
 
     spin_unlock(&pointer_lock, flags);

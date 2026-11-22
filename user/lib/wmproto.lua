@@ -107,6 +107,18 @@ function wmproto.track(handle, on)
 end
 
 --
+-- **The pointer to this window alone, or given back** (`docs/quake3e.md`,
+-- Q1): while it is had, the arrow stays still and the mouse's movement
+-- comes as `{ type = "motion", dx, dy }` events, in screen pixels and with
+-- no edge to stop it. The window manager grants it only to the window in
+-- front and gives it back on Super, on a focus change and on close; each
+-- way, a `{ type = "capture", on = ... }` event says which.
+--
+function wmproto.capture(handle, on)
+  return fs.send(wmproto.WM, { type = "capture", window = handle, on = on and true or false })
+end
+
+--
 -- Ask for events, blocking up to `wait_ticks` *scheduler* ticks.
 --
 -- Zero means "answer immediately, empty if there is nothing", which is what

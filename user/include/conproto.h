@@ -164,6 +164,11 @@ struct con_reply {
      */
     int32_t  wheel;
 
+    /* How far a relative device moved since the last `wait`, in the
+     * pointer's units and unclamped at the screen's edges: what a window
+     * that holds the pointer looks about with (`docs/quake3e.md`, Q1). */
+    int32_t  dx, dy;
+
     /* What the buttons did since the last `wait`, in order, and how many
      * did not fit anywhere along the way. */
     uint32_t nclicks, clicks_lost;

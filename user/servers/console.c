@@ -467,6 +467,10 @@ static unsigned stash_lost;
  * notch is handed out once, and only the `wait` that reports it spends it. */
 static int32_t stash_wheel;
 
+/* And the movement past the edges (`pointer_info`'s `dx`, `dy`), by the
+ * same rule: added up until a `wait` hands it on. */
+static int64_t stash_dx, stash_dy;
+
 static void keep_clicks(const struct pointer_info *where)
 {
     unsigned i;
@@ -493,6 +497,8 @@ static void keep_clicks(const struct pointer_info *where)
 
     stash_lost += where->dropped;
     stash_wheel += where->wheel;
+    stash_dx += where->dx;
+    stash_dy += where->dy;
 }
 
 static void drain_clicks(struct con_reply *rep)
@@ -514,6 +520,9 @@ static void drain_clicks(struct con_reply *rep)
     stash_lost = 0;
     rep->wheel = stash_wheel;
     stash_wheel = 0;
+    rep->dx = (int32_t)(stash_dx > INT32_MAX ? INT32_MAX : stash_dx < -INT32_MAX ? -INT32_MAX : stash_dx);
+    rep->dy = (int32_t)(stash_dy > INT32_MAX ? INT32_MAX : stash_dy < -INT32_MAX ? -INT32_MAX : stash_dy);
+    stash_dx = stash_dy = 0;
 }
 
 static void fill_pointer(struct con_reply *rep)

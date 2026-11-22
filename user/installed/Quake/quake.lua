@@ -197,9 +197,14 @@ local K_MOUSE1 = 200
 local CTRL = { [29] = true, [97] = true }
 local ctrl_down = false
 
--- The window manager reports the pointer's position, and movement only while
--- the first button is held, so looking around is a drag.
+-- **Looking about with the mouse, as Quake is played** (`docs/quake3e.md`
+-- Q1): the first click in the window asks the window manager for the
+-- pointer, and while Quake has it every movement turns the view, with no
+-- edge to stop at and no button held. Super gives it back, and so does
+-- the window losing the focus; the next click asks again. Until it is
+-- given - or where it is refused - looking about is a drag, as it was.
 local mouse_x, mouse_y
+local captured = false
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local last = sys.ticks()
@@ -248,9 +253,18 @@ while win.running do
 
         if k then quake.key(k, ev.down) end
       end
+    elseif ev.type == "capture" then
+      captured = ev.on == true
+      mouse_x, mouse_y = nil, nil
+      print("quake: the pointer " .. (captured and "is Quake's" or "given back"))
+    elseif ev.type == "motion" then
+      if captured then quake.mouse(ev.dx, ev.dy) end
     elseif ev.type == "mouse" and not ev.menu then
-      if ev.action == "press" then
+      if ev.action == "press" and not captured then
+        -- This click takes the pointer, and fires nothing.
+        wmproto.capture(win.handle, true)
         mouse_x, mouse_y = ev.x, ev.y
+      elseif ev.action == "press" then
         quake.key(K_MOUSE1, true)
       elseif ev.action == "release" then
         quake.key(K_MOUSE1, false)

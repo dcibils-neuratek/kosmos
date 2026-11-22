@@ -7022,6 +7022,11 @@ under QEMU does not have:
    its own image for where the bytes came from, which reads a page that is
    not mapped. On real corruption a page differs and the ThinkPad (x86)
    printed its list; the ARM path of that search has never run.
+   **Found again on 21 November 2026, not done**: a whole gate took 13:48
+   (`testing.md` 18.985), and Flight's four suites are its tail -
+   `x86-flight-747` 483 s, `x86-flight-land` 376 s, `x86-flight` 353 s -
+   with `x86-cafesa3d-2` at 391 s. They want splitting in halves as the
+   browser's were, before the next shared change.
 
 6zo. **ASKED on 27 September - LuaJIT, studied.** Diego: "I want to study
    the possibility of using luajit in kosmos to improve performance for Lua
@@ -12025,7 +12030,7 @@ after flight"; `docs/quake3e.md`, Q0 to Q6: the design agreed, key
 transitions and pointer capture as kits with Quake 1 their second user, a
 dedicated server, the client on `lavapipe`, `anv` on the M700, the QVM
 JIT, UDP and multiplayer) -
-then G8, G9 and the daily-driver list, in their order; the simulator takes G9's full-screen flip
+then G8, G9 and the daily-driver list, in their order. **Reordered on 21 November 2026**, with Flight done (Diego: "Now that the flight sim is done we need to focus to other things", "Quake 3e port so I can play tomorrow", "Then Xavier with gpu support with vulkan (llama.cpp supports vulkan)", "Then we need to work on the daily driver requirements"): **Quake3e first** (`docs/quake3e.md`, Q1 to Q4 for a game he can play on the M700, Q5 and Q6 after; Q1, pointer capture with Quake 1 its first user, built in 0.12.65, `testing.md` 18.985); **then Xavier on the GPU through Vulkan**, designed first - the LLM Kit is Kosmos's own, so whether it gains Vulkan compute of its own or takes llama.cpp's Vulkan backend is that design's question; **then the daily-driver list**, in its order, and G4, G5, G8 and G9 placed among it when Diego says. The simulator takes G9's full-screen flip
 when that lands. **The simulator flies over real places** (Diego, 19
 November 2026: "Can we use real world maps for the flight simulator?", "So
 i can choose q city to fly", "And see the actual satellite images"):

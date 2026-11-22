@@ -43,6 +43,8 @@
 #define KW_RESIZE   4           /* width, height: the new surface's size */
 #define KW_CLOSE    5           /* the close box, or the window manager gone */
 #define KW_RAWKEY   6           /* key: the keycode; action: KW_PRESS or KW_RELEASE */
+#define KW_MOTION   7           /* dx, dy: how far the mouse went, with the pointer captured */
+#define KW_CAPTURE  8           /* action: KW_PRESS when the pointer is had, KW_RELEASE when lost */
 
 /* A pointer event's action, and its button. */
 #define KW_PRESS    1
@@ -58,6 +60,7 @@ struct kw_event {
     int x, y;                   /* KW_POINTER, KW_WHEEL: in the window */
     int amount;                 /* KW_WHEEL: steps, signed */
     int width, height;          /* KW_RESIZE */
+    int dx, dy;                 /* KW_MOTION: right and down, screen pixels */
 };
 
 struct kw_surface {
@@ -97,6 +100,17 @@ struct kw_pad {
 
 /* Pad `n`, from 0, as of the last commit or poll: 1 when one is there. */
 int kw_pad(struct kw_window *w, unsigned n, struct kw_pad *out);
+
+/*
+ * **The pointer to this window alone, or given back** (`docs/quake3e.md`,
+ * Q1): while it is had, the arrow stays still and the mouse's movement comes
+ * as KW_MOTION, with no screen edge to stop it - a game looking about.
+ * Asked, not taken: the window manager grants it only to the window in
+ * front, and gives it back on Super, on a focus change and on close. Either
+ * way a KW_CAPTURE event says which, so a game asks again on its next click.
+ * 1 when the request was answered.
+ */
+int kw_capture(struct kw_window *w, int on);
 
 /* Closed and let go. The window is not to be used after. */
 void kw_close(struct kw_window *w);

@@ -1208,6 +1208,10 @@ struct pointer_info {
      * `pointer_state`'s count, taken by reading. */
     int32_t  wheel;
 
+    /* How far a relative device moved since the last call, unclamped, in
+     * the position's units - `pointer_state`'s, taken by reading. */
+    int32_t  dx, dy;
+
     /* What the buttons did since the last call, in order. Reading takes
      * them, as reading a key does. */
     uint32_t nedges;

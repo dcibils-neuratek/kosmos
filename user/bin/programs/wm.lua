@@ -6492,6 +6492,60 @@ local function folder_told(code)
   post(win, { type = "changed", code = code })
 end
 
+--
+-- **Pointer capture** (`docs/quake3e.md`, Q1): a window asks to have the
+-- pointer to itself - a game looking about with the mouse - and while it
+-- has it, the arrow stays where it was and every movement, button and
+-- notch goes to it, the movement as `motion` with no edges to stop at.
+--
+-- **The window manager gives it back, never only the program**, because a
+-- capture that does not let go takes the pointer from the person: on
+-- Super, when the window loses the focus or is hidden, and when it closes.
+-- The window is told each time, `capture` with `on` false, so a game can
+-- stop looking and ask again on its next click. Only the focused window
+-- may take it.
+--
+function OUT.release_capture(why)
+  local win = OUT.captured
+
+  if not win then return end
+
+  OUT.captured, OUT.capture_rx, OUT.capture_ry = nil, 0, 0
+  OUT.capture_px, OUT.capture_py = nil, nil
+
+  if by_handle[win.handle] == win then post(win, { type = "capture", on = false }) end
+
+  print(("wm: %s gave back the pointer: %s"):format(tostring(win.title), why))
+end
+
+handlers.capture = function(req)
+  local win = by_handle[req.window]
+
+  if not win then return { ok = false, error = "no such window" } end
+
+  local on = (req.raw and req.x ~= 0) or (not req.raw and req.on == true)
+
+  if not on then
+    if OUT.captured == win then OUT.release_capture("asked") end
+    return { ok = true, events = {} }
+  end
+
+  if win ~= focused_window() or win.hidden then
+    post(win, { type = "capture", on = false })
+    return { ok = true, events = {} }
+  end
+
+  if OUT.captured ~= win then
+    OUT.release_capture("another took it")
+    OUT.captured, OUT.capture_rx, OUT.capture_ry = win, 0, 0
+    OUT.capture_px, OUT.capture_py = PT.x, PT.y
+    post(win, { type = "capture", on = true })
+    print(("wm: %s has the pointer"):format(tostring(win.title)))
+  end
+
+  return { ok = true, events = {} }
+end
+
 handlers.poll = function(req, who)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
@@ -6666,8 +6720,9 @@ local frame = {
   REQUEST = "<I4I4i4i4I4I4I4",                  -- struct wm_frame_request
   HEAD = "<i4I4I4",                             -- struct wm_frame_reply's
   EVENT = "<I2I2I2I2i4i4i4",                    -- struct wm_frame_event
-  OPS = { [1] = "commit", [2] = "poll" },
-  TYPES = { key = 1, mouse = 2, wheel = 3, resize = 4, close = 5, rawkey = 6 },
+  OPS = { [1] = "commit", [2] = "poll", [3] = "capture" },
+  TYPES = { key = 1, mouse = 2, wheel = 3, resize = 4, close = 5, rawkey = 6,
+            motion = 7, capture = 8 },
   ACTIONS = { press = 1, release = 2, move = 3 },
   NO_WINDOW = 1, NO_SURFACE = 2, BAD = 3,
 }
@@ -6743,6 +6798,10 @@ function frame.reply(reply, win)
       elseif t == 6 then
         act = ev.down and 1 or 2
         a = whole(ev.code)
+      elseif t == 7 then
+        a, b = whole(ev.dx), whole(ev.dy)
+      elseif t == 8 then
+        act = ev.on and 1 or 2
       end
 
       parts[#parts + 1] = string.pack(frame.EVENT, t, act, button, 0, a, b, c)
@@ -6822,6 +6881,9 @@ handlers.close = function(req)
 
   damage_window(win)
   by_handle[req.window] = nil
+
+  -- Its capture goes with it, before anything else could be pointed at.
+  if OUT.captured == win then OUT.release_capture("closed") end
 
   -- A drag whose source or destination has just gone. The badge would
   -- otherwise stay under the pointer until the button came up, and the
@@ -6987,6 +7049,15 @@ function post(win, event)
   if event.hover and last and last.hover and last.type == event.type
      and last.action == event.action then
     events[#events] = event
+    return
+  end
+
+  -- **Movement under capture, added up** (`docs/quake3e.md`, Q1): a window
+  -- looking about with the mouse wants how far, all of it, and not one
+  -- event per pass - so a motion not yet collected takes the next one in.
+  -- Nothing is lost, and a slow reader's queue does not fill with them.
+  if event.type == "motion" and last and last.type == "motion" then
+    last.dx, last.dy = last.dx + event.dx, last.dy + event.dy
     return
   end
 
@@ -8280,7 +8351,7 @@ remote.handlers.pointer = function(req)
     return { ok = false, error = "a pointer is inside the screen, with three buttons" }
   end
 
-  pointer_pass({ x = x, y = y, buttons = buttons,
+  pointer_pass({ x = x, y = y, buttons = buttons, dx = 0, dy = 0,
                  wheel = math.max(-8, math.min(8, math.floor(tonumber(req.wheel) or 0))),
                  min_x = 0, max_x = W - 1, min_y = 0, max_y = H - 1 })
 
@@ -8305,6 +8376,7 @@ remote.handlers.key = function(req)
 
     if (code == 125 or code == 126) and down then
       OUT.chord.super_moved = false
+      OUT.release_capture("Super")
     end
 
     if not volume_key(code, down) and not machine_keys.take(code, down)
@@ -8543,6 +8615,7 @@ while OUT.running do
     -- A fresh Super is a fresh chance to open the menu.
     if (ev.code == 125 or ev.code == 126) and ev.down then
       OUT.chord.super_moved = false
+      OUT.release_capture("Super")       -- the person's way out, always
     end
 
     if not volume_key(ev.code, ev.down)
@@ -8702,6 +8775,7 @@ while OUT.running do
   if mouse then
     local still = mouse.x == seen.x and mouse.y == seen.y
                   and mouse.buttons == seen.buttons and (mouse.wheel or 0) == 0
+                  and (mouse.dx or 0) == 0 and (mouse.dy or 0) == 0
 
     seen.x, seen.y, seen.buttons = mouse.x, mouse.y, mouse.buttons
 

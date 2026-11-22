@@ -388,6 +388,16 @@ from Kosmos's own numbers.**
 
 ## 7. The steps
 
+**Started on 21 November 2026**, first in the queue (Diego: "Quake 3e
+port so I can play tomorrow"). **The content is id's Quake III demo**
+(Diego chose it over his own paks and OpenArena): `demoq3/pak0.pk3`,
+46,853,694 bytes, sha256 `e77abad2...0754b08`, taken out of id's
+`linuxq3ademo-1.11-6.x86.gz.sh` (sha256 `64dee3f6...6150a4ec`) by
+reading its archive past the script's 165 lines, never running it; it
+lives in `build/downloads/quake3e`, not the tree. Quake3e is pinned at
+`dec793de9677bc9c16c7027e8905c2d4f4643a19` (the `latest` tag that day,
+15 November; tarball sha256 `6ecfef08...7274cd`).
+
 Each step leaves a permanent test, x86-64 first, under QEMU with
 `lavapipe`, then on the M700 with `anv`. A step that changes the window
 manager, the Window Kit or the HAL runs the whole gate. The others run

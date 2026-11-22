@@ -2631,6 +2631,8 @@ static int l_pointer(lua_State *L)
     PUT("max_y", info.max_y);
     PUT("buttons", info.buttons);
     PUT("wheel", info.wheel);
+    PUT("dx", info.dx);
+    PUT("dy", info.dy);
 
 #undef PUT
 
