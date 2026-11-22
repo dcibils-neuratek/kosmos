@@ -511,21 +511,22 @@ only their own suites.
   guest. Bots on a LAN game.
 - **Q7 - full screen. Asked on 22 November 2026** (Diego, after playing:
   "Add full screen to the roadmap yes"). Today the game is always a
-  window - `r_fullscreen` is forced to 0, since Kosmos has no full-screen
-  mode for anything. What it wants: `\r_fullscreen 1` (and Alt+Return)
-  gives the game the whole screen at the screen's resolution, with no
-  frame, no Deskbar and nothing composed over it; Super, focus moving
-  away or the game ending gives the desktop back. **It is the window
-  manager's and the Window Kit's, not the game's** - one door,
-  `kw_fullscreen`, with Quake III its first user and Video, Flight, Doom
-  and Quake 1 its next, so a second copy is never written. Designed
-  before it is built (`wm.lua`'s window states, what a full-screen window
-  is told of the screen's size, the pointer capture of Q1 kept across
-  it). *Test*: a harness window asks for full screen in QEMU and covers
-  every pixel of the screen, the Deskbar gone, then Super gives the
-  desktop back as it was. G9's flips are what make it cost nothing; until
-  then it is composed like any window, which at 125 fps on the M700 is
-  already enough.
+  window - `r_fullscreen` is forced to 0. **The window manager already
+  has full-screen windows**: undecorated, at the origin, in front of the
+  Deskbar, asked for with `fullscreen` in the window's request - the video
+  player's since 20 September (`wm.lua`), and Cafesa3D's F11 through
+  `ui.window`. What is missing is the C Window Kit's door to it, which
+  Quake III opens its window through. So: **`KW_FULLSCREEN`**, a flag of
+  `kw_open`'s, sending the same request (one door, for every C program -
+  Doom, Quake 1, Flight next); and Quake III's `r_fullscreen 1` (and
+  `vid_restart`) opening its window that way at the screen's size, from
+  `/Devices/screen`, with Q1's pointer capture kept across the change.
+  *Test*: in `x86-quake3`, `+set r_fullscreen 1` and the window the
+  window manager names is the screen's size at 0,0, the Deskbar's row
+  covered by the game's picture. *Control*: the flag not sent, and the
+  check fails. G9's flips are what make it cost nothing; until then it is
+  composed like any window, which at 125 fps on the M700 is already
+  enough.
 - **Later**: full-screen flips (G9) with Quake III as the measure; AArch64
   on `lavapipe` with `vm_aarch64.c` (when ARM's suites are back); and the
   Pi 5's v3dv, which already runs Quake III on Linux.
