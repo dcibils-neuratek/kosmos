@@ -259,7 +259,8 @@ def states(text):
     return out
 
 
-def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None, left_near=None):
+def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None, left_near=None,
+               box=None):
     """The strip on the screen: a stack of 34 to 46 rows each holding a
     stretch as wide as Flight's window, `across`, that is at least half dark
     - the band laid over the ground by its alpha - starting at the same x to
@@ -272,8 +273,17 @@ def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None, left
     starting there is the one kept. Without it the stack with the most
     words was, and with shadows Flight loads the processor enough that the
     Monitor's two graphs and their labels made a stack of that shape with
-    more white in it than the strip's (21 November)."""
+    more white in it than the strip's (21 November).
+
+    `box`, the window's rectangle as wm said it, (x, y, w, h): only its
+    pixels are looked at, and every one outside it counts as light. A
+    window beside Flight's is not Flight's, and on 23 November System
+    Monitor's Overview put a black graph at the strip's height ending at
+    Flight's left edge - so the strip had no light pixel beyond its left
+    end and was not found at all."""
     width, height, px = R.parse_ppm(data)
+    x0, y0, x1, y1 = (0, 0, width, height) if box is None else \
+        (box[0], box[1], box[0] + box[2], box[1] + box[3])
     if inside is None:
         inside = lambda r, g, b: max(r, g, b) < 90
 
@@ -287,7 +297,8 @@ def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None, left
         ends: allowing one let a piece of the Log's panel pass for the strip
         (its control, 20 November)."""
         row = px[y * width * 3:(y + 1) * width * 3]
-        dark = [inside(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]) for x in range(width)]
+        dark = [x0 <= x < x1 and y0 <= y < y1 and inside(row[x * 3], row[x * 3 + 1], row[x * 3 + 2])
+                for x in range(width)]
         sums = [0]
         for d in dark:
             sums.append(sums[-1] + d)
@@ -682,6 +693,7 @@ def main():
     screen = None
     noon_screen = dusk_screen = None
     flight_left = None
+    flight_box = None
     seen = ""
 
     def latest(after=0):
@@ -836,6 +848,7 @@ def main():
         # inside its picture, clear of the view chip, raises and focuses it.
         win = re.search(r"wm: window Flight at (\d+),(\d+) (\d+)x(\d+)", guest.seen[mark:])
         flight_left = int(win.group(1)) if win else None
+        flight_box = tuple(int(v) for v in win.groups()) if win else None
         if win:
             wx, wy, ww, wh = (int(v) for v in win.groups())
             guest.mouse_to((wx + ww * 0.8) * 32767 / 1919, (wy + wh * 0.7) * 32767 / 1079)
@@ -1150,7 +1163,7 @@ def main():
     elif abs(int(s.group(1)) - before["v"] * 1.94384) > 15:
         fails.append("the strip's speed, %s kt, is not the flight's %.0f" % (s.group(1),
                                                                              before["v"] * 1.94384))
-    band = strip_band(R, chase, WIDTH, left_near=flight_left)
+    band = strip_band(R, chase, WIDTH, left_near=flight_left, box=flight_box)
     print("flight: the strip on the screen %r (left, top row, rows, white pixels)" % (band,))
     # At the gate's size the window stands clear of the desktop's dark
     # panels; a larger one for a picture (KOSMOS_FLIGHT_SIZE) may touch the

@@ -292,7 +292,8 @@ end
 filetypes.GROUPS = {
   { "Documents", { "txt", "md", "write", "pdf", "html", "htm", "mhtml", "mht", "lua", "conf", "log" } },
   { "Pictures", { "png", "jpg", "jpeg" } },
-  { "Sound and film", { "mp3", "wav", "mp4", "m4v", "mov", "webm", "mkv" } },
+  { "Sound and film", { "mp3", "flac", "m4a", "wav", "aif", "aiff", "ogg", "oga", "opus",
+                       "mp4", "m4v", "mov", "webm", "mkv" } },
   { "Games", { "wad", "sfc", "smc" } },
   { "Kosmos", { "zip", "launcher", "favorite", "automation" } },
 }

@@ -78,6 +78,10 @@ def main():
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
 
+        # No startup windows: they open after This Machine and over it, and
+        # System Monitor's Overview (S3, 23 November) is large enough to
+        # cover the pills - as `run_windows` and the gallery keep theirs.
+        guest.type('fs.write("/Home/Preferences/startup", { items = {} })')
         mark = len(guest.seen)
         guest.type("wm deskbar,machine")
         R.started(guest)
@@ -184,6 +188,7 @@ def main():
 
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
+        guest.type('fs.write("/Home/Preferences/startup", { items = {} })')
         mark = len(guest.seen)
         guest.type("wm machine:usb")
         R.started(guest, seconds=60)

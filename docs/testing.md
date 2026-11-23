@@ -43394,3 +43394,32 @@ the exact part and the tone part each end in `STARVED:` and exit 1, and
 
 **Result**: `x86-usb-3` beside thirteen QEMU suites, 76 of 76 (not starved
 that time, 286 s for the fourteen); the tone and play parts, 7 of 7.
+
+## 18.1022 Two suites that looked past their window, and Music's sounds grouped
+
+**What broke.** The batch gate after 0.12.100 failed `x86-machine`,
+`x86-flight` and `host`, and the first two failed again alone. Both came
+from 0.12.99's System Monitor. It is in the startup set Astra opens
+(`startup.lua`'s `DEFAULT`), and its Overview is 880 by 785 where Monitor
+was 620 by about 450.
+
+- **x86-machine** starts the desktop at the prompt, `wm deskbar,machine`,
+  so the startup windows open *after* This Machine and over it. Monitor
+  had missed the pills; System Monitor covers them. The suite now empties
+  the startup set first, as `run_windows`, the gallery and the servers'
+  second boot keep theirs, at both of its boots.
+- **x86-flight** was never covered: Flight opened last and is in front.
+  Its strip lies at the height of one of the Overview's black graphs, and
+  that graph ends at Flight's left edge. `strip_band` wants a light pixel
+  just beyond each end of a stretch, so the strip was not found. The panel
+  and graphics checks are measured from the strip, so all three failed.
+  `strip_band` now takes `box`, the window's rectangle as wm said it: only
+  its pixels are looked at, and every one outside it counts as light.
+- **host** was `test_filetypes`. The drawing's groups end at "Sound and
+  film", and the new Music's types (`ogg`, `oga`, `opus`, `aif`) were in no
+  group, so they made an "Other". They are in "Sound and film" now.
+
+**Why it was not caught before the commit.** 0.12.99 ran the suites for
+what it changed, and System Monitor's own suites passed. What it reached
+and nobody named was every suite that photographs a desktop with the
+startup set in it - a reach a file's dependencies do not show.
