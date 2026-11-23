@@ -33,4 +33,5 @@ is written to the disk whole when the recording stops.
 ## What was left out
 
 The test program, the scripts and the test vectors. The demuxer is compiled
-- it is in the same header - and unused: `/lib/mp4.lua` is Kosmos's reader.
+- it is in the same header - and unused: Kosmos reads an MP4 with the
+Media Kit's FFmpeg since M6d, and with `/lib/mp4.lua` before.

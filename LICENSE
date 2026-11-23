@@ -305,14 +305,16 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
       which the system's image carries when it is built with the web kit
       (`make qemu`'s default), so that image is a GPLv2 work.
 
-  FFmpeg's H.264 decoder, by the FFmpeg developers, LGPL 2.1 or later
-      runtime/upstream/ffmpeg/, in COPYING.LGPLv2.1 and LICENSE.md, with
-      the vendoring recorded in README.kosmos.md beside it: the 95 files
-      the H.264 Kit's entry points reach, unmodified. Built by default
-      (`FULL=1`) and left out of `make FULL=0`, `make test` and
-      `make bench`. Every source in this tree is public, so the image can
-      be relinked against a changed FFmpeg, which is what the LGPL asks
-      of a static link.
+  FFmpeg 9.0.2, by the FFmpeg developers, LGPL 2.1 or later
+      Not in the tree: tools/upstream.py fetches its release, held to its
+      SHA-256, and tools/w5_build.py builds it whole, with its assembly
+      and no GPL parts (docs/media.md); the terms are its COPYING.LGPLv2.1
+      and LICENSE.md. Linked by media.elf - the Media Kit, which Video
+      plays in - and JetSki's WebKit. The system's image carried a
+      vendored closure of its H.264 and AAC decoders until 0.12.97
+      (docs/media.md M6d), and carries none of it now. Every source here is
+      public, so an image can be relinked against a changed FFmpeg, which
+      is what the LGPL asks of a static link.
 
   libsmb2, by Ronnie Sahlberg and its contributors, LGPL 2.1 or later
       runtime/upstream/libsmb2/, in COPYING and LICENCE-LGPL-2.1.txt, with

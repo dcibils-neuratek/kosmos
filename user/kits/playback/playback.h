@@ -33,7 +33,6 @@ struct playback;
  * one channel or two. */
 #define PLAYBACK_WAV 1
 #define PLAYBACK_MP3 2
-#define PLAYBACK_AAC 3
 
 /* What is heard, copied from the player's thread. */
 struct playback_state {
@@ -52,6 +51,12 @@ struct playback_state {
 /*
  * A player for `kind`, its thread started and paused. NULL, and why in
  * `*why`, when the sound cannot be played or there is no memory or thread.
+ */
+/*
+ * `config` and `config_n` were AAC's AudioSpecificConfig, and are unused
+ * since AAC left this kit in 0.12.97 (`docs/media.md` M6d). They stay only
+ * because WebKit's port (`MediaPlayerPrivateKosmos.cpp`) passes them, and
+ * go the next time WebKit is built (`roadmap.md`).
  */
 struct playback *playback_open(int kind, long rate, long channels,
                                long bits, const uint8_t *config, size_t config_n,

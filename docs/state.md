@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-22, at 0.12.84. Pushed to 0.12.0; 0.12.1 to
-0.12.84 are committed on `main`, and go out with `make prepush`.
+Last updated: 2026-11-23, at 0.12.97. Pushed to 0.12.0; 0.12.1 to
+0.12.97 are committed on `main`, and go out with `make prepush`.
 
 ---
 
@@ -358,7 +358,13 @@ door, Video a system application in `media.elf` playing WebM too. **For
 Diego**: a system application's `needs audio` is now granted (the band
 only), which Video's sound needed after leaving the image; and Tracker's
 film preview shows a refusal until a preview is drawn in `media.elf`
-(roadmap). Next: M6d, the closure and `mp4.lua` out; M6e, Big Buck
+(roadmap). **M6d in 0.12.97** (18.1018): one FFmpeg in the tree - the
+H.264 kit, its closure, `mp4.lua` and the Playback Kit's AAC gone, their
+tests moved onto `ffprobe`, a WAV seek and the door. **System Monitor S1 in
+the same revision**: the Series Kit, `ui.history` kept and drawn in C, built
+by a lane. **Lanes running**: the display decoders and EDID (D1-D2), the
+new Music's tags (P2) and Library (P4), and U10g's decoders (folded next,
+with the server's half: the speaker's own volume). Next: M6e, Big Buck
 Bunny. Then the new Music (`docs/player.md`, agreed, the old Music retired
 at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake

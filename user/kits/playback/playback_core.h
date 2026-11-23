@@ -80,12 +80,13 @@ int      pb_input_put(struct pb_input *in, const void *bytes, uint32_t n,
 
 /* ------------------------------------------------------------ the core */
 
-enum pb_kind { PB_WAV = 1, PB_MP3 = 2, PB_AAC = 3 };
+enum pb_kind { PB_WAV = 1, PB_MP3 = 2 };
 
 /*
  * How much of a source's sound is held between frames: a decoded frame and
- * the one sample frame a conversion keeps back to interpolate from. AAC's
- * room is the largest (`aac_core.h`); MP3's frame is 1152 x 2.
+ * the one sample frame a conversion keeps back to interpolate from. MP3's
+ * frame is 1152 x 2; the room was sized for AAC's largest, which went in
+ * 0.12.97, and is left as it is until something measures a smaller one.
  */
 #define PB_SRC_SAMPLES (8192 * 8 + 16)
 
@@ -119,7 +120,6 @@ struct pb {
     long     rate, channels, bits;          /* the source's, once known */
     uint32_t generation;                    /* records of any other are dropped */
 
-    void    *aac;                           /* struct aac *, PB_AAC */
     mp3dec_t mp3;                           /* PB_MP3 */
 
     uint8_t  carry[PB_CARRY];               /* PB_MP3, PB_WAV: bytes not yet a frame */
@@ -139,12 +139,11 @@ struct pb {
 };
 
 /*
- * A core for `kind`. `rate`, `channels` and `bits` are a WAV's and the
- * MP4's stated ones for AAC (0 where unstated); `config` is AAC's
- * AudioSpecificConfig. 0, or -1 and `p->why`.
+ * A core for `kind`. `rate`, `channels` and `bits` are a WAV's (0 for an
+ * MP3, which says its own). 0, or -1 and `p->why`.
  */
 int  pb_open(struct pb *p, enum pb_kind kind, long rate, long channels,
-             long bits, const uint8_t *config, size_t config_n);
+             long bits);
 void pb_close(struct pb *p);
 
 /*

@@ -4355,14 +4355,72 @@ end
 ui.history = {}
 
 --
+-- **The Series Kit behind it** (`docs/sysmonitor.md` S1). A history is
+-- still the list its caller keeps and reads - a sample a table, the oldest
+-- let go past `columns` - so every monitor that reads its own list for a
+-- peak goes on doing so. What changed is the drawing: each list is
+-- mirrored into a ring in C (`/Kosmos/Kits/series`), and a graph is one
+-- drawing command whose columns the kit fills, where it was a `g:fill`
+-- from Lua a column. The ring follows the list while only `push` changes
+-- it; a list changed any other way, or made afresh for each draw, is read
+-- into its ring again when it is drawn.
+--
+local series_kit = nil
+local rings = setmetatable({}, { __mode = "k" })
+
+-- Whether a list's ring still holds what the list does.
+local function in_step(r, list)
+  local n = #list
+
+  return r.count == n and r.first == list[1] and r.last == list[n]
+end
+
+-- The ring `list` is drawn from, brought up to what the list holds.
+local function ring_of(list, columns)
+  local r = rings[list]
+  local n = #list
+
+  if r and in_step(r, list) then return r.ring end
+
+  local wide = 2
+
+  for i = 1, n do
+    if #list[i] > wide then wide = #list[i] end
+  end
+
+  if not r or r.ring:series() < wide or r.ring:capacity() < math.max(n, columns) then
+    series_kit = series_kit or use("/Kosmos/Kits/series")
+    r = { ring = series_kit.new{ series = wide, columns = math.max(n, columns, 60) } }
+    rings[list] = r
+  else
+    r.ring:clear()
+  end
+
+  for i = 1, n do r.ring:push(list[i]) end
+
+  r.count, r.first, r.last = n, list[1], list[n]
+  return r.ring
+end
+
+--
 -- **A sample added to a history**, the oldest let go of past `columns`
 -- (sixty, a minute at a second's pace). A sample is a list of numbers, one
--- a series.
+-- a series; a nil in it is a gap.
 --
 function ui.history.push(list, sample, columns)
+  local r = rings[list]
+  local was = r and in_step(r, list)
+
   list[#list + 1] = sample
 
   while #list > (columns or 60) do table.remove(list, 1) end
+
+  if was and #sample <= r.ring:series() and #list <= r.ring:capacity() then
+    r.ring:push(sample)
+    r.count, r.first, r.last = #list, list[1], sample
+  elseif r then
+    r.count = -1
+  end
 
   return list
 end
@@ -4393,7 +4451,8 @@ end
 --   mode     "stacked": percentages, the first series at the floor and each
 --            next on top of it - Monitor's kernel and user time;
 --            "mirrored": two series about a centre line, the first above
---            it and the second below - in and out - on one scale
+--            it and the second below - in and out - on one scale;
+--            "line": each series a line, to `most` (100 unsaid)
 --   most     a mirrored graph's scale; its busiest value when not given
 --   columns  how many samples fill the width (60)
 --   ground   the graph's own colour behind the columns
@@ -4401,47 +4460,45 @@ end
 --
 -- Returns the scale a mirrored graph was drawn to, for its caller to say.
 --
+-- The ground and the centre line are a rectangle each, as before; the
+-- columns are the kit's, drawn where `g:fill` would have put them - inside
+-- the clip in force, and at the window's scale by their two edges
+-- (`series_core.c`, `emit`), which `tools/test_series.c` holds to this
+-- function as it was in Lua, pixel for pixel.
+--
 function ui.history.draw(g, x, y, w, h, list, spec)
   local columns = spec.columns or 60
   local colours = spec.colours or { theme.io_in, theme.io_out }
   local mirrored = spec.mode == "mirrored"
-  local most = mirrored and (spec.most or ui.history.most(list)) or 100
+  local line = spec.mode == "line"
+  local most = mirrored and (spec.most or ui.history.most(list)) or line and spec.most or 100
 
   g:fill_round(x, y, w, h, spec.ground or theme.sunken, spec.radius or 8)
 
   local inner = h - 4
-  local base = y + h - 2
   local centre = y + 2 + inner // 2
 
   if mirrored then g:fill(x + 2, centre, w - 4, 1, theme.line_soft) end
-  if most <= 0 then return most end
+  if most <= 0 or #list == 0 then return most end
 
-  for i = 1, #list do
-    local slot = columns - #list + i - 1
-    local x0 = x + 2 + (slot * (w - 4)) // columns
-    local x1 = x + 2 + ((slot + 1) * (w - 4)) // columns
-    local cw = math.max(1, x1 - x0 - 1)
-    local s = list[i]
+  local ring = ring_of(list, columns)
+  local shades = {}
 
-    if mirrored then
-      local half = inner // 2
-      local up = math.min(half, math.floor(half * (s[1] or 0) / most + 0.5))
-      local down = math.min(half, math.floor(half * (s[2] or 0) / most + 0.5))
+  for k = 1, ring:series() do shades[k] = shade(colours[k]) or 0xff000000 end
 
-      if up > 0 then g:fill(x0, centre - up, cw, up, colours[1]) end
-      if down > 0 then g:fill(x0, centre + 1, cw, down, colours[2]) end
-    else
-      local at = base
+  local o = { op = "series", ring = ring, x = x, y = y, w = w, h = h,
+              mode = mirrored and "mirrored" or line and "line" or "stacked",
+              columns = columns, most = most, count = #list, upto = ring:written(),
+              colours = shades }
 
-      for k, v in ipairs(s) do
-        local part = (inner * v) // 100
-
-        if part > 0 then
-          g:fill(x0, at - part, cw, part, colours[k])
-          at = at - part
-        end
-      end
-    end
+  if g.ops then
+    -- In the drawing context's own coordinates, and inside its clip, as
+    -- `gc:fill` would have put each column.
+    o.x, o.y = (g.ox or 0) + x, (g.oy or 0) + y
+    o.cx, o.cy, o.cw, o.ch = g.cx, g.cy, g.cw, g.ch
+    g.ops[#g.ops + 1] = o
+  else
+    ring:draw(g, x, y, w, h, o)
   end
 
   return most

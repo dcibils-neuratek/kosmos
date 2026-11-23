@@ -249,7 +249,7 @@ float  log1pf(float x);
 /*
  * `atan2f` is musl's, since W4d: FFmpeg's `libm.h` defines a fallback of
  * its own for every maths function `math.h` does not declare, and its
- * config is held to that header (`tools/ffmpeg_vendor.py`), so what is
+ * config was held to that header (`tools/ffmpeg_vendor.py`, until M6d), so what is
  * declared here has to exist.
  *
  * `atan2l` is declared and not defined: libc++'s `<complex>` names it in

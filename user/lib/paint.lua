@@ -30,6 +30,11 @@ local paint = {}
 --
 function paint.new(picture_named, sized, always)
   return {
+    -- A history's columns, from its ring, by the Series Kit (`ui.history`, S1).
+    series = function(s, o)
+      if o.ring then o.ring:paint(s, o) end
+    end,
+
     fill = function(s, o)
       s:fill(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0xff000000)
     end,
@@ -272,6 +277,8 @@ function paint.scale(o, pct, picture_named)
       o.cx, o.cy = cx0, cy0
       o.cw, o.ch = px(cx + cw, pct) - cx0, px(cy + ch, pct) - cy0
     end
+  elseif kind == "series" then
+    o.pct = pct
   elseif kind == "text" then
     o.x = px(tonumber(o.x) or 0, pct)
     o.y = px(tonumber(o.y) or 0, pct)

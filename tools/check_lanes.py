@@ -32,8 +32,8 @@ LANES = [
 ]
 
 MACHINES = [
-    ("aarch64-elf-objdump", "build/user-web-ffmpeg"),
-    ("x86_64-elf-objdump", "build/user-x86_64-web-ffmpeg"),
+    ("aarch64-elf-objdump", "build/user-web"),
+    ("x86_64-elf-objdump", "build/user-x86_64-web"),
 ]
 
 CALL = re.compile(r"\bR_\w+\s+memcpy\b")

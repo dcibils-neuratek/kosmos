@@ -15,10 +15,10 @@
  *   - a WAV, 8-bit mono at 11.025 kHz: as converted whole;
  *   - an MP3, ISO's 1 kHz sine (`tools/mp3_conformance.txt`), in pieces of
  *     the file: as minimp3 decodes it whole;
- *   - an AAC, `al05_44` (`tools/aac_conformance.txt`), a frame a record: as
- *     the AAC Kit decodes it frame by frame;
- *   - a seek: records of the old place left in the ring, the core restarted
- *     at another, and what comes out is that place decoded afresh;
+ *   - a seek: a WAV's records of the old place left in the ring, the core
+ *     restarted at another, and what comes out is that place and nothing
+ *     else. It was held on an AAC until AAC left the kit in 0.12.97
+ *     (`docs/media.md` M6d); a WAV's records hold it as well, and exactly;
  *   - nothing to play yet: nothing written, not finished, and not dry -
  *     the input runs dry only once a frame has come;
  *   - a full ring: the pass stops, and goes on when the server has taken.
@@ -31,12 +31,9 @@
 #include <string.h>
 
 #include "../user/kits/playback/playback_core.h"
-#include "../user/kits/ffmpeg/aac_core.h"
 #include "pcmconvert.h"
 
-#define LUA "build/host/lua"
 #define MP3 "build/downloads/mp3-conformance/sin1k0db.bit"
-#define AAC "build/downloads/aac-conformance/al05_44.mp4"
 
 static int checks, fails;
 
@@ -208,78 +205,6 @@ static int frame_next(void *ctx, const uint8_t **bytes, uint32_t *n, uint32_t *f
     return 1;
 }
 
-/* The MP4's sound frames, as `tools/mp4index.lua` prints them. */
-static int read_index(const char *mp4, uint8_t *config, size_t *config_n,
-                      unsigned *rate, unsigned *channels, struct frames *f)
-{
-    char cmd[512], line[512], hex[160];
-    unsigned room = 0;
-    FILE *p;
-    int ok = 0;
-
-    snprintf(cmd, sizeof cmd, "%s tools/mp4index.lua '%s'", LUA, mp4);
-    p = popen(cmd, "r");
-    if (p == NULL) return 0;
-
-    while (fgets(line, sizeof line, p) != NULL) {
-        long at, size;
-
-        if (strncmp(line, "track ", 6) == 0) {
-            char codec[16], *last = strrchr(line, ' ');
-            unsigned object, aot;
-            size_t i;
-
-            sscanf(line, "track %15s %u %u %u %u", codec, &object, &aot, rate, channels);
-            if (last == NULL || sscanf(last + 1, "%159s", hex) != 1) break;
-            for (i = 0; hex[2 * i] && hex[2 * i + 1] && i < 64; i++) {
-                unsigned b;
-                sscanf(hex + 2 * i, "%2x", &b);
-                config[i] = (uint8_t)b;
-            }
-            *config_n = i;
-            ok = 1;
-        } else if (sscanf(line, "%ld %ld", &at, &size) == 2) {
-            if (f->count == room) {
-                room = room ? room * 2 : 1024;
-                f->at = realloc(f->at, room * sizeof *f->at);
-                f->size = realloc(f->size, room * sizeof *f->size);
-            }
-            f->at[f->count] = at;
-            f->size[f->count] = size;
-            f->count++;
-        }
-    }
-
-    pclose(p);
-    return ok && f->count > 0;
-}
-
-/* The AAC Kit's own way: frames `from`..end decoded with a fresh decoder. */
-static uint8_t *aac_plain(const uint8_t *file, const struct frames *f, unsigned from,
-                          const uint8_t *config, size_t config_n, unsigned rate,
-                          unsigned channels, size_t *bytes)
-{
-    static int16_t frame[AAC_ROOM];
-    const char *why;
-    struct aac *d = aac_open(config, config_n, rate, channels, &why);
-    uint8_t *pcm = malloc((size_t)f->count * 4096 * 4 + 16);
-    size_t n = 0;
-
-    for (unsigned i = from; i < f->count; i++) {
-        unsigned s = 0, c = 0, r = 0;
-
-        if (aac_decode(d, file + f->at[i], (size_t)f->size[i], frame, AAC_ROOM,
-                       1, &s, &c, &r) == 0) {
-            memcpy(pcm + n, frame, (size_t)s * c * 2);
-            n += (size_t)s * c * 2;
-        }
-    }
-
-    aac_close(d);
-    *bytes = n;
-    return pcm;
-}
-
 /* ------------------------------------------------------------ the checks */
 
 static struct pb core;
@@ -317,7 +242,7 @@ int main(void)
         for (size_t i = 0; i < n / 2; i++) wav[i] = (int16_t)((i * 7919u) & 0xffff);
 
         pb_input_init(in, sizeof(input_area.ring));
-        CHECK(pb_open(&core, PB_WAV, 44100, 2, 16, NULL, 0) == 0, "a 16-bit WAV would not open");
+        CHECK(pb_open(&core, PB_WAV, 44100, 2, 16) == 0, "a 16-bit WAV would not open");
         CHECK(play_all(&core, in, ring, chunk_next, &c, &h), "a 16-bit WAV did not finish");
         same(h.s, h.n, wav, n / 2, period, "16-bit stereo at 44.1 kHz in ragged records");
         CHECK(core.heard.refused == 0, "a WAV refused frames");
@@ -337,7 +262,7 @@ int main(void)
 
         want = convert_whole(wav, n, 11025, 1, 8, &want_n);
         pb_input_init(in, sizeof(input_area.ring));
-        CHECK(pb_open(&core, PB_WAV, 11025, 1, 8, NULL, 0) == 0, "an 8-bit WAV would not open");
+        CHECK(pb_open(&core, PB_WAV, 11025, 1, 8) == 0, "an 8-bit WAV would not open");
         CHECK(play_all(&core, in, ring, chunk_next, &c, &h), "an 8-bit WAV did not finish");
         same(h.s, h.n, want, want_n, period, "8-bit mono at 11.025 kHz");
         free(h.s); free(ring); free(wav); free(want);
@@ -370,7 +295,7 @@ int main(void)
 
             want = convert_whole((const uint8_t *)plain, plain_n * 2, 44100, 2, 16, &want_n);
             pb_input_init(in, sizeof(input_area.ring));
-            CHECK(pb_open(&core, PB_MP3, 0, 0, 0, NULL, 0) == 0, "an MP3 would not open");
+            CHECK(pb_open(&core, PB_MP3, 0, 0, 0) == 0, "an MP3 would not open");
             CHECK(play_all(&core, in, ring, chunk_next, &c, &h), "the MP3 did not finish");
             CHECK(core.rate == 44100 && core.channels == 2,
                   "the MP3 was taken as %ld Hz, %ld channels", core.rate, core.channels);
@@ -380,77 +305,58 @@ int main(void)
         }
     }
 
-    /* ---- an AAC, a frame a record; and a seek ---- */
+    /* ---- a seek, on a WAV's records ---- */
     {
-        size_t n;
-        uint8_t *file = slurp(AAC, &n), config[64];
-        size_t config_n = 0;
-        unsigned rate = 0, channels = 0;
-        struct frames f = { 0 };
+        enum { RECORDS = 200, RECORD = 4096 };
+        static int16_t pcm[RECORDS * RECORD / 2];
+        static long at[RECORDS], size[RECORDS];
+        struct frames f = { (const uint8_t *)pcm, at, size, RECORDS, 0, 0 };
+        unsigned from = 60;
+        struct audio_ring *ring = make_ring(32, period);
+        struct heard_pcm before = { 0 }, after = { 0 };
+        struct frames old = f, fresh = f;
+        const uint8_t *b;
+        uint32_t bn, fl;
+        size_t want_n;
+        int16_t *want;
 
-        if (file == NULL || !read_index(AAC, config, &config_n, &rate, &channels, &f)) {
-            CHECK(0, "%s is not here, or %s would not read it: tools/fetch_conformance.py aac",
-                  AAC, LUA);
-        } else {
-            size_t plain_n, want_n;
-            uint8_t *plain = aac_plain(file, &f, 0, config, config_n, rate, channels, &plain_n);
-            int16_t *want = convert_whole(plain, plain_n, 44100, 2, 16, &want_n);
-            struct audio_ring *ring = make_ring(32, period);
-            struct heard_pcm h = { 0 };
-
-            f.file = file;
-            pb_input_init(in, sizeof(input_area.ring));
-            CHECK(pb_open(&core, PB_AAC, rate, channels, 16, config, config_n) == 0,
-                  "al05_44 would not open: %s", core.why ? core.why : "?");
-            CHECK(play_all(&core, in, ring, frame_next, &f, &h), "al05_44 did not finish");
-            CHECK(core.heard.refused == 0, "al05_44: %u frames refused", core.heard.refused);
-            same(h.s, h.n, want, want_n, period, "al05_44, a frame a record");
-            free(h.s); free(want); free(plain);
-
-            /* A seek: a hundred frames in, the next forty put but not
-             * played, then restarted at frame 60 as a new generation. */
-            {
-                unsigned from = 60;
-                struct heard_pcm before = { 0 }, after = { 0 };
-                struct frames old = f, fresh = f;
-                const uint8_t *b;
-                uint32_t bn, fl;
-
-                pb_close(&core);
-                pb_input_init(in, sizeof(input_area.ring));
-                pb_open(&core, PB_AAC, rate, channels, 16, config, config_n);
-                old.i = 0;
-                old.count = 100;
-                old.gen = 0;
-
-                for (int k = 0; k < 2000 && old.i < old.count; k++) {
-                    if (frame_next(&old, &b, &bn, &fl)) {
-                        fl &= ~PB_END;
-                        if (!pb_input_put(in, b, bn, fl)) { old.i--; pb_pass(&core, in, ring); drain(ring, &before); }
-                    }
-                }
-                for (unsigned k = 100; k < 120; k++) {
-                    pb_input_put(in, file + f.at[k], (uint32_t)f.size[k], 0);
-                }
-
-                drain(ring, &before);
-                pb_restart(&core, 1);
-                fresh.i = from;
-                fresh.gen = 1;
-                CHECK(play_all(&core, in, ring, frame_next, &fresh, &after),
-                      "the seek did not finish");
-
-                plain = aac_plain(file, &f, from, config, config_n, rate, channels, &plain_n);
-                want = convert_whole(plain, plain_n, 44100, 2, 16, &want_n);
-                same(after.s, after.n, want, want_n, period,
-                     "al05_44 after a seek to frame 60, the old place's records left behind");
-                free(before.s); free(after.s); free(want); free(plain);
-            }
-
-            free(ring);
-            pb_close(&core);
+        for (size_t i = 0; i < sizeof pcm / sizeof pcm[0]; i++) {
+            pcm[i] = (int16_t)((i * 7919u) ^ (i >> 3));
         }
-        free(file);
+
+        for (unsigned k = 0; k < RECORDS; k++) {
+            at[k] = (long)k * RECORD;
+            size[k] = RECORD;
+        }
+
+        /* A hundred records in, the next twenty put but not played, then
+         * restarted at record 60 as a new generation. */
+        pb_input_init(in, sizeof(input_area.ring));
+        CHECK(pb_open(&core, PB_WAV, 44100, 2, 16) == 0, "the seek's WAV would not open");
+        old.count = 100;
+
+        for (int k = 0; k < 4000 && old.i < old.count; k++) {
+            if (frame_next(&old, &b, &bn, &fl)) {
+                fl &= ~PB_END;
+                if (!pb_input_put(in, b, bn, fl)) { old.i--; pb_pass(&core, in, ring); drain(ring, &before); }
+            }
+        }
+        for (unsigned k = 100; k < 120; k++) {
+            pb_input_put(in, (const uint8_t *)pcm + at[k], (uint32_t)size[k], 0);
+        }
+
+        drain(ring, &before);
+        pb_restart(&core, 1);
+        fresh.i = from;
+        fresh.gen = 1;
+        CHECK(play_all(&core, in, ring, frame_next, &fresh, &after), "the seek did not finish");
+
+        want = convert_whole((const uint8_t *)pcm + at[from], (size_t)(RECORDS - from) * RECORD,
+                             44100, 2, 16, &want_n);
+        same(after.s, after.n, want, want_n, period,
+             "a WAV after a seek to record 60, the old place's records left behind");
+        free(before.s); free(after.s); free(want); free(ring);
+        pb_close(&core);
     }
 
     /* ---- nothing to play; and a full ring ---- */
@@ -462,7 +368,7 @@ int main(void)
         for (int i = 0; i < 3000; i++) tone[i] = (int16_t)(i * 3);
 
         pb_input_init(in, sizeof(input_area.ring));
-        pb_open(&core, PB_WAV, 44100, 2, 16, NULL, 0);
+        pb_open(&core, PB_WAV, 44100, 2, 16);
         w = pb_pass(&core, in, ring);
         CHECK(w == 0 && core.heard.dry == 0 && !core.heard.finished,
               "nothing to play yet: %u written, %u dry, finished %d", w, core.heard.dry,
@@ -487,7 +393,7 @@ int main(void)
         return 1;
     }
 
-    printf("PASS: %d checks on the Playback Kit's core (WAV, MP3, AAC, a seek, dry and full)\n",
+    printf("PASS: %d checks on the Playback Kit's core (WAV, MP3, a seek, dry and full)\n",
            checks);
     return 0;
 }

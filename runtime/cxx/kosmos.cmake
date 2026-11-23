@@ -21,7 +21,7 @@
 # - **`KOSMOS_USER_BASE`**, where an image starts, which `kosmos.h` checks.
 # - **Static libraries for every trial**: CMake's checks link a program,
 #   and there is nothing here to link one against - it is the same reason
-#   FFmpeg's `configure` is corrected by `ffmpeg_vendor.py`.
+#   FFmpeg's `configure` was corrected by `ffmpeg_vendor.py` until M6d.
 # - `_LIBCPP_HAS_CLOCK_GETTIME`: libc++ looks for `clock_gettime` only
 #   where `<unistd.h>` says `_POSIX_TIMERS`, and Kosmos's says nothing; the
 #   function is there (`time.h`).

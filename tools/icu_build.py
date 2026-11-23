@@ -14,7 +14,7 @@ Mac by its own compiler, into `build/icu/host/`: the reference
 
 **Why a script and not ICU's `configure`**: it learns about a machine by
 running programs it compiles, and it cannot run a Kosmos one - as FFmpeg's
-could not (`tools/ffmpeg_vendor.py`). What it would have concluded is said
+could not (`tools/ffmpeg_vendor.py`, until M6d). What it would have concluded is said
 here instead, as defines, and the files are every `.cpp` in the two
 directories, which is what ICU's own Makefiles build of them.
 

@@ -153,7 +153,7 @@ HarfBuzz rounds a glyph's extents with `roundf` (`hb-font.cc`), which
 W5b's test follows, calls `scalbnf`, which `math.h` declared and nothing
 defined - a declaration with no definition behind it, found by the first
 caller. Both from the same tarball, checked against the same sum; neither
-calls anything else. FFmpeg's config (`user/kits/ffmpeg/config/config.h`)
+calls anything else. FFmpeg's config (`user/kits/ffmpeg/config/config.h`, until M6d removed it)
 says `HAVE_ROUNDF 1` with them, or `libavutil/libm.h` defines its own.
 
     3f8cc14771a866a06184a3d9d654f63de9a077316a4905aae19884cc9b292d2e  src/math/roundf.c
@@ -192,7 +192,7 @@ from outside the tree, as it does `hidden` and `weak`.
     1996546b761c35236155ef3c4740ce6c108e83e26c2e610f46e0b78e689a12cb  src/math/remainder.c
     7ccf8f5c1376de85a8741dcbdcd9feb69fe8268ddd49aebc796036f80a9eaee9  src/math/remquo.c
 
-FFmpeg's config (`user/kits/ffmpeg/config/config.h`) says `HAVE_EXP2F 1`
+FFmpeg's config (`user/kits/ffmpeg/config/config.h`, until M6d removed it) says `HAVE_EXP2F 1`
 and `HAVE_LRINTF 1` with them, or `libavutil/libm.h` defines static ones
 that collide with these declarations.
 
@@ -219,7 +219,7 @@ libc++'s `<cmath>`, and the first image to link it named both; `logb` calls
 `ilogb`. From the same tarball, checked against the same sum, by the same
 closure over undefined symbols. **Defined and not declared in `math.h`**:
 libc++ declares them for C++, and a declaration there would turn FFmpeg's
-`HAVE_ERF` on (`tools/ffmpeg_vendor.py` holds its config to that header),
+`HAVE_ERF` on (`tools/ffmpeg_vendor.py` held its config to that header until M6d),
 which its vendored config does not say. `ilogb` is declared, which FFmpeg
 asks nothing about, because GCC refuses `logb.c` without it.
 
@@ -233,7 +233,7 @@ Mesa's colour packing (`u_pack_color.h`, `docs/gpu3d.md` G2) rounds with
 `llrint`, which nothing had defined. From the same tarball, checked against
 the same sum; it calls `rint`, already here. Declared in `math.h`, since
 Mesa is C and needs the declaration, and so FFmpeg's config says
-`HAVE_LLRINT 1` with it - `tools/ffmpeg_vendor.py`'s rule, that the config
+`HAVE_LLRINT 1` with it - `tools/ffmpeg_vendor.py`'s rule until M6d, that the config
 says what `math.h` declares.
 
     16839c5a71ccb7f030d4d4663a1a75f5ca28ae307d85d1955e31f916cdd121f4  src/math/llrint.c

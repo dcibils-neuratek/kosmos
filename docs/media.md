@@ -466,7 +466,40 @@ in Tracker's process, which is not in `media.elf`. It now shows the
 refusal where the film was. Bringing it back means a preview drawn inside
 `media.elf` and lent to Tracker, which is in the roadmap.
 
-Next: M6d, the closure and `mp4.lua` out.
+### M6d built: one FFmpeg in the tree
+
+0.12.97. **What left**: the vendored closure of FFmpeg's H.264 and AAC
+(`runtime/upstream/ffmpeg/`, 95 files, and `user/kits/ffmpeg/`), the
+`h264` kit's row in `sys.kit`, `tools/ffmpeg_vendor.py`, `FFMPEG=1` and
+the `-ffmpeg` in a build directory's name, `mp4.lua`, the Playback Kit's
+AAC, and the host tests that held them - `test_h264`, `test_aac`,
+`test_mp4.lua`, `test_record_mp4.lua` and `mp4index.lua`. **What it
+replaced them with, where something still needed them**:
+
+* `x86-record` read Camera's recording back with `mp4.lua`; it reads it
+  with the Media Kit's door now, in `media.elf` - the reader that plays
+  it, which is the point of the check.
+* `run_film.py` took `al05_44`'s config and frames from `mp4index.lua`; it
+  takes them from this Mac's `ffprobe`, and they are the same bytes, all
+  130 frames and the config, compared once against the old reader before
+  it went.
+* `test_playback.c`'s seek was held on an AAC; it is held on a WAV's
+  records now, exactly, with a control (the generation not taken at the
+  restart) that fails it.
+* `LICENSE` names FFmpeg 9.0.2 as fetched and built whole, in `media.elf`
+  and JetSki's image, in place of the closure.
+
+**The old Music played no M4A**, it turned out - it opens MP3 and WAV - so
+nothing it does stopped, and `media.lua` has no M4A to refuse.
+
+**Left from it**: `playback_open`'s `config` arguments, unused since AAC
+went, stay until WebKit is next built, since its port passes them
+(`roadmap.md`); and `arm-media`'s film check opens a film from the
+system's image, which needs `media.elf` on its disk when the ARM suites
+resume - and an AArch64 `media.elf`, which needs W5's FFmpeg built for
+ARM first.
+
+Next: M6e, Big Buck Bunny.
 
 ### Decided (M6)
 

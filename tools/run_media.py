@@ -102,7 +102,7 @@ def vbr_mp3(path, count=400):
 #
 # **A film, built here, because none goes in the repository.**
 #
-# `test_mp4.lua` says it about the container and it is just as true of the
+# `test_mp4.lua` said it about the container, until M6d, and it is just as true of the
 # pictures: the clip Diego tests with lives in `~/Kosmos/home`, and a suite
 # that needed it would pass on this Mac and fail everywhere else. So the
 # film is made - a few frames of flat grey, each a different grey, in an

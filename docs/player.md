@@ -159,7 +159,8 @@ the mini player and ratings.
 - **Gapless**: an album recorded without gaps plays without them. MP3's
   encoder delay and padding (LAME's header) and AAC's (iTunes's
   `iTunSMPB`, MP4's edit list) are trimmed. FLAC, ALAC and WAV need
-  nothing trimmed. Two songs at different rates or depths cannot join:
+  nothing trimmed. The Playback Kit trims, from what the tag reader read,
+  and FFmpeg decodes whole (decision 10). Two songs at different rates or depths cannot join:
   the output changes format between them, and that costs a short silence.
   The window does not pretend otherwise.
 - **The library finds itself.** It reads `/Home/Music` and its folders,
@@ -669,6 +670,22 @@ November: "agreed with your recommendations, go ahead"). Each decision below sta
    run, which is the part Diego asked for (FLAC at full resolution through
    the M60), and P8 to P12 after (recommended). *Or the window first*, P5
    on today's 16-bit path, with hi-res arriving under it later.
+10. **Who trims a song's priming and padding** - decided 23 November 2026,
+    when P1 and P3 were built side by side and found that both could
+    (Diego: "go with the kit doing the trimming").
+    - *The Playback Kit* (chosen). The Media Kit decodes a song whole
+      (`MEDIA_UNTRIMMED`, FFmpeg's `AV_CODEC_FLAG2_SKIP_MANUAL`), and the
+      player hands the kit the delay and length `tags.lua` read - LAME's
+      delay plus the MP3 decoder's 529, or `iTunSMPB`'s priming as written.
+      The kit trims with two index comparisons, marks each song at its first
+      kept frame, and checks a stated length against what arrived: a length
+      far short of the stream is not believed, and the song plays to its
+      end (`untrusted`). That matters because **this Mac's FFmpeg writes a
+      wrong LAME header into an MP3 that carries a picture** - two frames,
+      padding 576 - and FFmpeg's own trim believes it, cutting a one-second
+      song to 26 ms.
+    - *Or FFmpeg*, its default: the player sends no delay or length. Less
+      to build, and nothing checks what FFmpeg trusted.
 
 ---
 

@@ -46,6 +46,7 @@ from the test userland's APPS.
 Usage: run_film.py IMAGE APPS [--load]
 """
 
+import json
 import os
 import re
 import shutil
@@ -65,6 +66,7 @@ LUA = os.path.join(ROOT, "build", "host", "lua")
 
 
 FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 # A program outside `media.elf` - no `kosmos: image` - asking for the film:
 # refused, and the sentence names the image it would need.
@@ -137,15 +139,27 @@ def aac_frames():
     subprocess.run([sys.executable, os.path.join(HERE, "fetch_conformance.py"),
                     "aac"], check=True, capture_output=True)
     mp4 = os.path.join(AAC, "al05_44.mp4")
-    out = subprocess.run([LUA, os.path.join(HERE, "mp4index.lua"), mp4],
-                         check=True, capture_output=True, text=True,
-                         cwd=ROOT).stdout.splitlines()
-    config = bytes.fromhex(out[0].split()[-1])
+
+    # Its index, read by this Mac's `ffprobe`: the config the stream carries
+    # and where each frame is. `tools/mp4index.lua` read it with `mp4.lua`
+    # until M6d removed both; FFmpeg's word is as good an index, and it is
+    # not the reader under test - the Media Kit in the guest is.
+    def probe(*what):
+        return json.loads(subprocess.run(
+            [FFPROBE, "-v", "error", "-select_streams", "a:0"] + list(what)
+            + ["-of", "json", mp4],
+            check=True, capture_output=True, text=True).stdout)
+
+    dump = probe("-show_entries", "stream=extradata", "-show_data")["streams"][0]["extradata"]
+    config = bytes.fromhex("".join(
+        "".join(line.split(":", 1)[1].split("  ")[0].split())
+        for line in dump.splitlines() if re.match(r"^[0-9a-f]{8}: ", line)))
+    packets = probe("-show_entries", "packet=pos,size")["packets"]
     data = open(mp4, "rb").read()
     frames = []
 
-    for line in out[1:1 + FRAMES]:
-        at, size = (int(w) for w in line.split())
+    for packet in packets[:FRAMES]:
+        at, size = int(packet["pos"]), int(packet["size"])
         frames.append(data[at:at + size])
 
     ref = open(os.path.join(AAC, "al05_44.s16"), "rb").read()

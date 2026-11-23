@@ -79,9 +79,9 @@ RELEASES = {
         "top": "mesa-26.2.5",
     },
     # **The Media Kit's FFmpeg** (`docs/media.md` M1): 9.0.2, the release
-    # `tools/ffmpeg_vendor.py` vendors H.264 and AAC from and with its sum,
-    # built whole here - its demuxers, decoders and assembly - to replace
-    # that closure (Diego, 14 November 2026).
+    # the old `tools/ffmpeg_vendor.py` vendored H.264 and AAC from, built
+    # whole here - its demuxers, decoders and assembly - and the closure it
+    # replaced left in M6d (Diego, 14 November 2026).
     "ffmpeg": {
         "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
         "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",

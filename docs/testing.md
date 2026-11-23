@@ -43154,3 +43154,56 @@ the film and saying why, and that no picture plays, until its preview comes
 from `media.elf` (`roadmap.md`). The gate: 161 suites, those two failing and
 fixed, `x86-usb-3` and `x86-tcploss` failing under its load and passing
 alone (18.1012).
+
+## 18.1018 One FFmpeg in the tree (M6d), and the Series Kit (S1)
+
+**What is checked.** The H.264 kit, its FFmpeg closure in
+`runtime/upstream/ffmpeg/`, `mp4.lua` and the Playback Kit's AAC are gone;
+the W5 FFmpeg that `media.elf` and WebKit link is the only one. What held
+them is moved, not dropped:
+
+* `test_playback` replaces its AAC section with a WAV seek: 200 records of
+  4096 bytes, 100 played, 20 more queued, then a restart at generation 1
+  from record 60 - the queued records refused, the ring re-filled from 60,
+  and the sound sample for sample what record 60 holds. 19 checks.
+* `run_film.py` reads the AAC film's frames with `ffprobe` (the extradata
+  and every packet's place and size) instead of `mp4index.lua`. Before the
+  old reader went, both were run on the clip: the same configuration,
+  `12000504002021e000`, and all 130 frames the same.
+* `x86-record` reads its recording back through the Media Kit's door in a
+  `media.elf` program: one stream, video, `h264`, 640 by 480.
+* `test_suitedeps.py` drops its H.264 kit check, and the build's variant
+  is `user-x86_64-web`, without `-ffmpeg`.
+
+The Series Kit (`docs/sysmonitor.md` S1) keeps a history of numbers in C
+rings at three steps, and `ui.history` is now its door, drawn by a paint
+op. `test_series` runs the rings on a fake clock - columns at each step, a
+gap left where nothing came, the highest kept beside the mean, a reader
+never meeting the slot being written - and draws through the door against
+`ui.history.draw` as it was in Lua, pixel for pixel. 40 checks.
+
+**Result**: PASS. The whole gate, 163 suites, ran while WebKit was rebuilt
+(the closure's `math.h` note) and three lanes compiled beside it: 2,009 s,
+and 12 failed - `host` on a name (below) and eleven under that load, a hung
+Cafesa3D among them. Run again alone, the twelve passed in 306 s. The name:
+the new `tags.lua` called a local string `window`, and `test_winmethods`
+read `window:find()` as a window's method `ui.lua` lacks; it is `piece`.
+
+**Controls**:
+
+* `pb_restart` taking `generation - 1`: `test_playback` fails 2 checks;
+* five breakings of `series_core.c`, each restored: stacked columns
+  rounded instead of floored (251 of 400 graphs differ), columns drawn one
+  slot off (363), a 10 s or 60 s mean divided by one sample too many (9
+  step checks fail), mirrored columns not capped at half the height (9),
+  and the view's clip not applied (28);
+* and two that stay inside the test: a graph drawn one column off, and one
+  two pixels short, must both be seen to differ.
+
+**A finding on the way**: a ring holding exactly `columns` could hand a
+reader the oldest slot while it was being written; each step keeps one
+spare slot now.
+
+**What it does not check**: WebKit still passes the AAC configuration
+arguments `playback_open` now ignores; they go when WebKit's player is
+built again (`roadmap.md`). And `arm-media` has no `media.elf` yet.

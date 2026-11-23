@@ -2,7 +2,6 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """The conformance streams the decoders are held to, fetched once.
 
-    fetch_conformance.py h264      tools/h264_conformance.txt
     fetch_conformance.py aac       tools/aac_conformance.txt
     fetch_conformance.py mp3       tools/mp3_conformance.txt
     fetch_conformance.py fbx       tools/fbx_conformance.txt
@@ -15,8 +14,7 @@ the decoders' streams, ufbx's repository at the vendored commit for FBX -
 and one whose sum is wrong is refused, not used: a checksum test run
 against the wrong bytes would say the decoder is wrong.
 
-A manifest line is a name, then pairs of a file and its sha256 - one pair
-for H.264, whose references are FFmpeg's own and in the tree, two for AAC,
+A manifest line is a name, then pairs of a file and its sha256 - two for AAC,
 whose references are PCM too large to carry, one or two for FBX, the second
 an OBJ of the same scene - then a description.
 """
@@ -32,7 +30,6 @@ SERVER = "https://fate-suite.ffmpeg.org/"
 UFBX = ("https://raw.githubusercontent.com/ufbx/ufbx/"
         "26a482ae66871d7de36eb722aa060bce95bce274/data/")
 KINDS = {
-    "h264": ("tools/h264_conformance.txt", SERVER + "h264-conformance/"),
     "aac": ("tools/aac_conformance.txt", SERVER + "aac/"),
     "mp3": ("tools/mp3_conformance.txt", SERVER + "mp3-conformance/"),
     "fbx": ("tools/fbx_conformance.txt", UFBX),

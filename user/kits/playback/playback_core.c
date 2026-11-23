@@ -13,25 +13,16 @@
  *
  * **Bytes that are not yet a frame** - an MP3's, whose frames cross the
  * window's pieces of the file, and a WAV's, whose sample frames can - wait in
- * `carry`. An AAC record is always one whole frame, the MP4's sample.
+ * `carry`.
+ *
+ * **AAC went in 0.12.97** (`docs/media.md` M6d): a film's sound is decoded
+ * by the Media Kit in `media.elf` and arrives here as a WAV's PCM, so the
+ * old FFmpeg closure it was decoded by is gone.
  */
 #include <string.h>
 
 #include "playback_core.h"
 #include "pcmconvert.h"
-
-/* AAC is FFmpeg's, in the image only when FFmpeg is (`FULL`). */
-#ifndef PB_HAVE_AAC
-#if defined(KOSMOS_FFMPEG)
-#define PB_HAVE_AAC 1
-#else
-#define PB_HAVE_AAC 0
-#endif
-#endif
-
-#if PB_HAVE_AAC
-#include "../ffmpeg/aac_core.h"
-#endif
 
 /* ------------------------------------------------------------ the input ring */
 
@@ -157,7 +148,7 @@ static void input_done(struct pb_input *in, const struct pb_record *r)
 /* ------------------------------------------------------------ open, close */
 
 int pb_open(struct pb *p, enum pb_kind kind, long rate, long channels,
-            long bits, const uint8_t *config, size_t config_n)
+            long bits)
 {
     memset(p, 0, sizeof(*p));
     p->kind = kind;
@@ -178,20 +169,6 @@ int pb_open(struct pb *p, enum pb_kind kind, long rate, long channels,
         mp3dec_init(&p->mp3);
         p->bits = 16;
         return 0;
-
-    case PB_AAC:
-#if PB_HAVE_AAC
-        p->aac = aac_open(config, config_n, (unsigned)rate,
-                          (unsigned)channels, &p->why);
-        p->bits = 16;
-        return p->aac != NULL ? 0 : -1;
-#else
-        (void)config;
-        (void)config_n;
-        p->why = "this film's sound is AAC, and this system was built "
-                 "without its AAC decoder (FULL=0)";
-        return -1;
-#endif
     }
 
     p->why = "not a kind of sound this plays";
@@ -200,12 +177,7 @@ int pb_open(struct pb *p, enum pb_kind kind, long rate, long channels,
 
 void pb_close(struct pb *p)
 {
-#if PB_HAVE_AAC
-    if (p->aac != NULL) {
-        aac_close((struct aac *)p->aac);
-    }
-#endif
-    p->aac = NULL;
+    (void)p;                            /* nothing a core holds outside itself */
 }
 
 void pb_restart(struct pb *p, uint32_t generation)
@@ -222,12 +194,6 @@ void pb_restart(struct pb *p, uint32_t generation)
     if (p->kind == PB_MP3) {
         mp3dec_init(&p->mp3);
     }
-
-#if PB_HAVE_AAC
-    if (p->aac != NULL) {
-        aac_reset((struct aac *)p->aac);
-    }
-#endif
 }
 
 /* ------------------------------------------------------------ decoding */
@@ -314,48 +280,18 @@ static void decode_carry(struct pb *p)
 }
 
 /*
- * One record into the core: an AAC frame decoded onto `src`, or a piece of
- * an MP3 or a WAV into `carry`. False when there is no room for it yet, and
+ * One record into the core: a piece of an MP3 or a WAV into `carry`. False when there is no room for it yet, and
  * the record stays where it is for the next pass.
  */
 static int take(struct pb *p, const struct pb_record *r)
 {
     const uint8_t *bytes = (const uint8_t *)r + sizeof(*r);
 
-    if (p->kind == PB_AAC) {
-#if PB_HAVE_AAC
-        unsigned samples = 0, channels = 0, rate = 0;
+    if (!carry_add(p, bytes, r->bytes)) {
+        decode_carry(p);
 
-        if (src_room(p) < AAC_ROOM) {
-            return 0;
-        }
-
-        if (r->bytes > 0
-            && aac_decode((struct aac *)p->aac, bytes, r->bytes,
-                          (int16_t *)((uint8_t *)p->src + p->src_bytes),
-                          src_room(p), 1, &samples,
-                          &channels, &rate) == 0) {
-            if (p->rate == 0 && samples > 0) {
-                p->rate = (long)rate;
-                p->channels = (long)channels;
-            }
-
-            p->src_bytes += (size_t)samples * channels * 2;
-            p->heard.frames_in += samples;
-        } else if (r->bytes > 0) {
-            /* A damaged frame is passed over, as a damaged picture is: a
-             * click in the sound, not the end of it. */
-            p->heard.refused++;
-            p->why = aac_why((struct aac *)p->aac);
-        }
-#endif
-    } else {
         if (!carry_add(p, bytes, r->bytes)) {
-            decode_carry(p);
-
-            if (!carry_add(p, bytes, r->bytes)) {
-                return 0;
-            }
+            return 0;
         }
     }
 
@@ -442,7 +378,7 @@ uint32_t pb_pass(struct pb *p, struct pb_input *in, struct audio_ring *ring)
         }
 
         /* Then from the bytes waiting in carry, then from the next record. */
-        if (p->kind != PB_AAC && p->carry_n > 0) {
+        if (p->carry_n > 0) {
             size_t before = p->src_bytes;
             uint32_t carried = p->carry_n;
 

@@ -41,18 +41,26 @@ os.environ["KOSMOS_DISK"] = DISK
 
 import run_screenshot as R                                  # noqa: E402
 
-# The file read at the prompt with `/Kosmos/Libraries/mp4.lua`, which is how Video will
-# open one: `use` is a program's, so the library is loaded as a chunk.
+# The file read back through the Media Kit's door (`/Kosmos/Kits/media`),
+# which is how Video opens one since 0.12.96 (`docs/media.md` M6c): its
+# streams, and every packet of the first counted, the first a key frame. A
+# program in /Temporary naming `media.elf`, as DECODE below, since the kit
+# is in no other image. It read the file with `/Kosmos/Libraries/mp4.lua`
+# until M6d removed that reader: a writer and a reader that agree only
+# with themselves would not be a file format, so the reader held here is
+# the one that plays it.
 READ_BACK = (
-    'local mp4 = load(fs.read("/Kosmos/Libraries/mp4.lua"))() '
-    'local path = "%s" local a = fs.getattr(path) or {} '
-    'local d = fs.read(path) or "" '
-    'local f = #d > 0 and mp4.open(function(at, n) '
-    'return d:sub(at + 1, at + n) end, #d) or {} '
-    'local t = (f.tracks or {})[1] or {} '
-    'print("MP4", a.size, #(f.tracks or {}), t.kind, t.codec, t.width, '
-    't.height, #(t.samples or {}), t.samples and t.samples[1] '
-    'and t.samples[1].key) print("MP4" .. "-READ")')
+    'fs.write("/Temporary/readback.lua", "-- kosmos: image media\\n" .. '
+    '[=[local media = use("/Kosmos/Kits/media") local path = args '
+    'local a = fs.getattr(path) or {} '
+    'local src, why = media.open(path) '
+    'local list = src and src:streams() or {} local t = list[1] or {} '
+    'local n, key = 0, nil '
+    'while src do local p = src:read() if not p then break end '
+    'if p.stream == 0 then n = n + 1 if key == nil then key = p.key end end '
+    'p:free() end '
+    'print("MP4", a.size, #list, t.kind, t.codec, t.width, t.height, n, key) '
+    'print("MP4" .. "-READ")]=])')
 
 # And the recording played: every frame decoded through `/Kosmos/Libraries/video.lua`, as
 # the Video app decodes it - the Media Kit's demuxer and FFmpeg's H.264
@@ -166,7 +174,8 @@ def main():
 
         R.stop_desktop(guest)
         mark = len(guest.seen)
-        guest.type(READ_BACK % path)
+        guest.type(READ_BACK)
+        guest.type("/Temporary/readback.lua " + path)
         guest.wait_for("MP4-READ", "the recording read back")
         row = re.search(r"^MP4\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+"
                         r"(\S+)\s+(\S+)\s+(\S+)", guest.seen[mark:], re.M)
@@ -175,9 +184,9 @@ def main():
         check(got is not None and got[0] == str(size),
               "the file in /Home/Captures is not the %d bytes the app kept: %r"
               % (size, got))
-        check(got is not None and got[1:6] == ("1", "video", "avc1", "640",
+        check(got is not None and got[1:6] == ("1", "video", "h264", "640",
                                                "480"),
-              "the video player's reader did not find one H.264 track of "
+              "the Media Kit did not find one H.264 stream of "
               "640x480: %r" % (got,))
         check(got is not None and got[6] == str(frames) and got[7] == "true",
               "it did not find %d samples with the first a key frame: %r"

@@ -1,13 +1,15 @@
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 #
-# The AAC conformance streams `tools/test_aac.c` decodes, one a line: the
+# AAC conformance streams, one a line: the
 # name FFmpeg's test suite gives it (`fate-aac-<name>`), the MP4 under
 # https://fate-suite.ffmpeg.org/aac/ and its sha256, the PCM FFmpeg's
 # decoder is held to - sixteen-bit, every channel, in FFmpeg's order - and
 # its sha256, and what the stream exercises.
 #
 # FFmpeg compares with `oneoff`: no sample more than one step from the
-# reference, and the same length. So does the test.
+# reference, and the same length. `tools/test_aac.c` did, until the AAC Kit
+# left with the old FFmpeg closure in M6d; `x86-film` still plays `al05_44`'s
+# frames in a film of its own making, through the Media Kit.
 #
 # 65 MB between them, nearly all of it the references, so
 # `tools/fetch_conformance.py aac` puts them in

@@ -2843,6 +2843,7 @@ void kosmos_web_kit(lua_State *L);
  * kits. Linked in, they are what they always were.
  */
 void kosmos_map_kit(lua_State *L);
+void kosmos_series_kit(lua_State *L);
 void kosmos_mail_kit(lua_State *L);
 void kosmos_doom_kit(lua_State *L) __attribute__((weak));
 void kosmos_quake_kit(lua_State *L) __attribute__((weak));
@@ -2871,9 +2872,6 @@ void kosmos_webcoretest_kit(lua_State *L) __attribute__((weak));
 void kosmos_webkit2test_kit(lua_State *L) __attribute__((weak));
 void kosmos_webkit_kit(lua_State *L) __attribute__((weak));
 void kosmos_media_kit(lua_State *L) __attribute__((weak));
-#ifdef KOSMOS_FFMPEG
-void kosmos_h264_kit(lua_State *L);
-#endif
 
 /*
  * `own`: **an application's own C, in its own image** (`docs/elf.md` step
@@ -2917,6 +2915,8 @@ static const struct {
     { "tcc",      kosmos_tcc_kit, 0 },
     /* Maps' regions and tiles, drawn through gfx's paths (`docs/maps.md`). */
     { "map",      kosmos_map_kit, 0 },
+    /* A history of numbers kept and drawn in C (`docs/sysmonitor.md` S1). */
+    { "series",   kosmos_series_kit, 0 },
     /* A message read: MIME, its encodings and charsets (`docs/mail.md`). */
     { "mail",     kosmos_mail_kit, 0 },
 #ifdef KOSMOS_WEB
@@ -2980,10 +2980,6 @@ static const struct {
      * /Kosmos/Media, so `use("/Kosmos/Kits/media")` finds it only in a
      * program that runs there - Video, `listen`, the media family. */
     { "media",    kosmos_media_kit, 0 },
-#ifdef KOSMOS_FFMPEG
-    /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
-    { "h264",     kosmos_h264_kit, 0 },
-#endif
     { NULL, NULL, 0 }
 };
 

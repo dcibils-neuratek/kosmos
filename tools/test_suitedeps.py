@@ -68,7 +68,6 @@ def check_kit_names():
     t = sd.kit_table()
     return (t.get("network") == "user/kits/network"
             and t.get("fractal") == "user/bin/apps/fractal"
-            and t.get("h264") == "user/kits/ffmpeg"
             and t.get("doom") == "user/installed/Doom")
 
 

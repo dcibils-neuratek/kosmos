@@ -29,7 +29,7 @@
 #include "playback.h"
 #include "playback_core.h"
 
-_Static_assert(PLAYBACK_WAV == PB_WAV && PLAYBACK_MP3 == PB_MP3 && PLAYBACK_AAC == PB_AAC,
+_Static_assert(PLAYBACK_WAV == PB_WAV && PLAYBACK_MP3 == PB_MP3,
                "the door's kinds are the core's");
 
 /*
@@ -231,7 +231,10 @@ struct playback *playback_open(int kind, long rate, long channels,
         return NULL;
     }
 
-    if (pb_open(&pl->core, (enum pb_kind)kind, rate, channels, bits, config, config_n) != 0) {
+    (void)config;                       /* AAC's, before 0.12.97; see playback.h */
+    (void)config_n;
+
+    if (pb_open(&pl->core, (enum pb_kind)kind, rate, channels, bits) != 0) {
         *why = pl->core.why ? pl->core.why : "this sound cannot be played";
         player_free(pl);
         return NULL;
@@ -309,13 +312,14 @@ size_t playback_room(const struct playback *pl)
  * decoded only with 16 KB of it waiting (`PB_MP3_AHEAD`). A piece larger
  * than what is left beside that would never fit and never be decoded to
  * make room - the core would wait on it for ever, silently - so it is
- * refused here, loudly. An AAC frame is one record and goes whole.
+ * refused here, loudly.
  */
 #define PB_PIECE (PB_CARRY - PB_MP3_AHEAD)
 
 size_t playback_piece(const struct playback *pl)
 {
-    return pl->core.kind == PB_AAC ? pl->in->size / 2 : PB_PIECE;
+    (void)pl;
+    return PB_PIECE;
 }
 
 int playback_frame(struct playback *pl, const void *bytes, size_t n, const char **why)
@@ -330,7 +334,7 @@ int playback_frame(struct playback *pl, const void *bytes, size_t n, const char 
         return -1;
     }
 
-    if (pl->core.kind != PB_AAC && n > PB_PIECE) {
+    if (n > PB_PIECE) {
         *why = "a piece larger than an MP3's or a WAV's may be";
         return -1;
     }

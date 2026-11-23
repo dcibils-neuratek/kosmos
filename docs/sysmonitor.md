@@ -428,10 +428,14 @@ it.
 **The ring's shape**, in `seriesring.h`: a header (the number of series,
 the three steps, each step's column count and head index, the pace in
 counter ticks), then each series' name and unit, then for each step
-`columns × series` pairs of `float`, the mean and the highest. Each series
-gets a fixed 600 columns at the pace, 360 at 10 s and 1,440 at 60 s. That is
-2,400 × 8 bytes = 19 KB a series, and about 1.5 MB for the 80 series the
-M700 would keep. The window's own rings live in its own memory. The
+`columns × series` pairs of `double`, the mean and the highest, and each
+column's start on the counter (for S7's readout), with one spare slot a
+step so a reader never meets the slot being written. Each series gets a
+fixed 600 columns at the pace, 360 at 10 s and 1,440 at 60 s: about 57 KB
+a series as built, and about 3.1 MB for the 80 series the M700 would keep.
+**It said `float` until S1 was built**, at 19 KB a series: a float holds a
+byte rate exactly only to 16 MB, and the mirrored graphs print their scale,
+so the lane that built it chose doubles and said so (0.12.97). The window's own rings live in its own memory. The
 recorder's, if Diego chooses it, are the same shape in a region.
 
 ### What travels in a message and what in a region

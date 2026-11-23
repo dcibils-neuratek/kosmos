@@ -44,9 +44,9 @@ ROOT = os.path.dirname(HERE)
 
 # The x86-64 userland's objects, whose `.d` files say what each C source
 # included (`UBUILD` in the Makefile; `-MMD -MP`). Every variant is read
-# and their union taken: `KOSMOS_WEB` and `KOSMOS_FFMPEG` change what is
+# and their union taken: `KOSMOS_WEB` changes what is
 # included, and a superset is the safe way round.
-VARIANTS = ["build/user-x86_64-web-ffmpeg", "build/user-x86_64-test", "build/user-x86_64"]
+VARIANTS = ["build/user-x86_64-web", "build/user-x86_64-test", "build/user-x86_64"]
 
 # Where the userland's `#include` is looked for when there is no `.d`: the
 # including file's own folder first, then `UCFLAGS`'s `-I` list (Makefile).
@@ -133,7 +133,7 @@ def kit_table():
     name, build function, own image); the folder is found by where that
     function is defined - `kosmos_net_kit` for `network` is in
     `user/kits/network/`, `kosmos_fractal_kit` in `user/bin/apps/fractal/`,
-    `kosmos_h264_kit` in `user/kits/ffmpeg/`, `kosmos_doom_kit` in
+    `kosmos_doom_kit` in
     `user/installed/Doom/`."""
     def make():
         with open(os.path.join(ROOT, "user/init/sys_user.c"), encoding="utf-8") as f:

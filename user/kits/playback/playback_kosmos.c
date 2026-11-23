@@ -5,18 +5,19 @@
  * (`docs/playback.md`, step 3).
  *
  *   local playback = use("/Kosmos/Kits/playback")
- *   local p, why = playback.open{ kind = "aac", config = esds,
- *                                 rate = 44100, channels = 2 }
- *                                       -- or "mp3"; "wav" with bits too
+ *   local p, why = playback.open{ kind = "wav", rate = 44100,
+ *                                 channels = 2, bits = 16 }  -- or "mp3"
  *   p:seek(stream.ring)   the stream's ring to play into, and everything
  *                         before it forgotten: the first start and every
  *                         seek. Returns once the thread has let go of the
  *                         old ring, so the caller may close its stream.
  *   p:room()              bytes one frame may be and still go now
  *   p:frame(at, bytes)    a frame from an address in this process: true,
- *                         or false when the input ring is full - an AAC
- *                         frame whole, an MP3's or a WAV's bytes in pieces
- *                         of 16 KB at most
+ *                         or false when the input ring is full - an MP3's
+ *                         or a WAV's bytes in pieces of 16 KB at most.
+ *                         A film's sound, AAC or Opus or any other, comes
+ *                         as a WAV's PCM from the Media Kit (`dec:sound()`);
+ *                         AAC of its own went in 0.12.97
  *   p:ended()             no frame will come after these
  *   p:play()  p:pause()
  *   p:state(t)            what is heard, into `t`
@@ -73,9 +74,7 @@ static enum pb_kind kind_named(lua_State *L, const char *name)
 {
     if (strcmp(name, "wav") == 0) return PB_WAV;
     if (strcmp(name, "mp3") == 0) return PB_MP3;
-    if (strcmp(name, "aac") == 0) return PB_AAC;
-
-    luaL_error(L, "a kind of sound is \"wav\", \"mp3\" or \"aac\", not \"%s\"", name);
+    luaL_error(L, "a kind of sound is \"wav\" or \"mp3\", not \"%s\"", name);
     return PB_WAV;
 }
 
@@ -90,13 +89,12 @@ static lua_Integer field_integer(lua_State *L, const char *key)
 }
 
 /*
- * playback.open{ kind, config, rate, channels, bits } - a player, its
+ * playback.open{ kind, rate, channels, bits } - a player, its
  * thread started and paused, with no ring to play into until `seek`.
  */
 static int l_open(lua_State *L)
 {
-    const char *config = NULL, *why = NULL;
-    size_t config_n = 0;
+    const char *why = NULL;
     enum pb_kind kind;
     struct handle *h;
     struct playback *p;
@@ -107,18 +105,13 @@ static int l_open(lua_State *L)
     kind = kind_named(L, luaL_checkstring(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "config");
-    if (!lua_isnil(L, -1)) {
-        config = luaL_checklstring(L, -1, &config_n);
-    }
-
     h = (struct handle *)lua_newuserdatauv(L, sizeof *h, 0);
     h->p = NULL;
     luaL_setmetatable(L, PLAYBACK_MT);
 
     p = playback_open(kind, (long)field_integer(L, "rate"),
                       (long)field_integer(L, "channels"), (long)field_integer(L, "bits"),
-                      (const uint8_t *)config, config_n, &why);
+                      NULL, 0, &why);
 
     if (p == NULL) {
         lua_pushnil(L);

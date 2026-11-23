@@ -952,6 +952,10 @@ puts it sooner. **Designed and AGREED on 22 November, every recommendation taken
 `docs/sysmonitor.md` (the inventory - 103 rows over nine windows and bars,
 every one placed - the feature set, architecture, steps S1-S11, seven
 decisions), `docs/sysmonitor.html` and `docs/sysmonitor-architecture.png`.
+**S1 built** (0.12.97, `testing.md` 18.1018), by a lane: the Series Kit in
+C (`user/kits/series/`, `seriesring.h`), `ui.history` its door, and the
+five monitors drawing through it unchanged - held pixel for pixel to the
+old Lua by `test_series`. Next: S2, `meters.lua`.
 
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64
@@ -12236,7 +12240,13 @@ spend a day here; a laptop cannot.
   a system application's `needs audio` granted. **Owed from M6c**:
   Tracker's preview of a film (Q4) runs outside `media.elf` and shows the
   refusal; a preview drawn in `media.elf` and lent to Tracker brings it
-  back. Next: M6d, the closure and `mp4.lua` out; M6e, Big Buck Bunny.
+  back. **M6d built** (0.12.97, 18.1018): the vendored closure, the
+  `h264` kit, `mp4.lua` and the Playback Kit's AAC out - one FFmpeg in the
+  tree. **Owed from M6d**: (1) `playback_open`'s `config` and `config_n`,
+  unused since, go the next time WebKit is built (its port passes them);
+  (2) `arm-media`'s film check needs `media.elf` on its disk, and an
+  AArch64 `media.elf` (W5's FFmpeg built for ARM), when the ARM suites
+  resume. Next: M6e, Big Buck Bunny.
 - **Low-latency audio, in and out**: a microphone, USB audio interfaces,
   and the audio band for a web process (M4's owed pieces).
 - **Video calls**: WebRTC in JetSki - the camera that exists, the
@@ -13244,6 +13254,8 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   4. **Heard bit for bit on the M60**: a 96/24 FLAC and the same in AIFF,
      alone at any master volume, `exact` and the speaker at setting 1.2,
      96 kHz - U10f's M700 half, with real files.
+  These are not a second plan: 1 and 2 are the new Music's P1, 3 its P2 and
+  P5, and 4 its P6 (`docs/player.md`), and are built as those steps.
   **The speaker's suite under the gate's load** (found 23 November,
   `testing.md` 18.1012): `x86-usb-3` fails one gate in two or three. A
   stream stops being taken, or a beep takes 41 s, because the guest is

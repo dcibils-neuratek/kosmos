@@ -87,7 +87,7 @@ LLM = ["server:llm", "kit:llm", "lib:llm.lua"]
 MAIL = ["app:mail", "program:maild", "program:mailpass", "kit:mail", "lib:imap.lua", "lib:smtp.lua",
         "lib:pop3.lua", "lib:mailcompose.lua", "lib:mailarrived.lua", "lib:mailout.lua",
         "lib:netstream.lua"] + TLS + KEYRING
-FILM = ["app:video", "lib:video.lua", "lib:mp4.lua", "kit:ffmpeg", "kit:playback", "kit:media"]
+FILM = ["app:video", "lib:video.lua", "kit:playback", "kit:media"]
 WRITE = ["lib:writedoc.lua", "lib:docfile.lua", "lib:richtext.lua", "lib:pageset.lua",
          "lib:pdfwrite.lua", "lib:docxwrite.lua", "lib:faces.lua", "lib:hyphen.lua", "kit:pdf",
          "lib:pdf.lua", "lib:pdfpage.lua", "kit:compress"]
@@ -413,7 +413,7 @@ suite("arm-midi x86-midi", "core", ["driver:usb/midi_decode", "driver:usb/xhci",
       "run_midi.py: /Devices/midi with the virtual keyboard, refusals; Groove plays its pad (ARM)")
 suite("arm-record x86-record", "app",
       ["app:camera", "lib:camera.lua", "kit:record", "driver:usb/uvc_decode", "driver:usb/xhci",
-       "lib:mp4.lua", "lib:video.lua", "kit:ffmpeg", "program:frames"],
+       "lib:video.lua", "kit:media", "program:frames"],
       "run_record.py: Camera records the test pattern to /Home/Captures; MP4 read and decoded")
 
 # ---------------------------------------------------------------------------
@@ -482,18 +482,18 @@ suite("x86-autod", "app", [AUTOMATE, "program:autod", "lib:automations.lua", "ap
 suite("x86-automations", "app", ["app:automations", AUTOMATE, "program:autod", "lib:automations.lua",
                                  "app:calc"],
       "run_automationswin.py: the Automations window - Run now, history, switch, new, steps")
-suite("arm-sysapps x86-sysapps", "app", ["app:procs", "app:sysmon", "lib:procshare.lua", "lib:prockind.lua",
+suite("arm-sysapps x86-sysapps", "app", ["app:procs", "app:sysmon", "kit:series", "lib:procshare.lua", "lib:prockind.lua",
                                          "lib:pulse.lua"],
       "run_sysapps.py: Processes' columns, files, threads, privilege and sorting; Monitor")
 suite("x86-scheduler", "app", ["app:scheduler", "lib:scheduling.lua", "files:kernel/sched*",
                                "lib:wm/gamemode.lua"],
       "run_scheduler.py: the Scheduler window - lanes, Fair (round-robin), 20 ms turn, game mode")
-suite("x86-netmon", "app", ["app:netmon", "server:net", "lib:hardware.lua"],
+suite("x86-netmon", "app", ["app:netmon", "kit:series", "server:net", "lib:hardware.lua"],
       "run_netmon.py: Network Monitor's rate in, busiest connection by name, mirrored graph")
-suite("x86-diskmon", "app", ["app:diskmon", "server:drives", "lib:drivelist.lua", "driver:usb/xhci",
+suite("x86-diskmon", "app", ["app:diskmon", "kit:series", "server:drives", "lib:drivelist.lua", "driver:usb/xhci",
                              "files:tools/fatstick.py"],
       "run_diskmon.py: Disk Monitor's rate on a FAT stick, the busiest program by name")
-suite("x86-gpumon", "app", ["app:gpumon", "program:gpustat", "program:gpu", "lib:gpu.lua",
+suite("x86-gpumon", "app", ["app:gpumon", "kit:series", "program:gpustat", "program:gpu", "lib:gpu.lua",
                             "program:rendering", "lib:rendering.lua", "driver:display/intelgpu"],
       "run_gpumon.py: gpustat, the desktop's label and GPU Monitor with no Intel GPU; contexts")
 suite("x86-machine", "app", ["app:machine", "lib:devices.lua", "lib:hardware.lua", "server:devices",
@@ -526,7 +526,7 @@ suite("x86-llm-vk", "core", [LLM, "kit:vulkan", "program:models", "program:ready
 suite("x86-xavier", "app", ["app:assistant", "program:xavier", "lib:conversations.lua", "lib:xavierbox.lua",
                             "lib:models.lua", LLM],
       "run_assistant.py: Xavier's window - questions, follow-ups, Stop, conversations kept, settings")
-suite("x86-llmmon", "app", ["app:llmmon", "program:llm", "program:xavier", LLM],
+suite("x86-llmmon", "app", ["app:llmmon", "kit:series", "program:llm", "program:xavier", LLM],
       "run_llmmon.py: the LLM Monitor and `llm` count askers and tokens; llm inside")
 suite("x86-models", "app", ["program:models", "lib:models.lua", "lib:download.lua", "lib:http.lua",
                             "lib:json.lua", TLS],

@@ -61,7 +61,8 @@ SIZE    := $(CROSS)size
 # **And the licence, which follows from the first line.** Nothing here is
 # linked dynamically, so what an image carries decides its terms, and
 # `LICENSE` says which, and the About window reads it out of the image. The
-# image `FULL=1` builds carries FFmpeg's LGPL decoder; Doom, which made it a
+# image `FULL=1` builds carried FFmpeg's LGPL decoder until M6d, and
+# `media.elf` carries FFmpeg now; Doom, which made it a
 # GPLv2 work until 28 September, is an application beside it now
 # (`docs/elf.md` step 5), and `doom.elf` is the GPLv2 work.
 #
@@ -88,7 +89,6 @@ ifeq ($(FULL),1)
 ifndef TEST
 ifndef BENCH
 WEB  := 1
-FFMPEG := 1
 WALLPAPERS := 1
 FILTERS := 1
 FB   ?= 1920x1080
@@ -102,7 +102,7 @@ endif
 # with one that had no browser - two different binaries under one name,
 # which `make` settles by timestamp and gets wrong. Each switch that changes
 # what the userland image carries adds its own part now: `-test`, `-bench`,
-# `-web`, `-ffmpeg`. Doom and Quake are installed applications with images
+# `-web` (and `-ffmpeg`, until M6d). Doom and Quake are installed applications with images
 # of their own (`docs/elf.md` step 5) and are no part of it.
 #
 # It has to come *after* the block above, because `:=` expands where it
@@ -121,7 +121,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(WEB),-web)$(if $(FFMPEG),-ffmpeg)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(WEB),-web)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -929,6 +929,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/mail/mailbuild.c \
              user/kits/mail/charset.c \
              user/kits/mail/mail_kosmos.c \
+             user/kits/series/series_core.c \
+             user/kits/series/series_kosmos.c \
              user/kits/synth/synth_dsp.c \
              user/kits/synth/synth_engine.c \
              user/kits/synth/synth_lua.c \
@@ -1015,44 +1017,6 @@ endif
 # beside `apptest.elf` and built by `make apps` - so there is no variant to
 # choose and no image to name after it.
 #
-#
-# `FFMPEG=1` - FFmpeg's H.264 decoder, which is the H.264 Kit
-# (`user/kits/ffmpeg/`, `roadmap.md` 4e), on in `FULL=1`.
-#
-# **The files are the closure, not a choice.** `tools/ffmpeg_vendor.py`
-# configures FFmpeg 9.0.2 for this system, compiles everything its build
-# would, and keeps what the linker pulls in from the kit's entry points -
-# 95 objects of about 170, and their headers, into `runtime/upstream/ffmpeg/`
-# unmodified. It writes the list below it too, in `ffmpeg.mk`, so the two
-# cannot disagree; `runtime/upstream/ffmpeg/README.kosmos.md` is the account.
-#
-# FFmpeg's headers and the configuration for this system go *first* on the
-# include path, ahead of everything UCFLAGS names: its sources include
-# `"config.h"` and `<stdatomic.h>` by names nothing else here may answer.
-# `-DHAVE_AV_CONFIG_H` is what FFmpeg's own build adds to every library
-# object, and without it its headers never include the configuration at all.
-# `-std=c17 -O3` and the rest are what its `configure` chose; `-w -Wno-error`
-# because its warnings are not ours to fix, for the reason Doom's are not.
-#
-# LGPL 2.1 or later, linked statically like everything here; `LICENSE`
-# lists it and the About window reads that out.
-#
-include user/kits/ffmpeg/ffmpeg.mk
-
-FFMPEG_DIR    := runtime/upstream/ffmpeg
-FFMPEG_KOSMOS := user/kits/ffmpeg/ffmpeg_log.c user/kits/ffmpeg/h264_core.c \
-                 user/kits/ffmpeg/aac_core.c
-FFMPEG_SRCS   := $(addprefix $(FFMPEG_DIR)/,$(addsuffix .c,$(FFMPEG_NAMES))) \
-                 $(FFMPEG_KOSMOS) user/kits/ffmpeg/h264_kosmos.c
-FFMPEG_IFLAGS := -Iuser/kits/ffmpeg/config -I$(FFMPEG_DIR)
-FFMPEG_CFLAGS := -std=c17 -U__STRICT_ANSI__ -O3 -fno-math-errno \
-                 -fno-signed-zeros -w -Wno-error -DHAVE_AV_CONFIG_H \
-                 $(FFMPEG_CPPFLAGS)
-
-ifdef FFMPEG
-USER_SRCS += $(FFMPEG_SRCS)
-endif
-
 #
 # LakeSnes, a Super Nintendo - an installed application since 28 September
 # (`docs/elf.md` step 5): `make apps` links `SNES_SRCS` into `apps/snes.elf`,
@@ -1354,7 +1318,7 @@ MINIZ_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_TIME \
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(WEB),-DKOSMOS_WEB) $(if $(FFMPEG),-DKOSMOS_FFMPEG) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(WEB),-DKOSMOS_WEB) -DKOSMOS_USER \
            -Iruntime/upstream/stb \
            -Iruntime/upstream/miniz $(MINIZ_FLAGS) \
            -Iruntime/upstream/minimp3 \
@@ -1397,7 +1361,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 #
 # There was one, `$(BUILD)/flags`, carrying every flag in the build - and
 # `BUILD` is only ever `build`, `build/test` or `build/bench`. It does *not*
-# vary with the userland's variant - `WEB` and `FFMPEG`, and `DOOM` and
+# vary with the userland's variant - `WEB`, and `FFMPEG`, `DOOM` and
 # `QUAKE` while those were switches; `UBUILD` does. So the
 # userland flags were recorded in a file the kernel's objects also depended
 # on, and every switch between variants rewrote it.
@@ -1425,7 +1389,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags-$(ARCH)
 
-UFLAGS_NOW := $(UCFLAGS) | $(LIBSMB2_CFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) $(WEB_NSB_CFLAGS) $(EXPAT_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)$(if $(FFMPEG), | $(FFMPEG_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(LIBSMB2_CFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(RECORD_CFLAGS) | $(UFBX_CFLAGS) | $(WEB_CFLAGS) $(WEB_NSB_CFLAGS) $(EXPAT_CFLAGS) | $(MUSL_CFLAGS) | $(QUAKE_CFLAGS) | $(SNES_CFLAGS)
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1576,17 +1540,6 @@ $(UBUILD)/runtime/upstream/ufbx/ufbx.c.o: runtime/upstream/ufbx/ufbx.c $(UFLAGS_
 $(UBUILD)/user/kits/3d/k3d_fbx.c.o: user/kits/3d/k3d_fbx.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(UFBX_CONFIG) -MMD -MP -c $< -o $@
-
-# FFmpeg, on its own terms (the `FFMPEG=1` note above).
-$(UBUILD)/runtime/upstream/ffmpeg/%.c.o: runtime/upstream/ffmpeg/%.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(FFMPEG_IFLAGS) $(UCFLAGS) $(FFMPEG_CFLAGS) -MMD -MP -c $< -o $@
-
-# And the Kosmos files that include FFmpeg's headers: FFmpeg's include
-# path, and every warning this project's own code is held to.
-$(addprefix $(UBUILD)/,$(addsuffix .o,$(FFMPEG_KOSMOS))): $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
-	@mkdir -p $(dir $@)
-	$(CC) $(FFMPEG_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 
 $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
@@ -1895,6 +1848,21 @@ $(HOSTDIR)/luaparse: tools/luaparse.c $(LUA_HOST_SRCS)
 # a Lua to drive it, whose own warnings are not ours.
 SYNTH_PURE := user/kits/synth/synth_dsp.c user/kits/synth/synth_engine.c \
               user/kits/synth/synth_lua.c
+
+# The Series Kit (`docs/sysmonitor.md` S1): its rings on a fake clock, and
+# its drawing held to `ui.history.draw` as it was in Lua, pixel for pixel.
+SERIES_PURE := user/kits/series/series_core.c user/kits/series/series_kosmos.c
+
+$(HOSTDIR)/test_series: tools/test_series.c $(SERIES_PURE) $(wildcard user/kits/series/*.h) \
+                        user/include/seriesring.h user/kits/gfx/gfx_draw.h user/lib/ui.lua \
+                        lua/upstream/linit.c $(LUA_HOST_SRCS)
+	@mkdir -p $(HOSTDIR)/series
+	@for f in tools/test_series.c $(SERIES_PURE); do \
+	    $(HOST_CC) -O2 -std=c11 -Wall -Wextra -Werror -Iuser -Iuser/include -Iuser/kits/series \
+	        -Ilua/upstream -c $$f -o $(HOSTDIR)/series/$$(basename $$f .c).o || exit 1; \
+	done
+	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $(HOSTDIR)/series/*.o lua/upstream/linit.c \
+	    $(LUA_HOST_SRCS) -lm
 
 $(HOSTDIR)/test_synth: tools/test_synth.c $(SYNTH_PURE) $(wildcard user/kits/synth/*.h) \
                        lua/upstream/linit.c $(LUA_HOST_SRCS)
@@ -2899,64 +2867,18 @@ $(HOSTDIR)/test_k3d_gpu: tools/test_k3d_gpu.c $(K3D_CORE) user/kits/3d/k3d_trace
 	        tools/test_k3d_gpu.c $(K3D_CORE) user/kits/3d/k3d_trace.c user/kits/3d/k3d_gpu.c tools/eu_emu.c \
 	        -lm -lpthread
 
-#
-# FFmpeg's H.264 decoder and the kit's core on this Mac, held to FFmpeg's
-# own conformance checksums (`tools/test_h264.c`). The 95 objects are
-# compiled against Kosmos's headers and Kosmos's configuration, as for the
-# guest, and linked over the Mac's C library; `test_h264_libc.c` is the
-# three names the two libraries spell differently. The streams are fetched
-# once into `build/downloads/` and held to their sums
-# (`tools/fetch_conformance.py h264`).
-#
-FFMPEG_HOST_FLAGS := -std=c17 -O2 -w -ffreestanding -DHAVE_AV_CONFIG_H \
-                     $(FFMPEG_CPPFLAGS) $(FFMPEG_IFLAGS) -Iruntime/include \
-                     -Ikernel -Iuser/include
-FFMPEG_HOST_OBJS  := $(addprefix $(HOSTDIR)/ffmpeg/,$(addsuffix .o,$(FFMPEG_NAMES)))
-
-$(HOSTDIR)/ffmpeg/%.o: $(FFMPEG_DIR)/%.c user/kits/ffmpeg/ffmpeg.mk
-	@mkdir -p $(dir $@)
-	$(HOST_CC) $(FFMPEG_HOST_FLAGS) -c $< -o $@
-
-$(HOSTDIR)/kits/%.o: user/kits/ffmpeg/%.c user/kits/ffmpeg/%.h \
-                    user/kits/ffmpeg/ffmpeg_log.h
-	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -ffreestanding \
-	        $(FFMPEG_IFLAGS) -Iruntime/include -Ikernel -c $< -o $@
-
-FFMPEG_HOST_KITS := $(HOSTDIR)/kits/ffmpeg_log.o $(HOSTDIR)/kits/h264_core.o \
-                    $(HOSTDIR)/kits/aac_core.o
-
-$(HOSTDIR)/test_h264: tools/test_h264.c tools/test_h264_libc.c \
-                      user/kits/ffmpeg/h264_core.h $(FFMPEG_HOST_KITS) \
-                      $(FFMPEG_HOST_OBJS)
-	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ tools/test_h264.c \
-	        tools/test_h264_libc.c $(FFMPEG_HOST_KITS) $(FFMPEG_HOST_OBJS)
-
-# The AAC Kit's decoder, the same way, held to FFmpeg's PCM references for
-# twelve conformance streams, which `/lib/mp4.lua` reads on this Mac's Lua
-# through `tools/mp4index.lua` (`tools/test_aac.c`).
-# The Playback Kit's core (`docs/playback.md`, step 2): WAV, MP3 and AAC
+# The Playback Kit's core (`docs/playback.md`, step 2): WAV and MP3
 # through the input ring into a stream's ring, held to the decoders' own
-# output converted whole; the MP3 from `tools/mp3_conformance.txt`.
+# output converted whole, and a seek; the MP3 from
+# `tools/mp3_conformance.txt`. AAC was a third until M6d.
 $(HOSTDIR)/test_playback: tools/test_playback.c user/kits/playback/playback_core.c \
                           user/kits/playback/playback_core.h user/kits/mp3/minimp3.c \
-                          user/include/pcmconvert.h user/include/audioring.h \
-                          tools/test_h264_libc.c user/kits/ffmpeg/aac_core.h \
-                          $(FFMPEG_HOST_KITS) $(FFMPEG_HOST_OBJS) $(HOSTDIR)/lua
+                          user/include/pcmconvert.h user/include/audioring.h
 	@mkdir -p $(dir $@)
 	python3 tools/fetch_conformance.py mp3
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -DPB_HAVE_AAC=1 \
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 \
 	        -Iuser/include -Iruntime/upstream/minimp3 -o $@ tools/test_playback.c \
-	        user/kits/playback/playback_core.c user/kits/mp3/minimp3.c \
-	        tools/test_h264_libc.c $(FFMPEG_HOST_KITS) $(FFMPEG_HOST_OBJS)
-
-$(HOSTDIR)/test_aac: tools/test_aac.c tools/test_h264_libc.c \
-                     user/kits/ffmpeg/aac_core.h $(FFMPEG_HOST_KITS) \
-                     $(FFMPEG_HOST_OBJS) $(HOSTDIR)/lua
-	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ tools/test_aac.c \
-	        tools/test_h264_libc.c $(FFMPEG_HOST_KITS) $(FFMPEG_HOST_OBJS)
+	        user/kits/playback/playback_core.c user/kits/mp3/minimp3.c
 
 #
 # Broken-down time, `runtime/libc/time.c`, against the Mac's own libc
@@ -2984,7 +2906,7 @@ $(HOSTDIR)/test_yuv_x86: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.
 # The Record Kit's core on this Mac (`tools/test_record.c`), with the two
 # vendored halves beside it: `minih264e` and `minimp4` compiled on their own
 # terms, `-w`, as they are in the guest, and the core and the test with every
-# warning. `test_record_mp4.lua` then reads the file it wrote.
+# warning. `x86-record` reads what the app records with the Media Kit.
 #
 RECORD_HOST := -Iruntime/upstream/minih264 -Iruntime/upstream/minimp4
 
@@ -4049,9 +3971,9 @@ $(UBUILD)/apps/formattest.elf: $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) $(W
 # `user/kits/media/` on FFmpeg built whole, with its assembly, and dav1d -
 # `tools/w5_build.py`'s `ffmpeg` - and `mediatest.c`, which holds it to
 # this Mac, in no image but `mediatest.elf` yet. JetSki's image is the
-# kit's first user (M2). The vendored FFmpeg closure (`FFMPEG=1`, above)
-# stays in the system's image until Video moves to this kit (M6). No image
-# holds both: `apps` builds with `FULL=0`, which has no closure in it.
+# kit's first user (M2). The vendored closure of H.264 and AAC that the
+# system's image carried (`FFMPEG=1`) went in M6d, once Video had moved
+# here (M6c): this is the one FFmpeg in the tree.
 #
 FFMPEG_W5_LIBS := $(W5_DIR)/lib/libavformat.a $(W5_DIR)/lib/libavcodec.a \
                   $(W5_DIR)/lib/libswresample.a $(W5_DIR)/lib/libavutil.a \
@@ -4082,8 +4004,9 @@ $(UBUILD)/apps/mediatest.elf: $(USER_OBJS) $(MEDIA_OBJS) $(MEDIATEST_OBJS) $(POS
 # image Video and `listen` name with `-- kosmos: image media`, kept in
 # /Home/System/Media and seen as /Kosmos/Media (`tools/installed.py`), and
 # the one the new Music, Cut and Paint will run in. Like every image `make
-# apps` links it is `FULL=0`'s userland, so the vendored closure is never in
-# it beside the whole FFmpeg.
+# apps` links it is `FULL=0`'s userland. (Until M6d the system's image
+# carried a vendored closure of FFmpeg's H.264 and AAC, and this kept the
+# two apart.)
 #
 MEDIAKIT_OBJS := $(MEDIA_OBJS) $(UBUILD)/user/kits/media/media_kosmos.c.o
 
@@ -6481,7 +6404,7 @@ build/airports/airports.tsv: tools/airports.py
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_uacdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_amdgpu_decode $(HOSTDIR)/test_amdgpu_engine $(HOSTDIR)/test_intelgpu_lrc $(HOSTDIR)/test_intelgpu_ctx $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_debug $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_picture_decode $(HOSTDIR)/test_glb $(HOSTDIR)/test_blur $(HOSTDIR)/test_blur_x86 $(HOSTDIR)/test_lens $(HOSTDIR)/test_lens_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_terrain $(HOSTDIR)/test_extrude $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86 $(HOSTDIR)/llm_answer $(HOSTDIR)/llm_answer_x86
+host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_uacdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_amdgpu_decode $(HOSTDIR)/test_amdgpu_engine $(HOSTDIR)/test_intelgpu_lrc $(HOSTDIR)/test_intelgpu_ctx $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_debug $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_picture_decode $(HOSTDIR)/test_glb $(HOSTDIR)/test_blur $(HOSTDIR)/test_blur_x86 $(HOSTDIR)/test_lens $(HOSTDIR)/test_lens_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_terrain $(HOSTDIR)/test_extrude $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_synth $(HOSTDIR)/test_series $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86 $(HOSTDIR)/llm_answer $(HOSTDIR)/llm_answer_x86
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -6625,8 +6548,6 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	@# And what a library offers, read from its source - the IDE's
 	@# suggestions and its check of a name a library has not got (6n, step 5).
 	$(HOSTDIR)/lua tools/test_libdoc.lua
-	@# And an MP4's index, for the video player (roadmap 4e).
-	$(HOSTDIR)/lua tools/test_mp4.lua
 	@# JSON, and Cafesa3D's scenes read out of glTF: the samples written
 	@# here and read back, their two descriptions held to each other.
 	$(HOSTDIR)/lua tools/test_json.lua
@@ -6690,6 +6611,8 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.
 	$(HOSTDIR)/test_audioring
+	@# And the Series Kit: rings, steps, gaps, and ui.history drawn as before (S1).
+	$(HOSTDIR)/test_series
 	@# And what TCP keeps that arrived ahead of the next byte expected.
 	$(HOSTDIR)/test_tcpreasm
 	@# And the scanf family's scanner, which reads Quake's demos out of a
@@ -6764,18 +6687,10 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	$(HOSTDIR)/test_gunzip
 	@# Broken-down time, which FFmpeg's option parser and logger reach.
 	$(HOSTDIR)/test_time
-	@# And the H.264 Kit's decoder: eighteen conformance streams, every
-	@# picture's checksum against FFmpeg's own (`roadmap.md` 4e).
-	python3 tools/fetch_conformance.py h264
-	$(HOSTDIR)/test_h264
-	@# And the AAC Kit's: twelve streams against FFmpeg's PCM, every
-	@# channel within a step, and six channels mixed to two.
-	python3 tools/fetch_conformance.py aac
-	$(HOSTDIR)/test_aac
-	@# The camera's recording: H.264 in an MP4, decoded by FFmpeg, and read
-	@# by the video player's own MP4 reader (`roadmap.md` 6d 8f).
+	@# The camera's recording: H.264 in an MP4, decoded by FFmpeg (`roadmap.md`
+	@# 6d 8f). Video's reader holds it in `x86-record` since M6d, through the
+	@# Media Kit; `test_record_mp4.lua` read it with `mp4.lua` until then.
 	$(HOSTDIR)/test_record
-	$(HOSTDIR)/lua tools/test_record_mp4.lua
 	@# And the script that travels beside a released image, held to the
 	@# command line it gives QEMU (a stand-in QEMU prints it).
 	sh tools/test_runscript.sh
@@ -7107,7 +7022,7 @@ ide-tutorial-shots: $(HOSTDIR)/lua
 
 # The full ARM image, linked. `MEGA=1` is `FULL=1` now, the default, and
 # Doom and Quake are images of their own, so what this step proves is that
-# the AArch64 system image with the browser and FFmpeg in it still links -
+# the AArch64 system image with the browser in it still links -
 # and still ends inside the gigabyte below its heap, which `user/user.ld`
 # asserts. The suites before it build images of their own, x86-64's but for
 # the sandboxes', and `shot` after it builds x86-64's. Built rather than
