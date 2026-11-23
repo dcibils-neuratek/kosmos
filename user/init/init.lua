@@ -707,7 +707,7 @@ local function new_namespace()
   -- (`docs/mailweb.md`). A program names it `-- kosmos: image webkit`
   -- (`IMAGES.SYSTEM`).
   --
-  ns.SYSTEM_APPS = { "JetSki", "Video" }
+  ns.SYSTEM_APPS = { "JetSki", "Video", "Music" }
 
   function ns.mount_system_apps(disk)
     for _, name in ipairs(ns.SYSTEM_APPS) do

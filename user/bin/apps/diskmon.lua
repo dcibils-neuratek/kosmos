@@ -22,7 +22,6 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local drivelist = use("/Kosmos/Libraries/drivelist.lua")
-local netshares = use("/Kosmos/Libraries/netshares.lua")
 local theme = ui.theme
 local L = ui.layout
 
@@ -61,65 +60,14 @@ local function rate(b) return files.rate(b, bits) end
 local amount = files.size
 
 --------------------------------------------------------------------------
--- The drives: `/Home`, the sticks' volumes, the shares connected, and
--- memory - each with where its counts are read and what to draw it as.
+-- The drives: `drivelist.monitored()`, `/Home`, the sticks' volumes, the
+-- shares connected, and memory - each with where its counts are read and
+-- what to draw it as. It was this window's own, and moved into the drive
+-- list when System Monitor's Overview became its second reader
+-- (`docs/sysmonitor.md` S3).
 --------------------------------------------------------------------------
 
-local function find_drives()
-  local out = {}
-  local home_on
-
-  for _, d in ipairs(drivelist.drives()) do
-    for _, v in ipairs(d.volumes or {}) do
-      if drivelist.is_home(v) then
-        home_on = d
-      elseif drivelist.opens(v) then
-        -- Where the volume is served, from the one library that knows:
-        -- `/Sandboxes` for its partition, which a disk server counts - it
-        -- was read at `/Drives/<name>`, whose server counts nothing, and
-        -- Linux's disk being written showed as no activity at all (Diego on
-        -- the M700, 14 October 2026: "i dont see activity in the usb drive").
-        local path = drivelist.path(v)
-
-        out[#out + 1] = { key = path, path = path, name = d.name, kind = "usb",
-                          sub = "USB stick \u{b7} " .. path }
-      end
-    end
-  end
-
-  local disk = sys.disk and sys.disk()
-  local home = { key = "/Home", path = "/Home", kind = "disk", name = "Home" }
-
-  if home_on then
-    home.kind, home.name, home.sub = "usb", home_on.name, "USB stick \u{b7} /Home"
-  elseif type(disk) == "table" and (disk.bytes or 0) > 0 then
-    home.name, home.sub = "Internal drive", "the machine's disk \u{b7} /Home"
-  else
-    home.kind, home.name, home.sub = "mem", "Home", "in memory \u{b7} /Home"
-  end
-
-  table.insert(out, 1, home)
-
-  -- Shares connected now, each one's first: a share asked of a server not
-  -- connected would start a connection, which looking must never do.
-  local status = fs.share_status and fs.share_status() or {}
-  local listing = fs.list(netshares.ROOT) or {}
-
-  for _, s in ipairs(netshares.servers(status, listing, nil, {})) do
-    if s.state == "connected" and s.label then
-      for _, share in ipairs(fs.list(netshares.ROOT .. "/" .. s.label) or {}) do
-        local where = netshares.ROOT .. "/" .. s.label .. "/" .. share
-
-        out[#out + 1] = { key = where, path = where, kind = "share", name = share,
-                          sub = "a share on " .. tostring(s.name) .. " \u{b7} SMB" }
-      end
-    end
-  end
-
-  out[#out + 1] = { key = "/Temporary", path = "/Temporary", kind = "mem",
-                    name = "Memory", sub = "/Temporary" }
-  return out
-end
+local function find_drives() return drivelist.monitored() end
 
 --------------------------------------------------------------------------
 -- A drive's picture, as the drawing has each kind: an SSD, a stick, a share,

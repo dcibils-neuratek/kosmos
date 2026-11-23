@@ -158,4 +158,79 @@ function drivelist.path(volume)
   return h and h.path or ("/Drives/" .. volume.name)
 end
 
+--
+-- **The drives a monitor watches**, each with where its counts are read
+-- (`.device`, `.programs` under `path`) and what to draw it as: `/Home`
+-- first - the machine's disk, a stick, or memory - each stick's volumes
+-- that open, each share connected now, and `/Temporary`. Each is
+-- { key, path, name, kind = "disk" | "usb" | "share" | "mem", sub }.
+--
+-- Disk Monitor's own until System Monitor's Overview wanted the same list
+-- (`docs/sysmonitor.md` S3): one copy, here, where the drives are known.
+-- A share asked of a server not connected would start a connection, which
+-- looking must never do, so only those connected now are listed.
+--
+local shares_lib = nil
+
+local function netshares()
+  shares_lib = shares_lib or use("/Kosmos/Libraries/netshares.lua")
+  return shares_lib
+end
+
+function drivelist.monitored()
+  local out = {}
+  local home_on
+
+  for _, d in ipairs(drivelist.drives()) do
+    for _, v in ipairs(d.volumes or {}) do
+      if drivelist.is_home(v) then
+        home_on = d
+      elseif drivelist.opens(v) then
+        -- Where the volume is served, from the one library that knows:
+        -- `/Sandboxes` for its partition, which a disk server counts - it
+        -- was read at `/Drives/<name>`, whose server counts nothing, and
+        -- Linux's disk being written showed as no activity at all (Diego on
+        -- the M700, 14 October 2026: "i dont see activity in the usb drive").
+        local path = drivelist.path(v)
+
+        out[#out + 1] = { key = path, path = path, name = d.name, kind = "usb",
+                          sub = "USB stick \u{b7} " .. path }
+      end
+    end
+  end
+
+  local disk = sys.disk and sys.disk()
+  local home = { key = "/Home", path = "/Home", kind = "disk", name = "Home" }
+
+  if home_on then
+    home.kind, home.name, home.sub = "usb", home_on.name, "USB stick \u{b7} /Home"
+  elseif type(disk) == "table" and (disk.bytes or 0) > 0 then
+    home.name, home.sub = "Internal drive", "the machine's disk \u{b7} /Home"
+  else
+    home.kind, home.name, home.sub = "mem", "Home", "in memory \u{b7} /Home"
+  end
+
+  table.insert(out, 1, home)
+
+  -- Shares connected now, each one's first: a share asked of a server not
+  -- connected would start a connection, which looking must never do.
+  local status = fs.share_status and fs.share_status() or {}
+  local listing = fs.list(netshares().ROOT) or {}
+
+  for _, s in ipairs(netshares().servers(status, listing, nil, {})) do
+    if s.state == "connected" and s.label then
+      for _, share in ipairs(fs.list(netshares().ROOT .. "/" .. s.label) or {}) do
+        local where = netshares().ROOT .. "/" .. s.label .. "/" .. share
+
+        out[#out + 1] = { key = where, path = where, kind = "share", name = share,
+                          sub = "a share on " .. tostring(s.name) .. " \u{b7} SMB" }
+      end
+    end
+  end
+
+  out[#out + 1] = { key = "/Temporary", path = "/Temporary", kind = "mem",
+                    name = "Memory", sub = "/Temporary" }
+  return out
+end
+
 return drivelist

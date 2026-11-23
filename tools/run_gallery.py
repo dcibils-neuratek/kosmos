@@ -153,7 +153,10 @@ ABS = 32767
 # first by a program the prompt writes and runs - `use` is a program's, not
 # the prompt's: a title, a table and a chart.
 #
-OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
+# Music is not among them since 0.12.99: the new one is installed on the
+# disk and runs in `media.elf` (`docs/player.md` P5), as Video does, and the
+# gallery has no disk - `x86-player` draws it instead.
+OPEN = ["tracker", "gallery", "preferences", "terminal", "calc",
         "glgears", "machine", "procs", "sysmon", "netmon", "diskmon", "gpumon", "llmmon", "cube3d",
         "cafesa3d:--rendered", "ide:/Kosmos/Libraries/files.lua",
         "texteditor:/Temporary/Grooves.md", "groove:--play", "servers",

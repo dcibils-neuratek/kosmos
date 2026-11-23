@@ -401,6 +401,9 @@ suite("x86-film", "app", [FILM, "program:listen", AUDIO_X86],
       "run_film.py: listen plays MJPEG+AAC through video.lua, held sample for sample; Video opens it")
 suite("x86-film-load", "app", [FILM, "program:listen", "program:spin", AUDIO_X86],
       "run_film.py --load: the same film under spinners in the display band")
+suite("x86-player", "app", [["app:music", "lib:playqueue.lua", "lib:library.lua", "lib:tags.lua",
+                             "lib:pictures.lua", "kit:playback", "kit:media"], AUDIO_X86],
+      "run_player.py: the new Music in media.elf - an album played and heard, badges, library, mute")
 suite("arm-media", "app", ["app:music", "lib:media.lua", "lib:wav.lua", "lib:tags.lua", "kit:playback",
                            "kit:mp3", AUDIO_ARM],
       "run_media.py: media.lua plays, seeks and finishes a tone, heard in the WAV; Music's bar seeks")
@@ -482,9 +485,13 @@ suite("x86-autod", "app", [AUTOMATE, "program:autod", "lib:automations.lua", "ap
 suite("x86-automations", "app", ["app:automations", AUTOMATE, "program:autod", "lib:automations.lua",
                                  "app:calc"],
       "run_automationswin.py: the Automations window - Run now, history, switch, new, steps")
-suite("arm-sysapps x86-sysapps", "app", ["app:procs", "app:sysmon", "kit:series", "lib:procshare.lua", "lib:prockind.lua",
-                                         "lib:pulse.lua"],
-      "run_sysapps.py: Processes' columns, files, threads, privilege and sorting; Monitor")
+suite("arm-sysapps x86-sysapps", "app", ["app:procs", "lib:procshare.lua", "lib:prockind.lua",
+                                         "program:clocks", "lib:pulse.lua"],
+      "run_sysapps.py: Processes' columns, files, threads, privilege and sorting")
+suite("x86-sysmon", "app", ["app:sysmon", "lib:sysmon", "kit:series", "lib:meters.lua", "lib:pulse.lua",
+                            "lib:procshare.lua", "lib:drivelist.lua", "lib:gpu.lua", "lib:hardware.lua",
+                            "app:deskbar", "lib:indicators.lua"],
+      "run_sysmon.py: System Monitor - inventory rows 1-18, QEMU's absences, cost, pages, paces, Deskbar meters")
 suite("x86-scheduler", "app", ["app:scheduler", "lib:scheduling.lua", "files:kernel/sched*",
                                "lib:wm/gamemode.lua"],
       "run_scheduler.py: the Scheduler window - lanes, Fair (round-robin), 20 ms turn, game mode")

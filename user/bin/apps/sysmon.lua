@@ -3,62 +3,72 @@
 -- kosmos: icon App_Pulse
 -- kosmos: name System Monitor
 -- kosmos: section system
--- The processors, in a window: what each is doing now, and for the last
--- minute.
+-- kosmos: needs network
+-- Every monitor Kosmos has, in one window: the whole machine at a glance,
+-- and a page for each part of it (`docs/sysmonitor.md`, drawn in
+-- `docs/sysmonitor.html`).
 --
--- **As `docs/monitor.html` draws it**, agreed 11 October 2026. Diego: "cpu
--- monitor app needs a refresh", "Put the cpu name and model in the app not
--- in the title as it can't be shown entirely", "each core bar is
--- unnecessary", "Just leave the graphs with its history, cpu speed, kernel
--- and user colors and core number", "Show the cpu name and model in a nice
--- way", "Bars are a 'show cores bars' option". So:
+--   wm sysmon                  the Overview
+--   wm sysmon:cpu              the CPU page
+--   wm sysmon:--tell cpu       and a line a sample, for a suite
 --
---   - **the processor in a card of its own**, its maker small above its
---     model large, how many processors and the clock it is rated at under
---     them, and on the right how fast the machine is running now;
---   - **a graph a core**, its number, its speed and its share above it, the
---     last minute in it - the kernel's time in red under the thread's own in
---     green, as 24 September asked: "historical graph data ... and the
---     kernel and user space times is great in red and green";
---   - **each core's bar**, what this window was before, behind "Show each
---     core's bar" in the dots' menu, off every time a Monitor opens.
+-- Diego, 22 November 2026: "i want to have 1 place to see all the system
+-- complnents usage in a way i can see all at once, or specigic components
+-- with specific graphs", and "i dont want to loose any of the metrics we
+-- have now". **This was Monitor**, the processors in a window, and it is
+-- the file, the name and the icon System Monitor keeps (decision 1): its
+-- window is the CPU page now (`/Kosmos/Libraries/sysmon/cpu.lua`), with
+-- each core's temperature added, and it opens on the Overview
+-- (`sysmon/overview.lua`), which the Deskbar's meters open too. Step S3.
 --
--- **How many there are decides the shape** - "what if the processor has 16
--- cores?" - and the window is never taller than the screen: four across at
--- 84 tall up to eight, at 60 from nine to sixteen, eight across in a window
--- twice as wide to thirty-two, and past that one graph for the machine.
+-- **The window is the thinnest layer** (*Kits supply, applications
+-- orchestrate*): it counts nothing. Every number is the kernel's, a
+-- driver's or a server's, every difference is `meters.lua`'s, every graph
+-- the Series Kit's through `ui.history`, and what is asked when is
+-- `sysmon/sample.lua`'s. This holds the sidebar, the header and the dots,
+-- shows a page, and says what it shows with `--tell`.
+--
+-- **The sidebar always shows**, a row for each part of this machine with
+-- a live number. A part whose page is not here yet - Memory, Processes,
+-- the GPU, the drives, the network, the LLM server, until S4 to S8 move
+-- each in - opens the window that shows it today, which stays until its
+-- rows have been seen here (S9), so nothing is out of reach in between.
+-- Heat and power opens the CPU page, whose card holds the package's heat
+-- and power until its own page (S6).
+--
+-- **What it may do** (decision 7): `needs network`, for the network's
+-- counts, which Network Monitor held alone. Nothing it reads is secret.
+-- `needs processes` comes with End, in S4.
 --
 -- **How often it samples is chosen in the dots' menu** (`roadmap.md` 6p):
--- every half second, second or two seconds, and the history's sixty columns
--- are that many of them.
---
--- **Busy is ticks; the split is counters; the speed is the core's own.**
--- `sys.cpuload` says a core's busy and idle in scheduler ticks, its busy time
--- split into user and kernel in the counter's units, and the two totals the
--- core keeps of how fast it ran (`pulse.speeds`) - which QEMU's processor
--- does not keep, so there the card says the rated clock and the graphs only
--- their share. **A percentage or a speed is the difference between two
--- readings.**
+-- every half second, second or two seconds, for every page at once, and a
+-- history's sixty columns are that many of them.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
--- The kit's palette, not a copy: only the one `ui.lua` holds is the one it
--- changes when the desktop changes look.
+local files = use("/Kosmos/Libraries/files.lua")
 local theme = ui.theme
-local pulse = use("/Kosmos/Libraries/pulse.lua")
-local meters = use("/Kosmos/Libraries/meters.lua")
 local L = ui.layout
+local sample = use("/Kosmos/Libraries/sysmon/sample.lua")
+local cpu_page = use("/Kosmos/Libraries/sysmon/cpu.lua")
+local overview_page = use("/Kosmos/Libraries/sysmon/overview.lua")
 
-local load0 = sys.cpuload() or {}
-local CORES = math.max(1, #load0)
+local ARGS = tostring(args or "")
+local TELL = ARGS:find("%-%-tell") ~= nil     -- a line a sample, for its suite
 
--- The counter's rate, for the window's clock and for the speeds, read where
+local START = "overview"
+
+for word in ARGS:gmatch("%S+") do
+  if word:sub(1, 1) ~= "-" then START = word:lower() break end
+end
+
+-- The counter's rate, for the window's clock and for every rate, read where
 -- it is used as every piece of counter arithmetic here does
 -- (`architecture.md` §5).
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 --
 -- The three paces, and what sixty columns of each come to. A second to
--- start with, every time a Monitor opens: how often one window looks is
+-- start with, every time the window opens: how often one window looks is
 -- that window's to say, as a Terminal's text size is (`settings.lua`).
 --
 local PACES = {
@@ -70,100 +80,131 @@ local PACES = {
     foot = "A column every two seconds; the newest at the right." },
 }
 local pace = PACES[2]
+local bits = false
 
---
--- The drawing's measures, from the core count (`docs/monitor.html`,
--- "Sixteen cores").
---
-local WIDE     = CORES > 16 and CORES <= 32
-local MACHINE  = CORES > 32           -- one graph for all, a graph a core on asking
-local W        = WIDE and 1180 or 620
-local ACROSS   = WIDE and 8 or 4
-local GRAPH_H  = (CORES <= 8) and 84 or 60
-local GRAPH_TOP = 22                  -- a graph's line of words above it
-local GAP_X, GAP_Y = 12, 12
-local COLUMNS  = 60                   -- a column a sample
-local DIE      = 64                   -- the chip with its maker's mark (13 October, "B for the chip")
-local CHIP_FACE = ui.sized("title", 21)   -- the drawing's 18 against its 12, at Kosmos's larger "ui"
--- Its model, its facts and its features' line, and 13 above and below: 83
--- on the M700, from the 116 the drawing had before it was condensed.
--- And at least the chip and 13 above and below it, which B's chip makes 91.
-local CHIP_H   = math.max(26 + gfx.height(CHIP_FACE) + gfx.height("ui")
-                 * (#pulse.processor_features() > 0 and 2 or 1), DIE + 27)
-local BAR_ROW  = 40                   -- a row of the bars, when they are shown
-local BAR_SPLIT = CORES > 8           -- the bars in two columns
+local function pace_ticks(p) return counter_hz * p.half // 2 end
 
--- Fixed colours, as the drawing has them: red and green are a sign here,
--- the same in every look, and a graph's ground is dark in all of them
--- because that is what makes a column of colour readable at a glance.
-local USER_BAR    = 0xff2fa84f
-local KERNEL_BAR  = 0xffe5484d
-local USER_COL    = 0xff34c759
-local KERNEL_COL  = 0xffff453a
-local GRAPH_GROUND = 0xff16181d
+local S = sample.new(counter_hz, 60)
 
--- What the window shows, which the menu changes.
-local show_bars = false
-local per_core = not MACHINE
+S.pace_ticks = pace_ticks(pace)
 
---
--- What each core did since the last sample, for its line and its bar - the
--- processor's meter (`meters.cpu`): `cpu.user[c]` and `cpu.kernel[c]` in per
--- cent, and `cpu.speeds[c]` how fast each ran, in MHz, or nil where nobody
--- can say - and in each of the last sixty, for its graph, `{ kernel, user }`.
--- The heat beside the speed is `meters.heat`'s: two readings of `sys.info()`
--- a sample apart, on the counter's clock.
---
-local cpu = meters.cpu(counter_hz, load0, CORES)
-local hot = meters.heat(counter_hz, sys.info(), sys.ticks())
-local history, all_history = {}, {}
-
-for c = 1, CORES do history[c] = {} end
+local CORES = S.cores
+local WIDE = CORES > 16 and CORES <= 32
+local SIDE = 200                              -- the sidebar, `docs/sysmonitor.html`'s 206 less its rule
+local MW = WIDE and 1180 or 680               -- a page
+local W = SIDE + MW
 
 --------------------------------------------------------------------------
--- Where everything goes, for the window's height and for the drawing, from
--- one function: the bars shown or not change only what this says.
+-- The pages, and the windows that show a part until its page is here.
 --------------------------------------------------------------------------
 
-local function graphs_shown()
-  return per_core and CORES or 1
-end
+local P = cpu_page.processor(CORES)
+local function the_pace() return pace end
+local function in_bits() return bits end
 
-local function measure()
-  local inner = W - 2 * L.page_side
-  local m = { inner = inner }
-  local y = L.page_top
+local pages = {
+  cpu = cpu_page.new{ S = S, w = MW, pace = the_pace, processor = P },
+  overview = overview_page.new{ S = S, w = MW, pace = the_pace, bits = in_bits, processor = P },
+}
 
-  m.chip = y
-  y = y + CHIP_H + L.between
+local ELSEWHERE = {
+  memory    = "/Kosmos/Apps/procs.lua",
+  processes = "/Kosmos/Apps/procs.lua",
+  gpu       = "/Kosmos/Apps/gpumon.lua",
+  disks     = "/Kosmos/Apps/diskmon.lua",
+  network   = "/Kosmos/Apps/netmon.lua",
+  llm       = "/Kosmos/Apps/llmmon.lua",
+}
 
-  if show_bars then
-    local rows = BAR_SPLIT and (CORES + 1) // 2 or CORES
+-- Heat and power has the CPU page's card until its own page (S6).
+local STANDS_IN = { heat = "cpu" }
 
-    m.bars, m.bar_rows = y, rows
-    y = y + rows * BAR_ROW + (rows - 1) + 2 + L.between
+local showing = pages[START] and START or STANDS_IN[START] or "overview"
+
+print(("sysmon: processor %s | %s | %s"):format(P.maker, P.model, P.facts))
+print("sysmon: features " .. P.feature_words)
+print(("sysmon: chip %s | %s, %d square"):format(P.lid, P.part, pages.cpu.chip_size))
+
+if not S.gpu_lib then print("sysmon: no GPU tile: " .. tostring(S.gpu_why or "no GPU library")) end
+
+--------------------------------------------------------------------------
+-- The sidebar: a row a part, each with its number now.
+--------------------------------------------------------------------------
+
+local function rate(b) return files.rate(b, bits) end
+
+local function side_items()
+  local cpu = S.cpu
+  local t = S.totals
+  local items = {
+    { id = "overview", name = "Overview" },
+    { gap = true },
+    { heading = true, name = "The machine" },
+    { id = "cpu", name = "CPU", note = cpu.taken[1] and ("%d%%"):format(S:busy()) or nil },
+    { id = "memory", name = "Memory", note = t.used_mb and ("%.1f GB"):format(t.used_mb / 1024) or nil },
+    { id = "processes", name = "Processes", note = S.alive > 0 and tostring(S.alive) or nil },
+  }
+
+  if S.gpu_lib then
+    items[#items + 1] = { id = "gpu", name = "GPU",
+                          note = ("%d%%"):format(math.floor((S.gpu.busy or 0) * 100 + 0.5)) }
   end
 
-  m.heading = y
-  y = y + L.group + 8
+  if #S.drives > 0 then
+    items[#items + 1] = { id = "disks", name = "Disks" }
 
-  local n = graphs_shown()
-  local across = (n == 1) and 1 or ACROSS
-  local down = (n + across - 1) // across
+    for _, d in ipairs(S.drives) do
+      local m = S.drive[d.key]
 
-  m.graphs, m.across, m.down = y, across, down
-  m.graph_w = (inner - (across - 1) * GAP_X) // across
-  m.graph_h = (n == 1) and 120 or GRAPH_H
-  y = y + down * (GRAPH_TOP + m.graph_h) + (down - 1) * GAP_Y
+      items[#items + 1] = { id = "drive:" .. d.key, name = d.name, indent = true,
+                            note = m and not m.silent and rate(m.rin + m.rout) or nil }
+    end
+  end
 
-  m.foot = y + 10
-  m.h = m.foot + gfx.height() + L.page_foot
-  return m
+  if S.card then
+    items[#items + 1] = { id = "network", name = "Network", note = rate(S.net.rin + S.net.rout) }
+  end
+
+  if S.llm_now then
+    local s = S.llm_now
+
+    items[#items + 1] = { id = "llm", name = "LLM",
+                          note = s.state == "answering" and S.llm_last
+                                 and ("%.1f t/s"):format(S.llm_last) or "idle" }
+  end
+
+  local heat = S.hot.heat
+
+  items[#items + 1] = { gap = true }
+  items[#items + 1] = { heading = true, name = "Across them" }
+  items[#items + 1] = { id = "heat", name = "Heat and power",
+                        note = heat and heat.temp_c and ("%d °C"):format(heat.temp_c) or nil }
+  return items
 end
 
-local M = measure()
+local side = ui.sidebar{ x = 0, y = L.head + 2, w = SIDE - 1, h = 400, items = side_items(),
+                         selected = showing, follow = { "left", "top", "bottom" } }
 
-local win, err = ui.window{ title = "Monitor", w = W, h = L.head + M.h, x = 90, y = 130,
+--
+-- **Chosen by the pointer only, until every row is a page** (S9): the
+-- arrows choose as they land, and a row whose page is not here yet opens
+-- another window - so an arrow held down the list would open five.
+--
+side.focusable = false
+
+-- How tall the sidebar's rows are, for the window's height.
+local function side_need()
+  local last = side.items[#side.items]
+  local y, h = side:row_of(last.id)
+
+  return (side.y - L.head) + (y or 0) + (h or 0) + L.page_foot
+end
+
+local function height()
+  return math.max(side_need(), pages[showing].h)
+end
+
+local win, err = ui.window{ title = "System Monitor", w = W, h = L.head + height(), x = 90, y = 130,
                             header = true }
 
 if not win then
@@ -171,9 +212,20 @@ if not win then
   return
 end
 
+local side_ground = ui.view{ x = 0, y = 0, w = SIDE, h = L.head + height(),
+                             follow = { "left", "top", "bottom" } }
+
+function side_ground:draw(g)
+  g:fill(0, 0, self.w, self.h, "panel")
+  g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
+  g:text(L.head_in, (L.head - 1 - gfx.height("title")) // 2, "System Monitor",
+         theme.text, nil, "title")
+end
+
+side.h = height() - 2
+
 --------------------------------------------------------------------------
--- The header: the window's name, what the two colours mean, and the dots.
--- The processor is not here any more; it has a card of its own.
+-- The header: the page's name, what the two colours mean, and the dots.
 --------------------------------------------------------------------------
 
 local legend = ui.view{ w = 2 * (10 + 6) + 14 + gfx.measure("User")
@@ -185,7 +237,7 @@ function legend:draw(g)
   local ty = (self.h - fh) // 2
   local x = 0
 
-  for _, part in ipairs({ { USER_COL, "User" }, { KERNEL_COL, "Kernel" } }) do
+  for _, part in ipairs({ { cpu_page.USER_COL, "User" }, { cpu_page.KERNEL_COL, "Kernel" } }) do
     g:fill_round(x, y, 10, 10, part[1], 3)
     x = x + 10 + 6
     g:text(x, ty, part[2], theme.text_dim, theme.raised, "ui")
@@ -194,8 +246,8 @@ function legend:draw(g)
 end
 
 -- Declared here and defined with the sampling, which is what they change.
-local set_pace, set_bars, set_per_core
-local samples, paced_at = 0, sys.ticks()
+local set_pace, set_bars, set_per_core, set_bits, show
+local paced_at = sys.ticks()
 
 local more = ui.iconbutton{ icon = "more" }
 
@@ -209,360 +261,301 @@ more.on_click = function()
   end
 
   items[#items + 1] = { separator = true }
-  items[#items + 1] = { text = "Show each core's bar", mark = show_bars,
-                        on_choose = function() set_bars(not show_bars) end }
+  items[#items + 1] = { text = "Show each core's bar", mark = pages.cpu.show_bars,
+                        on_choose = function() set_bars(not pages.cpu.show_bars) end }
 
-  if MACHINE then
-    items[#items + 1] = { text = "Show a graph a core", mark = per_core,
-                          on_choose = function() set_per_core(not per_core) end }
+  if pages.cpu.machine then
+    items[#items + 1] = { text = "Show a graph a core", mark = pages.cpu.per_core,
+                          on_choose = function() set_per_core(not pages.cpu.per_core) end }
   end
 
-  local m = win:open_menu(win.origin_x + more.x, win.origin_y + L.head, items)
+  items[#items + 1] = { separator = true }
+  items[#items + 1] = { text = "Rates in bits a second", mark = bits,
+                        on_choose = function() set_bits(not bits) end }
+
+  local mx = more:in_window()
+  local m = win:open_menu(win.origin_x + mx, win.origin_y + L.head, items)
 
   -- Where the menu is, and how many samples the pace in use has taken in
-  -- how long by the counter - which is what `tools/run_sysapps.py` holds
+  -- how long by the counter - which is what `tools/run_sysmon.py` holds
   -- to the pace, since the words above the history could say a second
   -- while the clock kept another.
   if m then
     print(("sysmon: more menu at %d,%d, %d wide, rows of %d; %d samples in %.1f s")
-          :format(m.x, m.y, m.w, m.row, samples,
-                  (sys.ticks() - paced_at) / counter_hz))
+          :format(m.x, m.y, m.w, m.row, S.samples, (sys.ticks() - paced_at) / counter_hz))
   end
 end
 
-win:add(ui.header{ x = 0, y = 0, w = W, title = "Monitor",
-                   right = { legend, more },
-                   title_bar = true })
+local header = ui.header{ x = SIDE, y = 0, w = MW, title = pages[showing].title,
+                          right = { legend, more }, title_bar = true }
 
 --------------------------------------------------------------------------
--- The processor, said once and whole.
+-- The page shown, as one view; on the Overview a click on a tile opens its
+-- part, on the release over the tile it was pressed on.
 --------------------------------------------------------------------------
 
-local MAKER, MODEL, RATED = pulse.processor()
-local FACTS = ("%d %s"):format(CORES, CORES == 1 and "processor" or "processors")
+local body = ui.view{ x = SIDE, y = L.head, w = MW, h = pages[showing].h }
+local painted = { ticks = 0, kb = 0 }
+local open_part                       -- forward: a tile and the sidebar call it
 
-if RATED then FACTS = FACTS .. " \u{b7} rated " .. RATED end
+-- Where everything a suite presses is, in the window: once at the first
+-- paint, and the tiles again whenever they are laid out again.
+local told_tiles = nil
 
-print(("sysmon: processor %s | %s | %s"):format(MAKER, MODEL, FACTS))
+local function say_where()
+  local mx, my = more:in_window()
 
---
--- **What it can do, in one line under the facts** (`docs/monitor.html`,
--- "The processor's features"; Diego, 13 October: "It's a almost subtitle
--- kind of thing"): `pulse.features`, read once - a processor's features do
--- not change - its virtualization green when it is on.
---
-local FEATURES = {}
+  print(("sysmon: window at %d,%d; more at %d,%d"):format(
+        win.origin_x or 0, win.origin_y or 0, mx + more.w // 2, my + more.h // 2))
 
-for _, f in ipairs(pulse.processor_features()) do
-  FEATURES[#FEATURES + 1] = { f[1], f[2] and theme.good or nil }
-end
+  for _, it in ipairs(side.items) do
+    if it.id and not it.heading then
+      local y, h = side:row_of(it.id)
 
-do
-  local words = {}
-
-  for _, f in ipairs(FEATURES) do words[#words + 1] = f[1] end
-
-  print("sysmon: features " .. table.concat(words, " \u{b7} "))
-end
-
--- The chip, with its maker's mark and its part on the lid (`ui.processor_chip`):
--- "Core i7-6700" is "i7-6700" there, "Cortex-A76" is "A76".
--- A maker with no name here - QEMU's processor says only its model - is
--- the model's first word on the lid, and nothing under it.
-local ON_LID = (MAKER or "") ~= "" and MAKER or ((MODEL or ""):match("^(%S+)") or "")
-local PART = (MAKER or "") ~= "" and ((MODEL or ""):match("(%S+)$") or ""):gsub("^Cortex%-", "") or ""
-
-local function die(g, x, y)
-  ui.processor_chip(g, x, y, DIE, ON_LID, PART)
-end
-
-print(("sysmon: chip %s | %s, %d square"):format(ON_LID, PART, DIE))
-
--- How fast the machine runs now: the mean of the cores that said, in GHz.
-local function machine_speed()
-  local speeds = cpu.speeds
-
-  if not speeds then return nil end
-
-  local sum, n = 0, 0
-
-  for c = 1, CORES do
-    if speeds[c] then sum, n = sum + speeds[c], n + 1 end
-  end
-
-  return n > 0 and (sum / n / 1000) or nil
-end
-
--- The model and the speed, as the drawing has them: the title's face at 21,
--- asked for once - the card condensed (Diego, 13 October: "25% less tall
--- and more condensed"), the maker beside the model rather than above it.
-local BIG = CHIP_FACE
-
-local function draw_chip(g, x, y, w)
-  local ghz = machine_speed()
-  local big = ghz and ("%.2f GHz"):format(ghz) or RATED or ""
-  local note = ghz and "now, across all cores" or (RATED and "rated" or "")
-
-  -- How hot and how much power, where the processor says: "62 °C · 28 W",
-  -- and why it is held when it is, in place of the note.
-  local heat = hot.heat
-
-  if heat then
-    local parts = { heat.temp_c and ("%d °C"):format(heat.temp_c) or nil }
-
-    if heat.watts then parts[#parts + 1] = ("%.0f W"):format(heat.watts) end
-    if heat.held then parts[#parts + 1] = heat.held == "hot" and "held: too hot" or "held: power limit" end
-    if #parts > 0 then note = table.concat(parts, " · ") end
-  end
-
-  -- The kit's card (`ui.meter_card`), with the die as its picture.
-  ui.meter_card(g, x, y, w, CHIP_H, {
-    picture = die, size = DIE, model_face = BIG, inline = true, line = FEATURES,
-    -- The maker is on the chip now, so not beside the model as well.
-    maker = nil, model = MODEL, facts = FACTS,
-    now = big ~= "" and { { big, theme.text, BIG }, { note, theme.text_dim, "ui" } } or nil,
-  })
-end
-
---------------------------------------------------------------------------
--- Each core's bar, when asked for: what this window was before.
---------------------------------------------------------------------------
-
-local function speed_text(c)
-  local speeds = cpu.speeds
-
-  return speeds and speeds[c] and ("%.2f GHz"):format(speeds[c] / 1000) or nil
-end
-
-local function draw_bars(g, x, y, w)
-  local rows = M.bar_rows
-  local h = rows * BAR_ROW + (rows - 1) + 2
-
-  g:fill_round(x, y, w, h, theme.raised, L.card_r)
-  g:frame_round(x, y, w, h, theme.line_soft, L.card_r)
-
-  local cols = BAR_SPLIT and 2 or 1
-  local cw = w // cols
-  local lh, nh = gfx.height("label"), gfx.height()
-  local name_w = gfx.measure("100% user \u{b7} 100% kernel") + L.row_in
-  local ghz_w = gfx.measure("0.00 GHz") + 8
-  local pct_w = gfx.measure("100%")
-
-  for c = 1, CORES do
-    local col = (c - 1) // rows
-    local r = (c - 1) % rows
-    local rx = x + col * cw
-    local ry = y + 1 + r * (BAR_ROW + 1)
-    local u, k = cpu.user[c], cpu.kernel[c]
-
-    if r > 0 then g:fill(rx + 1, ry - 1, cw - 2, 1, theme.line_soft) end
-    if col > 0 and r == 0 then g:fill(rx, y + 1, 1, h - 2, theme.line_soft) end
-
-    local top = ry + (BAR_ROW - (lh + nh)) // 2
-
-    g:text(rx + L.row_in, top, "Core " .. c, theme.text, theme.raised, "label")
-    g:text(rx + L.row_in, top + lh, ("%d%% user \u{b7} %d%% kernel"):format(u, k),
-           theme.text_dim, theme.raised, "ui")
-
-    -- The bar: the kernel's part first, from the left, and the thread's
-    -- own after it - `docs/apps.html`'s `.bar i.k` and `.bar i.u`.
-    local bx = rx + L.row_in + name_w
-    local bw = cw - (bx - rx) - ghz_w - pct_w - 3 * L.row_in
-    local by = ry + (BAR_ROW - 6) // 2
-    local kw = (bw * k) // 100
-    local uw = (bw * u) // 100
-
-    g:fill_round(bx, by, bw, 6, theme.track, 3)
-    if kw + uw > 0 then g:fill_round(bx, by, math.max(kw + uw, 6), 6, USER_BAR, 3) end
-    if kw > 0 then g:fill_round(bx, by, math.max(kw, 6), 6, KERNEL_BAR, 3) end
-
-    local ghz = speed_text(c)
-    local pct = ("%d%%"):format(u + k)
-    local ty = ry + (BAR_ROW - nh) // 2
-
-    if ghz then
-      g:text(rx + cw - L.row_in - pct_w - L.row_in - gfx.measure(ghz), ty, ghz,
-             theme.text_dim, theme.raised, "ui")
-    end
-
-    g:text(rx + cw - L.row_in - gfx.measure(pct), ty, pct, theme.text, theme.raised, "ui")
-  end
-end
-
---------------------------------------------------------------------------
--- The graphs: a core each, or the machine's when there are too many.
---------------------------------------------------------------------------
-
---
--- `words` is a list, longest first: the first that fits beside the name is
--- drawn, and the name always wins. On the M700, four graphs across, "3.41
--- GHz · 100%" ran over "Core 1" - measured in the default face, drawn in
--- the interface's - which QEMU's processor, saying no speed, never showed.
---
-local function draw_graph(g, px, py, pw, ph, name, words, h)
-  g:text(px + 2, py + (GRAPH_TOP - 4 - gfx.height("label")) // 2, name,
-         theme.text, theme.window, "label")
-
-  local room = pw - 4 - gfx.measure(name, "label") - 10
-
-  for _, w in ipairs(words or {}) do
-    local ww = gfx.measure(w, "ui")
-
-    if ww <= room then
-      g:text(px + pw - 2 - ww, py + (GRAPH_TOP - 4 - gfx.height("ui")) // 2,
-             w, theme.text_dim, theme.window, "ui")
-      break
+      print(("sysmon: sidebar %s at %d,%d"):format(it.id, side.x + side.w // 2, side.y + y + h // 2))
     end
   end
-
-  -- The kit's graph of a minute (`ui.history`): kernel time at the floor,
-  -- user time on top of it.
-  ui.history.draw(g, px, py + GRAPH_TOP, pw, ph, h, {
-    mode = "stacked", columns = COLUMNS, ground = GRAPH_GROUND,
-    colours = { KERNEL_COL, USER_COL },
-  })
 end
 
-local function busy_now()
-  local sum = 0
+local function say_tiles()
+  if showing ~= "overview" then return end
 
-  for c = 1, CORES do sum = sum + cpu.user[c] + cpu.kernel[c] end
+  local key = {}
 
-  return sum // CORES
+  for _, t in ipairs(pages.overview.tiles) do
+    key[#key + 1] = ("%s at %d,%d %dx%d"):format(t.id, body.x + t.x, body.y + t.y, t.w, t.h)
+  end
+
+  key = table.concat(key, "; ")
+
+  if key ~= told_tiles then
+    told_tiles = key
+    print("sysmon: tiles " .. key)
+  end
 end
-
---------------------------------------------------------------------------
--- The page, as one view laid out by `measure`.
---------------------------------------------------------------------------
-
-local body = ui.view{ x = 0, y = L.head, w = W, h = M.h }
 
 function body:draw(g)
-  -- Where the window and its dots are, for whoever drives Monitor from
-  -- outside: once, at the first paint, when the header has placed them.
   if not self.told and more.x then
-    print(("sysmon: window at %d,%d; more at %d,%d"):format(
-          win.origin_x or 0, win.origin_y or 0,
-          more.x + more.w // 2, more.y + more.h // 2))
+    say_where()
     self.told = true
   end
 
-  local x = L.page_side
+  say_tiles()
 
-  draw_chip(g, x, M.chip, M.inner)
+  -- What a paint costs, by the counter and the collector, for `--tell`.
+  local t0, kb = sys.ticks(), collectgarbage("count")
 
-  if show_bars then draw_bars(g, x, M.bars, M.inner) end
+  pages[showing]:draw(g)
 
-  local right = ("%d %s \u{b7} %d%% busy"):format(CORES, CORES == 1 and "processor" or "processors",
-                                                  busy_now())
-
-  g:text(x + 3, M.heading + (L.group - gfx.height("heading")) // 2, pace.heading,
-         theme.text, theme.window, "heading")
-  g:text(x + M.inner - gfx.measure(right), M.heading + (L.group - gfx.height()) // 2, right,
-         theme.text_dim, theme.window, "ui")
-
-  if per_core then
-    for c = 1, CORES do
-      local col = (c - 1) % M.across
-      local row = (c - 1) // M.across
-      local px = x + col * (M.graph_w + GAP_X)
-      local py = M.graphs + row * (GRAPH_TOP + M.graph_h + GAP_Y)
-      local mhz = cpu.speeds and cpu.speeds[c]
-      local pct = ("%d%%"):format(cpu.user[c] + cpu.kernel[c])
-      local words = mhz and {
-        ("%.2f GHz \u{b7} %s"):format(mhz / 1000, pct),
-        ("%.1f GHz \u{b7} %s"):format(mhz / 1000, pct),
-        ("%.1f GHz"):format(mhz / 1000),
-        pct,
-      } or { pct }
-
-      draw_graph(g, px, py, M.graph_w, M.graph_h, "Core " .. c, words, history[c])
-    end
-  else
-    local ghz = machine_speed()
-
-    draw_graph(g, x, M.graphs, M.inner, M.graph_h, "Every core",
-               { (ghz and ("%.2f GHz \u{b7} "):format(ghz) or "") .. busy_now() .. "%",
-                 busy_now() .. "%" }, all_history)
-  end
-
-  g:text(x + 3, M.foot, pace.foot, theme.text_dim, theme.window, "ui")
+  painted.ticks, painted.kb = sys.ticks() - t0, collectgarbage("count") - kb
 end
 
-win:add(body)
+function body:mouse(action, x, y)
+  if showing ~= "overview" then return false end
+
+  return ui.click(self, action, x, y, function(px, py)
+    local t = pages.overview:tile_at(px, py)
+
+    if t then return t.id, function() open_part(t.opens, "tile " .. t.id) end end
+
+    return nil
+  end)
+end
+
+--------------------------------------------------------------------------
+-- What the window says with `--tell`: every row of the inventory each page
+-- shows, and what a sample cost (`sysmonitor.md`, *How it is tested* and
+-- *The busiest path*).
+--------------------------------------------------------------------------
+
+local function ms(ticks) return ticks * 1000 / counter_hz end
+
+local function tell_rows()
+  for _, name in ipairs({ "overview", "cpu" }) do
+    for _, r in ipairs(pages[name]:rows()) do
+      print(("sysmon: row %d %s: %s = %s"):format(r[1], name, r[2], r[3]))
+    end
+  end
+
+  print("sysmon: core temperatures " .. pages.cpu:temperatures())
+
+  local slow = {}
+
+  for _, src in ipairs(S.sources) do
+    if src.slow then slow[#slow + 1] = src.name end
+  end
+
+  print("sysmon: slow to answer " .. (#slow > 0 and table.concat(slow, ", ") or "none"))
+end
+
+local function tell_cost()
+  local c = S.cost
+
+  if not c then return end
+
+  -- A count that fell is a collection that ran inside the span: said so,
+  -- rather than as an allocation below nothing.
+  local function kb(n) return n >= 0 and ("%.1f KB"):format(n) or "a collection" end
+
+  print(("sysmon: cost of a sample: asking %.2f ms, differences %.2f ms, painting %.2f ms; "
+         .. "%d messages, %d calls; allocated %s sampling, %s painting")
+        :format(ms(c.asking), ms(c.taking), ms(painted.ticks), c.messages, c.calls,
+                kb(c.kb), kb(painted.kb)))
+end
 
 --------------------------------------------------------------------------
 -- The sampling, on the window kit's own clock set to the pace: a sample a
--- tick, for the lines, the bars and a column of each graph. A tick repaints
--- the window by itself (`window:run`), so nothing here asks for it.
+-- tick for every page. A tick repaints the window by itself
+-- (`window:run`), so nothing here asks for it.
 --------------------------------------------------------------------------
 
---
--- A sample: the processor's meter takes the reading - user and kernel a
--- core, the machine's, the speeds (`meters.cpu`, where `split` went) - and
--- the heat's takes `sys.info()`; this pushes a column of each graph.
---
+local relayout                        -- forward
+
 local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
-function sampler:tick()
-  local load = sys.cpuload()
+local function same_rows(a, b)
+  if #a ~= #b then return false end
 
-  if not cpu:take(load) then return end
-
-  for c = 1, CORES do
-    if cpu.taken[c] then ui.history.push(history[c], { cpu.kernel[c], cpu.user[c] }, COLUMNS) end
+  for i = 1, #a do
+    if a[i].id ~= b[i].id or a[i].gap ~= b[i].gap then return false end
   end
 
-  ui.history.push(all_history, { cpu.all_kernel, cpu.all_user }, COLUMNS)
-  hot:take(sys.info(), sys.ticks(), load)
-  samples = samples + 1
+  return true
 end
 
-win:add(sampler)
+function sampler:tick()
+  S:take()
 
---
--- The window grown or shrunk to what is shown, and everything placed again
--- by `measure`.
---
-local function relayout(why)
-  M = measure()
-  body.h = M.h
+  -- The sidebar's numbers, and its rows when a part came or went.
+  local items = side_items()
+  local moved = not same_rows(items, side.items)
 
-  local ok, w, h = win:resize(W, M.h)
+  side.items = items
 
-  print(("sysmon: %s, %s"):format(why, ok and ("%dx%d"):format(w, h) or "not resized"))
+  if pages.overview:stale() then
+    pages.overview:arrange()
+    moved = true
+  end
+
+  if moved then relayout("the parts changed") say_where() end
+
+  if TELL and (S.samples == 3 or S.samples % 10 == 0) then
+    tell_rows()
+    tell_cost()
+  end
+end
+
+--------------------------------------------------------------------------
+-- The window grown or shrunk to what is shown, and painted at once.
+--------------------------------------------------------------------------
+
+function relayout(why)
+  local page = pages[showing]
+
+  page:measure()
+  body.h = page.h
+
+  local ok, w, h = win:resize(W, L.head + height())   -- as it was opened
+
+  -- The page's own height and the sidebar's beside the window's: the
+  -- window is the taller of the two, so on a machine of few cores the
+  -- sidebar decides it and the page alone grows (`x86-sysmon`).
+  print(("sysmon: %s, %s, its page %d, the sidebar %d"):format(why,
+        ok and ("%dx%d"):format(w, h) or "not resized", page.h, side_need()))
   win:paint()
 end
 
+-- A page shown: the header's name, the sidebar's choice and the page, all
+-- in the same paint as the click that asked for them.
+function show(id, why)
+  showing = id
+  side.selected = id
+  header.title = pages[id].title
+  told_tiles = nil
+  relayout(why or ("page " .. id))
+
+  local first = id == "cpu" and pages.cpu:heading() or ("tiles " .. pages.overview:names())
+
+  print(("sysmon: page %s shown: %s"):format(id, first))
+end
+
+--
+-- A part opened, from the sidebar or a tile: its page, the page standing
+-- in for it, or the window that shows it until its page is here - and
+-- then the sidebar's choice stays where it was, since this window did not
+-- change page.
+--
+function open_part(id, from)
+  id = tostring(id or "")
+
+  if id:match("^drive:") then id = "disks" end
+
+  local page = pages[id] and id or STANDS_IN[id]
+
+  if page then
+    show(page, from)
+    return
+  end
+
+  side.selected = showing
+
+  local program = ELSEWHERE[id]
+
+  if program then
+    fs.send("/Running/wm", { type = "launch", program = program })
+    print(("sysmon: %s opens %s, until its page is here"):format(id, program))
+  end
+
+  win:paint()
+end
+
+side.on_select = function(_, id) open_part(id, "sidebar " .. id) end
+
 function set_bars(on)
-  show_bars = on
+  pages.cpu.show_bars = on
+  if showing ~= "cpu" then show("cpu") end
   relayout(on and "bars shown" or "bars hidden")
 end
 
 function set_per_core(on)
-  per_core = on
+  pages.cpu.per_core = on
+  if showing ~= "cpu" then show("cpu") end
   relayout(on and "a graph a core" or "one graph")
 end
 
+function set_bits(on)
+  bits = on
+  print("sysmon: rates in " .. (on and "bits" or "bytes") .. " a second")
+  win:paint()
+end
+
 --
--- A pace chosen: the window's clock set to it, and the history begun
+-- A pace chosen: the window's clock set to it, and every history begun
 -- again, since columns taken at one pace drawn beside columns at another
 -- would be a time axis that lies. The words change at once; the first
 -- column arrives a pace later, from a reading taken now.
 --
 function set_pace(p)
   pace = p
-  win.tick_every = counter_hz * p.half // 2
+  win.tick_every = pace_ticks(p)
   win.last_tick = sys.ticks()
-  cpu:restart(sys.cpuload())
-  samples, paced_at = 0, win.last_tick
-
-  for c = 1, CORES do history[c] = {} end
-  all_history = {}
+  S.pace_ticks = win.tick_every
+  S:restart()
+  paced_at = win.last_tick
 
   print(("sysmon: %s, %s"):format(p.menu:lower(), p.heading:lower()))
+  win:paint()
 end
 
+win:add(side_ground)
+win:add(side)
+win:add(header)
+win:add(body)
+win:add(sampler)
+
+print(("sysmon: page %s shown: %s"):format(showing,
+      showing == "cpu" and pages.cpu:heading() or ("tiles " .. pages.overview:names())))
+
 -- After the sampler, which is what makes the kit read a clock at all.
-win.tick_every = counter_hz * pace.half // 2
+win.tick_every = pace_ticks(pace)
 win:run()

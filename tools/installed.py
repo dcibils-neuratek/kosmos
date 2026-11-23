@@ -44,7 +44,21 @@ APPS = "/Home/Apps"
 # carries its `package.txt` - this build's, from `packages.py` - so a
 # netboot can tell a copy from another build and bring this one
 # (`systemapps.lua`).
-SYSTEM = {"JetSki", "Video"}
+#
+# **Read from `init.lua`, the one list** - it was written here as well, and
+# Music was added to this copy alone on 23 November, which put it on the
+# disk where the guest never looked (`testing.md` 18.1020).
+def system_apps():
+    with open(os.path.join(ROOT, "user", "init", "init.lua")) as f:
+        found = re.search(r"ns\.SYSTEM_APPS = \{([^}]*)\}", f.read())
+
+    if found is None:
+        sys.exit("installed: no ns.SYSTEM_APPS in user/init/init.lua")
+
+    return set(re.findall(r'"([^"]+)"', found.group(1)))
+
+
+SYSTEM = system_apps()
 SYSTEM_APPS = "/Home/System/Apps"
 
 # **Kosmos's WebKit, on the disk** (Diego, 15 November 2026: "One WebKit
@@ -190,6 +204,17 @@ def film_pairs(arch, apps):
     objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-elf-") + "objcopy"
     guest = SYSTEM_APPS + "/Video"
     mine = ["%s:%s/%s" % (here, guest, inside) for here, inside in programs("Video")]
+    return mine + media(arch, apps, staged, objcopy)
+
+
+def player_pairs(arch, apps):
+    """What a suite that plays music puts on its disk (`docs/player.md` P5):
+    the Music app's folder and `media.elf`, the image it runs in, as the
+    install would - `film_pairs` for the other application on the image."""
+    staged = os.path.join(ROOT, "build", "installed", arch)
+    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-elf-") + "objcopy"
+    guest = SYSTEM_APPS + "/Music"
+    mine = ["%s:%s/%s" % (here, guest, inside) for here, inside in programs("Music")]
     return mine + media(arch, apps, staged, objcopy)
 
 

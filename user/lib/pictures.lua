@@ -6,6 +6,7 @@
 --   local s, why = pictures.from("64x64/App_Mail.png")              -- an asset
 --   local keep = pictures.kept(4)      -- files decoded once, four at most
 --   local s = keep:get(name)
+--   local name = pictures.part(path, offset, bytes, mime)  -- a picture inside a file
 --
 -- **A path beginning `/` is a file; any other name is carried in the image**
 -- and handed over by `sys.asset` - the icons, the test pictures, the
@@ -31,9 +32,41 @@ local DECODERS = {
   jpeg = function(...) return gfx.jpeg(...) end,
 }
 
+--
+-- **A picture inside another file**, by a name like any other's: a song's
+-- cover - an ID3 `APIC`, a FLAC `PICTURE` block, an MP4 `covr` - which
+-- `tags.lua` finds in place and says as an offset and a length, and which
+-- is never a file of its own (`docs/player.md`, Albums). The name is
+-- `part:<offset>:<bytes>:<kind>:<path>`, so everything that takes a
+-- picture's name takes it - `ui.picture`, a thumbnail (`thumb:WxH:part:...`)
+-- - and the span is read straight into pages, as a file is, never into a
+-- Lua string. `kind` is "png" or "jpg", from the tag's MIME type; nil when
+-- the tag names neither, since a decoder chosen by guessing is not one.
+--
+local MIMES = { ["image/png"] = "png", ["image/jpeg"] = "jpg", ["image/jpg"] = "jpg" }
+
+function pictures.part(path, offset, bytes, mime)
+  local kind = MIMES[tostring(mime or ""):lower()]
+
+  offset, bytes = math.tointeger(offset), math.tointeger(bytes)
+
+  if not kind or not offset or not bytes or offset < 0 or bytes <= 0 then return nil end
+
+  return ("part:%d:%d:%s:%s"):format(offset, bytes, kind, tostring(path))
+end
+
+local function part_of(name)
+  local offset, bytes, kind, path = tostring(name):match("^part:(%d+):(%d+):(%a+):(/.+)$")
+
+  if not offset then return nil end
+
+  return path, tonumber(offset), tonumber(bytes), kind
+end
+
 -- The decoder a name's suffix asks for, and the suffix.
 function pictures.decoder(name)
-  local suffix = tostring(name):lower():match("%.([%a]+)$")
+  local _, _, _, kind = part_of(name)
+  local suffix = kind or tostring(name):lower():match("%.([%a]+)$")
 
   return suffix and DECODERS[suffix], suffix
 end
@@ -46,7 +79,9 @@ function pictures.from(name)
     return nil, "this opens PNG and JPEG, and that is neither"
   end
 
-  if name:sub(1, 1) ~= "/" then
+  local path, offset, span = part_of(name)
+
+  if not path and name:sub(1, 1) ~= "/" then
     local bytes, why = sys.asset(name)
 
     if not bytes then return nil, why end
@@ -60,19 +95,32 @@ function pictures.from(name)
     return made
   end
 
-  local size = (fs.getattr(name) or {}).size
+  local size, done, region
 
-  if not size or size == 0 then
-    return nil, "cannot read " .. tostring(name)
+  if path then
+    -- A span of the file, read where it is: `read_into` puts what it read
+    -- at the region's start whatever the offset, so one read is the span.
+    size = span
+    region = regions.make(size)
+
+    if not region then return nil, "no memory for a picture that size" end
+
+    done = fs.read_into(path, region.cap, offset, size) or 0
+  else
+    size = (fs.getattr(name) or {}).size
+
+    if not size or size == 0 then
+      return nil, "cannot read " .. tostring(name)
+    end
+
+    region = regions.make(size)
+
+    if not region then
+      return nil, "no memory for a picture that size"
+    end
+
+    done = regions.read_file(name, region, size) or 0
   end
-
-  local region = regions.make(size)
-
-  if not region then
-    return nil, "no memory for a picture that size"
-  end
-
-  local done = regions.read_file(name, region, size) or 0
 
   if done ~= size then
     regions.free(region)
@@ -116,7 +164,7 @@ function pictures.kept(bound)
 
     cache[name] = made or false
 
-    if made and name:sub(1, 1) == "/" then
+    if made and (name:sub(1, 1) == "/" or name:sub(1, 5) == "part:") then
       files[#files + 1] = name
 
       while #files > bound do

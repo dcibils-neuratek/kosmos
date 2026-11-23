@@ -811,6 +811,10 @@ SUITES = [
     # level on one and a ring on the other.
     Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
     Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
+    # System Monitor (`docs/sysmonitor.md` S3): the inventory's rows 1-18 on
+    # their pages, QEMU's absences, the cost of a sample, pages by a click,
+    # Monitor's paces held to the counter, and the Deskbar's meters.
+    Suite("x86-sysmon", ["python3", "tools/run_sysmon.py", X86], x86=True),
     # The Scheduler: its lanes, Fair on every core and back, a turn, and
     # game mode said to be next (`docs/scheduler.md` G1-G2).
     Suite("x86-scheduler", ["python3", "tools/run_scheduler.py", X86], x86=True),
@@ -1214,6 +1218,11 @@ SUITES = [
     Suite("arm-film", ["python3", "tools/run_film.py", ARM, "build/user-test/apps"]),
     Suite("x86-film", ["python3", "tools/run_film.py", X86,
                          "build/user-x86_64-test/apps"], x86=True),
+    # The new Music (`docs/player.md` P5), in media.elf from its disk: an
+    # album of FLACs played and heard, its badges, the library's words, the
+    # master muted - and its control, the queue never fed.
+    Suite("x86-player", ["python3", "tools/run_player.py", X86,
+                           "build/user-x86_64-test/apps"], x86=True),
     # **And with every core busy** (`docs/playback.md`, step 3): the Video
     # app's sound on the Playback Kit's thread in the audio band, under four
     # display-band spinners - on a quiet machine, as `arm-synth-load` is,

@@ -238,6 +238,7 @@ BIN_LUA := $(wildcard user/bin/apps/*.lua) $(wildcard user/bin/apps/*/*.lua) \
 LUA_FILES := user/init/init.lua $(BIN_LUA) $(wildcard user/installed/*/*.lua) \
              $(wildcard user/lib/*.lua) $(wildcard user/lib/translators/*.lua) \
              $(wildcard user/lib/wm/*.lua) $(wildcard user/lib/groove/*.lua) \
+             $(wildcard user/lib/sysmon/*.lua) \
              $(wildcard user/tests/*.lua)
 
 SRCS := boot/start.S \
@@ -3574,6 +3575,8 @@ WM_ROOTED := --rooted user/lib/wm wm/
 #
 GROOVE_PARTS := $(wildcard user/lib/groove/*.lua)
 GROOVE_ROOTED := --rooted user/lib/groove groove/
+SYSMON_PARTS := $(wildcard user/lib/sysmon/*.lua)
+SYSMON_ROOTED := --rooted user/lib/sysmon sysmon/
 
 #
 # **luacheck**, for the IDE's checking (`roadmap.md` 6n, step 4): vendored
@@ -3586,13 +3589,14 @@ LUACHECK := $(shell find runtime/upstream/luacheck/src/luacheck -name '*.lua' 2>
 LUACHECK_ROOTED := --rooted runtime/upstream/luacheck/src/luacheck luacheck/
 
 $(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(SOLAR_DATA) $(TRANSLATORS) \
-                    $(WM_PARTS) $(GROOVE_PARTS) $(LUACHECK) tools/progs2c.py $(HOSTDIR)/lua.ok
+                    $(WM_PARTS) $(GROOVE_PARTS) $(SYSMON_PARTS) $(LUACHECK) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
 	    $(SOLAR_ROOTED) $(SOLAR_DATA) \
 	    $(TRANSLATORS_ROOTED) $(TRANSLATORS) \
 	    $(WM_ROOTED) $(WM_PARTS) \
 	    $(GROOVE_ROOTED) $(GROOVE_PARTS) \
+	    $(SYSMON_ROOTED) $(SYSMON_PARTS) \
 	    $(LUACHECK_ROOTED) $(LUACHECK)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok

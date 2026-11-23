@@ -16,9 +16,11 @@ about three seconds of tone - one before the seek and two after - have to come
 out, at the level they went in. Six would mean the seek moved the clock and not
 the reading.
 
-**In the window**, Music is opened on the same tone, its Play button clicked
-and then its bar, three quarters along: about three more seconds have to come
-out, not six, which is what a bar that does not seek sounds like.
+**Music's window is not here any more.** It was opened on the same tone, its
+Play pressed and heard, drawn in a scalable face over a cover, and pointed at
+a folder that is not there; the Music that replaced the VOX pilot is installed
+on a disk and runs inside `media.elf`, so those checks are `run_player.py`'s,
+held to what the new window draws and says.
 
 Usage: run_media.py [IMAGE]
 """
@@ -747,70 +749,13 @@ def main():
               % (after_mute - during_mute))
 
         #
-        # The window: Music on the same tone, Play, then the bar.
+        # **Music's window was here**, and is `run_player.py`'s now: the VOX
+        # pilot it opened on this tone is gone from the image, and the Music
+        # that replaced it is installed on a disk and runs inside
+        # `media.elf`, which this diskless image does not carry. Its play arrow pressed
+        # and heard, its window drawn over a cover, and a path that is not
+        # there named, are checked there against what it really draws.
         #
-        mark = len(guest.seen)
-        guest.type("wm music:/Home/tone.wav")
-
-        where = None
-        deadline = time.monotonic() + 60
-
-        while where is None and time.monotonic() < deadline:
-            where = re.search(r"wm: window Music at (\d+),(\d+) (\d+)x(\d+)",
-                              guest.seen[mark:])
-            time.sleep(0.25)
-
-        if where is None:
-            raise Failure("Music's window was never placed:\n"
-                          + guest.seen[mark:][-1200:])
-
-        wx, wy, ww, wh = (int(v) for v in where.groups())
-        wy, wh = wy + KIT_HEAD, wh - KIT_HEAD      # under the kit's header
-        time.sleep(2.0)
-
-        width, height, _ = parse_ppm(guest.screendump())
-
-        # The logged position is the corner of what the window draws in, and
-        # a view's coordinates start there (`run_screenshot.py`'s `covers`).
-        def click(x, y):
-            guest.mouse_to(*_to_tablet(wx + x, wy + y, width, height))
-            time.sleep(0.3)
-            guest.mouse_button(True)
-            time.sleep(0.15)
-            guest.mouse_button(False)
-            time.sleep(0.3)
-
-        #
-        # **What this phase is for is sound, and it used to click twice.**
-        #
-        # The window was rebuilt on 15 September to `docs/music.html`, and
-        # both points moved with it: Play at (10, 168) and a bar at y=200
-        # became a transport row and a seek bar above it. Aimed at the old
-        # places it pressed nothing and heard 0.00 seconds; aimed at the new
-        # ones it pressed play and heard 0.35, because the second click asked
-        # a six-second tone to seek three quarters along and then measured
-        # what was left of it.
-        #
-        # So it presses play and listens. **Hit-testing is checked where it
-        # belongs** - the window phase below finds the cover, the title and
-        # the play arrow on the screen - and a check about whether sound comes
-        # out should not fail because a control moved four pixels.
-        #
-        click(190, 160)                         # the play arrow, mid-transport
-        time.sleep(5.0)
-
-        total, _ = settled(wav_out)
-        window = total - first
-
-        check(window >= 2.0,
-              "pressing Music's play arrow should have sounded for seconds and "
-              "%.2f came out: none at all is a press that missed, and a "
-              "fraction is a window that started and stopped" % window)
-
-        errors = [l.strip() for l in guest.seen[mark:].splitlines()
-                  if l.strip().startswith("music:")]
-
-        check(not errors, "Music said something went wrong: %r" % errors)
     except Failure as e:
         fails.append(str(e))
     finally:
@@ -1144,7 +1089,8 @@ def main():
 
             #
             # **A 64-pixel cover drawn into a 32-pixel box**, which is what
-            # Music's window does at 78 and at 44. Before the image command
+            # a player's window does with a cover (Music's is checked in
+            # `run_player.py`). Before the image command
             # carried a drawn size this was a crop, so the box held the
             # picture's top-left quarter - the same colour, and no way to
             # tell. The check is that the colour fills the box it was given:
@@ -1180,159 +1126,6 @@ def main():
                   "the cover drawn at half its size shows %d of its four "
                   "colours (%r), so the picture was cropped rather than "
                   "scaled." % (len(quarters), sorted(quarters)))
-    except Failure as e:
-        fails.append(str(e))
-    finally:
-        guest.close()
-
-    #
-    # **Music's own window, drawn as `docs/music.html` draws it.**
-    #
-    # The design is the pilot of a second look for the whole system, so what
-    # is checked is what a person would notice: the cover of the song out of
-    # the file itself, at the size the design gives it; the title larger than
-    # the text under it; and the transport's play arrow a triangle rather
-    # than the staircase of fills a rectangle-only kit would have drawn.
-    #
-    # Each of those is one of the pieces built for this window - 18.78 to
-    # 18.83 - seen together in the one place they were built for.
-    #
-    guest = Guest(image, 600)
-
-    try:
-        guest.wait_for(PROMPT, "reached a shell")
-        guest.type('fs.write("/Home/Preferences/appearance", { palette = "dark", fonts = { '
-                   'ui = { font = "ibmplexsans", px = 14 } } }) '
-                   'print("music-face" .. "-ready")')
-        guest.wait_for("music-face-ready", "chose a scalable face")
-        guest.type("wm music:/Home/cover.mp3")
-
-        mark = len(guest.seen)
-        placed, deadline = None, time.monotonic() + 60
-
-        while placed is None and time.monotonic() < deadline:
-            found = re.search(r"wm: window Music at (\d+),(\d+) (\d+)x(\d+)",
-                              guest.seen)
-            if found:
-                fx, fy, fw, fh = (int(v) for v in found.groups())
-                placed = (fx, fy + KIT_HEAD, fw, fh - KIT_HEAD)   # under the kit's header
-            time.sleep(0.3)
-
-        if placed is None:
-            check(False, "Music's window never opened:\n" + guest.seen[mark:][-800:])
-        else:
-            wx, wy, ww, wh = placed
-            time.sleep(3.0)
-            width, height, px = parse_ppm(guest.screendump())
-
-            def at(dx, dy):
-                o = ((wy + dy) * width + wx + dx) * 3
-                return (px[o], px[o + 1], px[o + 2])
-
-            # The cover, in the 78-pixel square the design puts it in: four
-            # quarters, so a crop of one would show a single colour.
-            corners = {at(30, 30), at(75, 30), at(30, 75), at(75, 75)}
-
-            check(len(corners) == 4,
-                  "the cover in Music's window shows %d of its four colours "
-                  "(%r), so the picture in the file did not reach the square "
-                  "at the size the design draws it" % (len(corners),
-                                                       sorted(corners)))
-
-            # The title, larger than the line above it. Rows of ink, as
-            # `run_screenshot.py`'s text-size phase counts them.
-            def ink_rows(top, bottom, x0, x1):
-                rows = 0
-
-                for y in range(wy + top, min(wy + bottom, height)):
-                    for x in range(wx + x0, min(wx + x1, width)):
-                        o = (y * width + x) * 3
-
-                        if px[o] > 150 and px[o + 1] > 150 and px[o + 2] > 150:
-                            rows += 1
-                            break
-
-                return rows
-
-            artist = ink_rows(38, 54, 104, 360)
-            title = ink_rows(54, 84, 104, 360)
-
-            check(title > artist,
-                  "Music's title is %d rows of ink and the artist above it is "
-                  "%d, so the title is not larger than the text" % (title, artist))
-
-            # The play arrow: ink at the triangle's fat end and none beyond
-            # its point, which is what tells a triangle from a rectangle.
-            wide_end = at(180, 155)
-            past_point = at(206, 142)
-
-            check(wide_end != past_point,
-                  "the play arrow draws the same colour at its base and past "
-                  "its point (%r), so it is a rectangle rather than a triangle"
-                  % (wide_end,))
-
-            #
-            # **The window's own ground reaches its bottom edge.**
-            #
-            # Diego dragged this window wider on 16 September and the design
-            # stayed the size it opened at, with the rest of the window the
-            # grey a new surface is filled with - the views were placed once
-            # and nothing moved them. The relayout is checked properly in the
-            # display harness, where a window can be made to grow; what is
-            # worth asserting here is the thing that fault looked like: the
-            # compositor's fill showing through, which is `0xff202020` and is
-            # not a colour this window's palette contains.
-            #
-            fill_grey = (0x20, 0x20, 0x20)
-            showing = 0
-
-            for dy in range(8, wh - 8, 4):
-                for dx in range(8, ww - 8, 4):
-                    o = ((wy + dy) * width + wx + dx) * 3
-
-                    if (px[o], px[o + 1], px[o + 2]) == fill_grey:
-                        showing += 1
-
-            check(showing == 0,
-                  "%d places in Music's window are the grey a new surface is "
-                  "filled with, so part of the window is not being drawn"
-                  % showing)
-
-        mark = len(guest.seen)
-        guest.proc.stdin.write(b"\x17q")
-        guest.proc.stdin.flush()
-        time.sleep(2.0)
-    except Failure as e:
-        fails.append(str(e))
-    finally:
-        guest.close()
-
-    #
-    # **And a folder Music cannot list says why.** On the ThinkPad Music said
-    # "(nothing to play in /Home)" beside a Tracker window listing the MP3, and
-    # could not have said anything else: a list that failed and a folder with
-    # no music in it looked the same. Pointed at a folder that is not there, it
-    # has to name the folder and the reason, in the log `diagnose` keeps. A
-    # machine of its own, because the shell is inside `wm` until it ends.
-    #
-    guest = Guest(image, 600)
-
-    try:
-        guest.wait_for(PROMPT, "reached a shell")
-        mark = len(guest.seen)
-        guest.type("wm music:/Home/nowhere/song.mp3")
-
-        said = None
-        deadline = time.monotonic() + 60
-
-        while said is None and time.monotonic() < deadline:
-            said = re.search(r"music: could not list /Home/nowhere: \S",
-                             guest.seen[mark:])
-            time.sleep(0.25)
-
-        check(said is not None,
-              "Music pointed at a folder that is not there did not say it "
-              "could not list it, and why:\n" + guest.seen[mark:][-800:])
     except Failure as e:
         fails.append(str(e))
     finally:
@@ -1539,11 +1332,10 @@ def main():
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on media.lua, heard (the Super Nintendo paused, resumed and switched between 1x and 2x from its menus and the P key, continuing the game where it was each time and starting it again from Reset, with its cartridge save and its state on the disk, Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, the level bar drawn at the level the keys set and gone after, a tone played, sought and "
+    print("PASS: %d checks on media.lua, heard (the Super Nintendo paused, resumed and switched between 1x and 2x from its menus and the P key, continuing the game where it was each time and starting it again from Reset, with its cartridge save and its state on the disk, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, the level bar drawn at the level the keys set and gone after, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
-          "Music's Play and bar doing the same, Music saying why it could "
-          "not list a folder, and the sound keeping real time on a device "
-          "that keeps its own)." % checks)
+          "and the sound keeping real time on a device that keeps its own)."
+          % checks)
     return 0
 
 

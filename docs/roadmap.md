@@ -958,7 +958,12 @@ five monitors drawing through it unchanged - held pixel for pixel to the
 old Lua by `test_series`. **S2 built** (0.12.98, 18.1019), by a lane:
 `meters.lua`, every monitor's differences in one library, seven copies
 gone. Left from S2: the prompt's `htop`, `monitor`, `gpustat` and `llm`
-keep their own arithmetic, and should read it too. Next: S3, the window.
+keep their own arithmetic, and should read it too. **S3 built** (0.12.99,
+18.1020), by a lane: `sysmon.lua` is System Monitor - the sidebar, the
+Overview's tiles and the CPU page, the Deskbar's meters opening it, and
+`x86-sysmon` holding rows 1-18 of the inventory. Pages not built yet open
+their old windows until S4-S8. **To measure on the M700**: the cost of a
+second, which `--tell` prints. Next: S4, Processes.
 
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64
@@ -13308,7 +13313,13 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   by side: the Media Kit for music (P1), the tag reader (P2), the Playback
   Kit's decoded songs joined gaplessly (P3) and the Library kit (P4).
   Decision 10, the same day: the Playback Kit trims, FFmpeg decodes whole.
-  **P5, the window, being built** by a lane. Left from P3: the queue's
+  **P5, the window, built in 0.12.99** (18.1020), by a lane: Music in
+  `/Kosmos/Apps/Music` on the disk, run in media.elf, the old one gone;
+  `x86-player` plays an album of FLACs joined and heard, with the old
+  window's checks moved over. **Left from P5**: a folder that exists but
+  cannot be listed is passed over in silence (`Library:list_folder`), the
+  ThinkPad case the old Music's "could not list" was for; and a missing
+  path is said without its reason. Left from P3: the queue's
   feeder as a thread of its own (`playback_queue_*`), more than two
   channels mixed down, and the 24-bit packing in vector types. From P1:
   MP3 comes out as 16 bits, FFmpeg's fixed-point decoder.

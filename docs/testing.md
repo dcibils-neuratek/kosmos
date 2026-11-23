@@ -43325,3 +43325,41 @@ off.
 and S2 reach. Then the batch's gate with the driver's silence line: 126
 suites in 611 s, every one passing but `x86-usb-3`, starved as above, and
 76 of 76 alone.
+
+## 18.1020 The new Music's window (P5) and System Monitor (S3), folded from their lanes
+
+**What is checked.** Music is the new one, `user/installed/Music/`, seen
+as `/Kosmos/Apps/Music` and run in media.elf; the old `user/bin/apps/music.lua`
+is gone. `x86-player` (`tools/run_player.py`) puts the app, media.elf and
+an album of FLACs on its disk, and holds: the two songs joined at the frame
+and heard at their pitch, the badges the server's word gives, the library's
+counts, the master muted - and, moved from `run_media.py`'s three phases
+for the old window, the play arrow clicked after the queue ended (heard
+again; a click beside it is not), the cover's four colours (a cover of four
+quarters, since one colour was the placeholder's own), the title larger
+than its artist, no surface grey, and a missing path said while the
+library still reads. 23 checks, the controls among them.
+
+System Monitor (`docs/sysmonitor.md` S3) is `sysmon.lua`: the sidebar, the
+Overview's tiles and the CPU page, the Deskbar's meters opening the
+Overview. `x86-sysmon` (`tools/run_sysmon.py`) holds rows 1-18 of the
+inventory read from the document, QEMU's absences in their words, the
+cost of a sample said, pages by a click, Monitor's paces and the Deskbar's
+click. 30 checks.
+
+**Found folding them.** Music was on the suite's disk and never started -
+`wm: could not start /Kosmos/Programs/music.lua`. The guest's list of the
+system applications on the disk is `ns.SYSTEM_APPS` in `init.lua`, and the
+lane added Music to the host's copy in `tools/installed.py` alone. One list
+now: `installed.py` reads it from `init.lua`.
+
+And System Monitor's window resized to its page and sidebar without its
+own header strip, so each relayout cut its foot off. The suite asked
+whether the window grew with each core's bar, which on QEMU's four cores it
+rightly does not - the sidebar is the taller - so the check holds the page
+growing and the window to its header above the taller of the two. Control:
+the resize put back as it was, `[0, 0]`, failing.
+
+**Result**: the eleven suites the two reach, then `x86-player`, `x86-sysmon`
+and `x86-film` again with the fixes - all passing. `arm-media`, where the
+old phases were, is AArch64's and waits with the others.

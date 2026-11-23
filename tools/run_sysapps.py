@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""Processes and Monitor, the two windows about the machine (`roadmap.md`
-6m and 6p), in one boot.
+"""Processes, the window about what is running (`roadmap.md` 6m), in one
+boot.
 
-Both open at once, `wm sysmon,procs`, since the desktop holds the prompt
-once it runs: Processes last, so it is in front for its checks, and Monitor
-brought forward after them by a click on the part of it that shows.
-
-**Processes**: every heading that sorts by something new pressed with
-QEMU's tablet the way a person would. The window says where
-its headings are and what its rows hold - `id:name:threads:privilege:file`
-- once when it opens and again after each press, and this holds both to
-what they should be:
+`wm procs`. Every heading that sorts by something new pressed with QEMU's
+tablet the way a person would. The window says where its headings are and
+what its rows hold - `id:name:threads:privilege:file` - once when it opens
+and again after each press, and this holds both to what they should be:
 
 - **the file**: Processes itself runs `/Kosmos/Apps/procs.lua` and says so, and a
   server built into the image, the console, runs no file;
@@ -25,14 +20,11 @@ what they should be:
   row with something whichever way, and ties go by id. The expected order
   is worked out here from the rows the window printed, not written down.
 
-**Monitor**: each pace in its dots' menu chosen in turn, and then moved
-by the keyboard - Control-W and Right - which the window manager says.
-What is held to the pace is the clock rather than the words: each time the
-menu opens, Monitor says how many samples it has taken since the pace was
-set and in how many seconds by the counter, and those have to agree with
-the pace - a sample a second as it opens, then every half second, then
-every two. It counted two of the kit's ticks to a column when the kit had
-gone to one a second, which a check on the words could never have seen.
+**Monitor's half moved to `run_sysmon.py`** with its window, which is
+System Monitor's CPU page since `docs/sysmonitor.md` S3: its paces held to
+the counter, its processor's card, its bars and Control-W. Processes' half
+goes there in S4, when Processes becomes a page (`sysmonitor.md`, *How it
+is tested*), and this suite with it in S9.
 
 Usage: run_sysapps.py IMAGE
 """
@@ -146,7 +138,7 @@ def main():
 
         start = len(guest.seen)
         mark = start
-        guest.type("wm sysmon,procs")
+        guest.type("wm procs")
 
         opened = said("procs: window at ", mark, 90)
 
@@ -317,172 +309,18 @@ def main():
         n = re.match(r"(\d+) KB of (\d+) KB", held or "")
         check(n is not None and 1024 < int(n.group(1)) < int(n.group(2)),
               "Processes' Nebula row did not hold the kernel's own memory: %r" % held)
-
-        # **Monitor**, under Processes, brought forward by a click on the
-        # part of it Processes does not cover - found from the desktop's own
-        # account of where each window is.
-        opened = said("sysmon: window at ", start, 30)
-        m = re.match(r"(\d+),(\d+); more at (\d+),(\d+)", opened or "")
-        check(m is not None, "Monitor never said where its window and its dots are: %r"
-              % opened)
-
-        def rect(title):
-            got = said("wm: window %s at " % title, start, 5)
-            r = re.match(r"(\d+),(\d+) (\d+)x(\d+)", got or "")
-            return tuple(int(v) for v in r.groups()) if r else None
-
-        def click(x, y):
-            guest.mouse_to(*R._to_tablet(x, y, width, height))
-            time.sleep(0.4)
-            guest.mouse_button(True)
-            time.sleep(0.3)
-            guest.mouse_button(False)
-            time.sleep(0.5)
-
-        mon, pro = rect("Monitor"), rect("Processes")
-        showing = None
-
-        if mon and pro:
-            for x, y in ((mon[0] + 10, mon[1] + mon[3] - 10), (mon[0] + 10, mon[1] + 40),
-                         (mon[0] + mon[2] - 10, mon[1] + mon[3] - 10)):
-                if not (pro[0] <= x < pro[0] + pro[2] and pro[1] <= y < pro[1] + pro[3]):
-                    showing = (x, y)
-                    break
-
-        check(showing is not None, "no part of Monitor shows beside Processes: %r, %r"
-              % (mon, pro))
-
-        if m and showing:
-            mx0, my0, dx, dy = (int(v) for v in m.groups())
-            click(*showing)
-
-            def menu(pace):
-                """The dots pressed: where the menu is, and how many samples
-                in how long, held to `pace` seconds a sample."""
-                mark_ = len(guest.seen)
-                click(mx0 + dx, my0 + dy)
-                got = said("sysmon: more menu at ", mark_)
-                n = re.match(r"(\d+),(\d+), (\d+) wide, rows of (\d+); "
-                             r"(\d+) samples in ([\d.]+) s", got or "")
-
-                if not n:
-                    check(False, "the dots did not open Monitor's menu: %r" % got)
-                    return None
-
-                x, y, w, rh, samples = (int(v) for v in n.groups()[:5])
-                seconds = float(n.group(6))
-                want = seconds / pace
-
-                # The kit ticks at the pace or a little after it, never
-                # before, and the first sample comes at once: so no more
-                # than one over, and a pass slower than the pace under TCG
-                # costs a little. Half the pace's count would be the old
-                # fault, two ticks to a column.
-                check(want * 0.75 - 1 <= samples <= want + 2,
-                      "every %s s, Monitor took %d samples in %.1f s - %.1f is "
-                      "the pace's" % (pace, samples, seconds, want))
-                return x, y, rh
-
-            # A second a sample, as it opens.
-            time.sleep(8)
-            at = menu(1)
-
-            # Each pace chosen, and then the menu again after long enough to
-            # count it.
-            for row, pace, words, wait in ((0, 0.5, "update every 0.5 s, the last 30 seconds", 6),
-                                           (2, 2, "update every 2 s, the last 2 minutes", 12),
-                                           (1, 1, "update every 1 s, the last minute", 8)):
-                if at is None:
-                    break
-
-                x, y, rh = at
-                mark = len(guest.seen)
-                click(x + 30, y + 2 + row * rh + rh // 2)
-                got = said("sysmon: update every ", mark)
-                check(got is not None and "update every " + got == words,
-                      "choosing row %d of Monitor's menu did not say %r: %r"
-                      % (row, words, got))
-                time.sleep(wait)
-                at = menu(pace)
-
-            # **The processor said once and whole** (`docs/monitor.html`),
-            # and **each core's bar an option**: off as it opens, the
-            # window growing to hold them when chosen - below the three
-            # paces and a separator a third of a row - and back when they
-            # are put away.
-            named = said("sysmon: processor ", start, 5)
-            check(named is not None and named.count("|") == 2 and "processor" in named,
-                  "Monitor did not name its processor in a card: %r" % named)
-
-            # **Its features, in one line under the facts** (13 October):
-            # said, and with no VT-x under QEMU, whose processor has none.
-            # **Its chip, its maker's mark on the lid** (13 October, "B for
-            # the chip"): 64 square, and the maker's word on it - or, for a
-            # processor that names no maker, the model's first word.
-            chip = said("sysmon: chip ", start, 5)
-            parts = [p.strip() for p in named.split("|")] if named else []
-            maker = parts[0] if parts else ""
-            model = parts[1] if len(parts) > 1 else ""
-            want_word = (maker.split() or model.split() or [""])[0]
-            check(chip is not None and chip.startswith("%s |" % want_word)
-                  and chip.endswith(", 64 square"),
-                  "Monitor's chip is not 64 square with %r on its lid: %r" % (want_word, chip))
-
-            feats = said("sysmon: features", start, 5)
-            check(feats is not None and "VT-x on" not in feats,
-                  "Monitor did not say its processor's features, or claimed what QEMU has not: %r" % feats)
-
-            sizes = []
-
-            for want in ("bars shown", "bars hidden"):
-                if at is None:
-                    break
-
-                x, y, rh = at
-                mark = len(guest.seen)
-                click(x + 30, y + 2 + 3 * rh + rh // 3 + rh // 2)
-                got = said("sysmon: " + want + ", ", mark)
-                size = re.match(r"(\d+)x(\d+)", got or "")
-                check(size is not None, "choosing each core's bar did not say %r: %r"
-                      % (want, got))
-                sizes.append(int(size.group(2)) if size else 0)
-                time.sleep(1)
-                at = menu(1) if want == "bars shown" else None
-
-            check(len(sizes) == 2 and sizes[0] > sizes[1] > 0,
-                  "the bars did not grow the window and put away shrink it: %r" % sizes)
-
-            guest.sendkey("esc")
-            time.sleep(0.5)
-
-            # **Control-W then an arrow moves the window in front** - the
-            # window manager's own keys, which read an arrow as three bytes
-            # and let Super's collecting take its Escape first, so it moved
-            # nothing and nothing had tested it (`roadmap.md` 6n, step 0).
-            # Monitor is in front, from the clicks above.
-            mark = len(guest.seen)
-            guest.proc.stdin.write(b"\x17\x1b[C")
-            guest.proc.stdin.flush()
-            got = said("wm: moved ", mark, 10)
-            moved = re.match(r"Monitor to (\d+),(\d+)", got or "")
-            check(moved is not None and mon is not None
-                  and (int(moved.group(1)), int(moved.group(2)))
-                  == (mon[0] + 16, mon[1]),
-                  "Control-W then Right did not move Monitor 16 to the right "
-                  "of %r: %r" % (mon and mon[:2], got))
     finally:
         guest.close()
 
     if failed:
-        print("FAIL: %d of %d checks on Processes and Monitor:" % (len(failed), checks))
+        print("FAIL: %d of %d checks on Processes:" % (len(failed), checks))
         for f in failed:
             print("  " + f)
         return 1
 
-    print("PASS: %d checks on Processes and Monitor (its columns dragged and their menu; its file, its threads and its "
+    print("PASS: %d checks on Processes (its columns dragged and their menu; its file, its threads and its "
           "privilege in every row; six presses on five headings, each order as the "
-          "column sorts; each of Monitor's three paces kept by the clock; its processor "
-          "named in a card, and each core's bar shown and put away, the window with it)" % checks)
+          "column sorts; Nebula's own memory)" % checks)
     return 0
 
 

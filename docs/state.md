@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-23, at 0.12.98. Pushed to 0.12.0; 0.12.1 to
-0.12.98 are committed on `main`, and go out with `make prepush`.
+Last updated: 2026-11-23, at 0.12.99. Pushed to 0.12.0; 0.12.1 to
+0.12.99 are committed on `main`, and go out with `make prepush`.
 
 ---
 
@@ -373,7 +373,13 @@ committed on the suites it reaches, the whole gate once per batch and
 before a push, lanes always working beside the main session, and a hung
 suite stopped at three times its last time (`CLAUDE.md`). **For Diego on
 the M700**: `gpu look` (D1), and the M60's volume range and a key press
-(U10g). Next: P5 folded and its `x86-player`; M6e, Big Buck Bunny; S3. Then the new Music (`docs/player.md`, agreed, the old Music retired
+(U10g). **0.12.99** (18.1020): the new Music's window (P5) - the old
+Music gone, the new one in media.elf from the disk - and System Monitor's
+window (S3), both from lanes; `x86-usb-3`'s starving under the gate's
+load seen at last (the speaker served on `xhci`'s nap, 18.1019). The
+whole gate is owed for this batch before a push (`init.lua` changed).
+Next: S4, Processes; M6e, Big Buck Bunny; why the speaker's interrupts
+do not wake `xhci` under load. Then the new Music (`docs/player.md`, agreed, the old Music retired
 at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for

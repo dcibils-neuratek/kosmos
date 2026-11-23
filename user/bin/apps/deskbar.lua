@@ -1367,8 +1367,9 @@ function bar:draw(g)
   --
   -- Two small meters rather than numbers: at this size a figure is four
   -- characters somebody has to read, and a bar is a thing you notice out of
-  -- the corner of an eye - which is the whole job of an indicator. Monitor
-  -- is where the numbers live, and clicking these opens it.
+  -- the corner of an eye - which is the whole job of an indicator. System
+  -- Monitor is where the numbers live, and clicking these opens its
+  -- Overview.
   --
   -- Drawn only once there is something to say. Busy is a difference between
   -- two readings, so on the first pass there is nothing here, and a gap is
@@ -1381,6 +1382,10 @@ function bar:draw(g)
     local mw = 28
 
     x = x - PAD - mw
+
+    -- Where they are, once each time they move: a suite clicks them.
+    if self.meters_x ~= x then print(("deskbar: the meters at %d"):format(x)) end
+
     self.meters_x = x
 
     local top = (self.h - 19) // 2
@@ -1492,6 +1497,18 @@ local function opens(program)
   return function() fs.send("/Running/wm", { type = "launch", program = program }) end
 end
 
+--
+-- **System Monitor on its Overview** (`docs/sysmonitor.md` S3, inventory
+-- row 103): the meters say how busy the machine is from the corner of an
+-- eye, and a click on them opens the page that says the rest of it - the
+-- whole machine at once - rather than the processors alone, which is what
+-- Monitor was.
+--
+local function open_overview()
+  fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/sysmon.lua", args = "overview" })
+  print("deskbar: System Monitor asked for, the Overview")
+end
+
 -- This Machine, showing the devices on the USB ports alone.
 local function open_usb()
   fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/machine.lua", args = "usb" })
@@ -1516,7 +1533,7 @@ local function bar_target(self, x)
   if reach then return reach, reach_act end
 
   if self.meters_x and x >= self.meters_x and x < self.meters_x + 26 then
-    return "meters", opens("/Kosmos/Apps/sysmon.lua")
+    return "meters", open_overview
   end
 
   if x >= right_x then
