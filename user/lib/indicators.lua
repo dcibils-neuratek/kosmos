@@ -44,6 +44,7 @@
 local clock = use("/Kosmos/Libraries/clock.lua")
 local notify = use("/Kosmos/Libraries/notify.lua")
 local netprogram = use("/Kosmos/Libraries/netprogram.lua")
+local meters = use("/Kosmos/Libraries/meters.lua")
 
 local M = {}
 
@@ -123,12 +124,13 @@ local function network_now()
   return info
 end
 
+-- Used and total, in MB: `meters.memory`, as System Monitor reads them.
 local function memory_now()
   local ok, m = pcall(fs.read, "/Devices/memory")
 
-  if not ok or type(m) ~= "table" or not m.total_mb then return nil end
+  if not ok then return nil end
 
-  return m.total_mb - m.free_mb, m.total_mb
+  return meters.memory(m)
 end
 
 -- The battery's line glyph: the bolt while it charges, else how full.
@@ -149,27 +151,16 @@ end
 function M.new(who)
   local self = { heard = {}, battery_glyph = M.battery_glyph }
   local heard = self.heard
-  local last_idle, last_busy = nil, nil
+  local busy = meters.busy()
 
-  -- How busy the machine is, as a percentage: `monitor.lua`'s reading,
-  -- from `/Devices/kernel`'s idle and busy ticks.
+  -- How busy the machine is, as a percentage, from `/Devices/kernel`'s idle
+  -- and busy ticks: `meters.busy`, the arithmetic System Monitor's is.
   local function load_now()
     local ok, k = pcall(fs.read, "/Devices/kernel")
 
-    if not ok or type(k) ~= "table" then return nil end
+    if not ok then return nil end
 
-    local pct = nil
-
-    if last_idle then
-      local di = (k.idle_ticks or 0) - last_idle
-      local db = (k.busy_ticks or 0) - last_busy
-
-      if di + db > 0 then pct = (db * 100) // (di + db) end
-    end
-
-    last_idle, last_busy = k.idle_ticks, k.busy_ticks
-
-    return pct
+    return busy:take(k)
   end
 
   --

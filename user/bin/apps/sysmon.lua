@@ -45,6 +45,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 -- changes when the desktop changes look.
 local theme = ui.theme
 local pulse = use("/Kosmos/Libraries/pulse.lua")
+local meters = use("/Kosmos/Libraries/meters.lua")
 local L = ui.layout
 
 local load0 = sys.cpuload() or {}
@@ -106,17 +107,18 @@ local show_bars = false
 local per_core = not MACHINE
 
 --
--- What each core did since the last sample, for its line and its bar, and in
--- each of the last sixty, for its graph: `{ user, kernel }` in per cent.
--- And how fast each ran, in MHz, or nil where nobody can say.
+-- What each core did since the last sample, for its line and its bar - the
+-- processor's meter (`meters.cpu`): `cpu.user[c]` and `cpu.kernel[c]` in per
+-- cent, and `cpu.speeds[c]` how fast each ran, in MHz, or nil where nobody
+-- can say - and in each of the last sixty, for its graph, `{ kernel, user }`.
+-- The heat beside the speed is `meters.heat`'s: two readings of `sys.info()`
+-- a sample apart, on the counter's clock.
 --
-local now, history, speeds, heat = {}, {}, nil, nil
-local all_now, all_history = { 0, 0 }, {}
+local cpu = meters.cpu(counter_hz, load0, CORES)
+local hot = meters.heat(counter_hz, sys.info(), sys.ticks())
+local history, all_history = {}, {}
 
-for c = 1, CORES do
-  now[c] = { 0, 0 }
-  history[c] = {}
-end
+for c = 1, CORES do history[c] = {} end
 
 --------------------------------------------------------------------------
 -- Where everything goes, for the window's height and for the drawing, from
@@ -278,6 +280,8 @@ print(("sysmon: chip %s | %s, %d square"):format(ON_LID, PART, DIE))
 
 -- How fast the machine runs now: the mean of the cores that said, in GHz.
 local function machine_speed()
+  local speeds = cpu.speeds
+
   if not speeds then return nil end
 
   local sum, n = 0, 0
@@ -301,6 +305,8 @@ local function draw_chip(g, x, y, w)
 
   -- How hot and how much power, where the processor says: "62 °C · 28 W",
   -- and why it is held when it is, in place of the note.
+  local heat = hot.heat
+
   if heat then
     local parts = { heat.temp_c and ("%d °C"):format(heat.temp_c) or nil }
 
@@ -323,6 +329,8 @@ end
 --------------------------------------------------------------------------
 
 local function speed_text(c)
+  local speeds = cpu.speeds
+
   return speeds and speeds[c] and ("%.2f GHz"):format(speeds[c] / 1000) or nil
 end
 
@@ -345,7 +353,7 @@ local function draw_bars(g, x, y, w)
     local r = (c - 1) % rows
     local rx = x + col * cw
     local ry = y + 1 + r * (BAR_ROW + 1)
-    local u, k = now[c][1], now[c][2]
+    local u, k = cpu.user[c], cpu.kernel[c]
 
     if r > 0 then g:fill(rx + 1, ry - 1, cw - 2, 1, theme.line_soft) end
     if col > 0 and r == 0 then g:fill(rx, y + 1, 1, h - 2, theme.line_soft) end
@@ -418,7 +426,7 @@ end
 local function busy_now()
   local sum = 0
 
-  for c = 1, CORES do sum = sum + now[c][1] + now[c][2] end
+  for c = 1, CORES do sum = sum + cpu.user[c] + cpu.kernel[c] end
 
   return sum // CORES
 end
@@ -459,8 +467,8 @@ function body:draw(g)
       local row = (c - 1) // M.across
       local px = x + col * (M.graph_w + GAP_X)
       local py = M.graphs + row * (GRAPH_TOP + M.graph_h + GAP_Y)
-      local mhz = speeds and speeds[c]
-      local pct = ("%d%%"):format(now[c][1] + now[c][2])
+      local mhz = cpu.speeds and cpu.speeds[c]
+      local pct = ("%d%%"):format(cpu.user[c] + cpu.kernel[c])
       local words = mhz and {
         ("%.2f GHz \u{b7} %s"):format(mhz / 1000, pct),
         ("%.1f GHz \u{b7} %s"):format(mhz / 1000, pct),
@@ -490,63 +498,23 @@ win:add(body)
 --------------------------------------------------------------------------
 
 --
--- User and kernel, in per cent, between two readings of one core.
+-- A sample: the processor's meter takes the reading - user and kernel a
+-- core, the machine's, the speeds (`meters.cpu`, where `split` went) - and
+-- the heat's takes `sys.info()`; this pushes a column of each graph.
 --
--- Busy from the ticks; how much of busy was the kernel's from the counters,
--- which are measured where the ticks can only sample (`percpu.h`).
---
-local function split(a, b)
-  local di, db = b.idle - a.idle, b.busy - a.busy
-
-  if di + db <= 0 then return 0, 0 end
-
-  local busy = (db * 100) // (di + db)
-  local du = (b.user_counter or 0) - (a.user_counter or 0)
-  local dk = (b.kernel_counter or 0) - (a.kernel_counter or 0)
-
-  if du + dk <= 0 then return busy, 0 end
-
-  local k = (busy * dk + (du + dk) // 2) // (du + dk)
-
-  return busy - k, k
-end
-
-local last = load0
-
--- The heat beside the speed (`pulse.heat`): two readings of `sys.info()` a
--- sample apart, on the counter's clock.
-local info_last, info_at = sys.info(), sys.ticks()
-
 local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function sampler:tick()
   local load = sys.cpuload()
 
-  if not load then return end
-
-  local su, sk = 0, 0
+  if not cpu:take(load) then return end
 
   for c = 1, CORES do
-    if load[c] and last[c] then
-      local u, k = split(last[c], load[c])
-      local h = history[c]
-
-      now[c][1], now[c][2] = u, k
-      su, sk = su + u, sk + k
-      ui.history.push(h, { k, u }, COLUMNS)
-    end
+    if cpu.taken[c] then ui.history.push(history[c], { cpu.kernel[c], cpu.user[c] }, COLUMNS) end
   end
 
-  all_now = { sk // CORES, su // CORES }
-  ui.history.push(all_history, all_now, COLUMNS)
-
-  speeds = pulse.speeds(last, load, counter_hz)
-  last = load
-
-  local info, at = sys.info(), sys.ticks()
-
-  heat = pulse.heat(info_last, info, counter_hz > 0 and (at - info_at) / counter_hz or nil, load)
-  info_last, info_at = info, at
+  ui.history.push(all_history, { cpu.all_kernel, cpu.all_user }, COLUMNS)
+  hot:take(sys.info(), sys.ticks(), load)
   samples = samples + 1
 end
 
@@ -586,7 +554,7 @@ function set_pace(p)
   pace = p
   win.tick_every = counter_hz * p.half // 2
   win.last_tick = sys.ticks()
-  last = sys.cpuload() or last
+  cpu:restart(sys.cpuload())
   samples, paced_at = 0, win.last_tick
 
   for c = 1, CORES do history[c] = {} end

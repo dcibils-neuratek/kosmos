@@ -23,7 +23,26 @@
  * A picture is handed back as the decoder made it - its planes, their
  * strides, its format - and turned into a page's pixels by whoever paints
  * it; sound is handed back as 32-bit float, interleaved, at the stream's
- * own rate, which is what the Playback Kit mixes.
+ * own rate, by `media_frame` - what the Playback Kit mixes - or, by
+ * `media_sound`, in the decoder's own integer format (`player.md` P1).
+ *
+ * **Sound at the file's own resolution** (`docs/player.md` P1, *The
+ * busiest path*): float holds a 24-bit sample exactly and a 32-bit one
+ * not, so music is handed back as the decoder makes it, in one of three
+ * formats, interleaved, at the stream's own rate:
+ *
+ *   MEDIA_PCM_S16  int16_t                   16-bit sources, and 8-bit
+ *                                            ones widened (x << 8)
+ *   MEDIA_PCM_S32  int32_t, left-justified   20, 24 and 32-bit sources:
+ *                                            a 24-bit sample in the top
+ *                                            24 bits, the low 8 zero
+ *   MEDIA_PCM_F32  float, +-1.0              lossy codecs, whose output
+ *                                            is float, and float PCM (a
+ *                                            64-bit float narrowed)
+ *
+ * with the rate, the channels and the source's bits stated beside them
+ * (`struct media_sound`). This is the contract the Playback Kit's queue
+ * takes music in (`player.md` P3).
  */
 
 #include <stddef.h>
@@ -71,6 +90,39 @@ struct media_stream {
     /* FFmpeg's name for the codec's profile - "LC", "HE-AAC", "High" - or
      * "" when it has none to say */
     char profile[24];
+    /* a sound's source, so a player can say "FLAC 96 kHz / 24-bit": the
+     * bits a sample at its source - 8, 16, 20, 24, 32, 64 - for a lossless
+     * one, 0 for a lossy one, which has none to keep; 1 when the codec
+     * loses nothing (PCM, FLAC, ALAC); 1 when the source's samples are
+     * float; the MEDIA_PCM_* `media_sound` hands back by itself (0 while
+     * the decoder has not said, as from `media_open_appended`); and its
+     * bits a second, 0 when the file does not say */
+    int source_bits;
+    int lossless;
+    int source_float;
+    int pcm;
+    int64_t bitrate;
+};
+
+/* How sound is handed back by `media_sound` (above, and `player.md` P3's
+ * contract). MEDIA_PCM_NATIVE asks for the decoder's own. */
+enum media_pcm {
+    MEDIA_PCM_NATIVE = 0,
+    MEDIA_PCM_S16 = 1,
+    MEDIA_PCM_S32 = 2,
+    MEDIA_PCM_F32 = 3,
+};
+
+/* A sound as `media_sound` hands it back: `samples` frames of `channels`
+ * samples each, interleaved, in `format`, `bytes` long, valid until the
+ * decoder's next call. `bits` is the source's, as `media_stream` says it. */
+struct media_sound {
+    int64_t pts_us;
+    int samples, channels, rate;
+    int format;                 /* enum media_pcm, never NATIVE */
+    int bits;
+    const void *pcm;
+    size_t bytes;
 };
 
 struct media_packet {
@@ -129,12 +181,33 @@ void media_close(struct media_source *src);
  * processors). */
 struct media_decoder *media_decoder_open(const struct media_source *src, int i, int threads,
                                          char *why, size_t room);
+
+/* The same, with `MEDIA_*` flags. `MEDIA_UNTRIMMED`: a sound is decoded
+ * whole, the encoder's priming and padding left in (FFmpeg's
+ * `AV_CODEC_FLAG2_SKIP_MANUAL`), because the Playback Kit trims them from
+ * the delay and length the tag reader read (`docs/player.md`, decision of
+ * 23 November 2026). FFmpeg trims by default, and trusts a LAME header that
+ * FFmpeg itself writes wrongly when an MP3 carries a picture - a song cut to
+ * 26 ms - where the kit checks the length against what arrived. */
+#define MEDIA_UNTRIMMED 1u
+struct media_decoder *media_decoder_open_with(const struct media_source *src, int i, int threads,
+                                              unsigned flags, char *why, size_t room);
 /* A packet in, or NULL at the end to have the decoder give up what it
  * holds. 0, or negative. */
 int media_decode(struct media_decoder *d, const struct media_packet *p);
 /* A frame out: 1 a frame, valid until the next call; 0 when it wants
  * another packet; -1 when everything has come out; below -1 a fault. */
 int media_frame(struct media_decoder *d, struct media_frame *out);
+/* A sound out in `format` (enum media_pcm), as `media_frame` answers: 1,
+ * 0, -1, or a fault below it. NATIVE is the decoder's own, and costs
+ * nothing for packed PCM and FLAC, whose bytes are handed back where the
+ * decoder put them. Asking for another format converts: widening (S16 to
+ * S32, either to F32 for a source of 24 bits or fewer) is exact;
+ * narrowing (S32 to S16, F32 to either integer) rounds to the nearest
+ * and clips, without dither. The same decoder may be asked through
+ * `media_frame` and `media_sound` in turn: each call takes the next
+ * frame. */
+int media_sound(struct media_decoder *d, int format, struct media_sound *out);
 void media_decoder_flush(struct media_decoder *d);
 void media_decoder_close(struct media_decoder *d);
 

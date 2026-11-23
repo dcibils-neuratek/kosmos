@@ -1618,6 +1618,14 @@ class PluggedMachine:
 
         self.monitor = None
         self.heard = bytearray()
+        # The console as it arrives, where asked: a suite that hangs is
+        # killed before `close` could keep it.
+        keep = os.environ.get("RUN_X86_CONSOLE")
+        self.live = None
+        if keep:
+            os.makedirs(keep, exist_ok=True)
+            self.live = open(os.path.join(keep, "live-%d-%d.txt"
+                                          % (os.getpid(), int(time.time() * 1000))), "wb")
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT,
                                      stdin=subprocess.PIPE)
@@ -1637,6 +1645,10 @@ class PluggedMachine:
                 return
 
             self.heard.extend(chunk)
+
+            if self.live is not None:
+                self.live.write(chunk)
+                self.live.flush()
 
     def mark(self):
         return len(self.heard)
@@ -5389,14 +5401,32 @@ def usb_audio_exact_bits(image, check):
 
     So `exact` (U10e) is held to what the speaker was sent, both ways.
 
-    **Under `opt/kosmos/usbaudio=full`**, which sets the speaker's own
-    volume at its top: QEMU's speaker scales samples by its volume over
-    255 and its 0 dB is 240, so only its top, +8 dB, passes them untouched
-    (`testing.md` 18.1014). `USBAUDIO_NOFULL=1` boots without it - the
-    noise arrives at 0.941 of itself, and the first case fails - and that
-    is one control. The other is the server's mix built a least bit off at
-    unity: the first case fails the WAV, with the server still saying
-    exact.
+    **The master on the speaker's own volume** (U10g). QEMU's speaker
+    scales samples by its volume over 255 and its 0 dB is 240, so only its
+    top, +8 dB, passes them untouched (`testing.md` 18.1014). `xhci` takes
+    that top as the master's 256 - a quirk named for QEMU's 46f4:0002 - and
+    sets it when the speaker is opened: the range said, -128 to +8 dB in
+    steps of 0.53, and "master 256 ... +8.00 dB (2048)", the first set.
+    Then, after the four cases above:
+
+      * the master at 128: a second set, +2.16 dB (553), and the speaker's
+        own read back within one of its steps; the noise played again at
+        unity must be said `exact []` - the master is the speaker's, not
+        the stream's - and is not bit for bit in the WAV, since QEMU records
+        after its volume. It must be there at QEMU's level for 553, 244/255
+        of itself by its loudest tenth of a second, between 0.93 and 0.98;
+      * the master at 256 again: a third set, +8.00 dB (2048), and the noise
+        bit for bit once more.
+
+    Bit for bit at a master of 50% cannot be shown under QEMU, whose WAV is
+    written after its own volume; on the M60 it is the driver's counts and
+    the ear.
+
+    **Controls.** The server's mix built a least bit off at unity: the
+    first case fails the WAV, with the server still saying exact. And the
+    master left in the mix where the speaker carries it (`master_in_mix`
+    returning `master` whatever `master_hw` says): the noise at a master of
+    128 arrives at 0.48 of itself, outside the band, and that case fails.
     """
     wav = os.path.join(os.path.dirname(image), "usb-audio-bits.wav")
 
@@ -5410,9 +5440,6 @@ def usb_audio_exact_bits(image, check):
              "-device", "usb-kbd,bus=usb0.0",
              "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
                           "out.channels=2,out.format=s16" % wav]
-
-    if os.environ.get("USBAUDIO_NOFULL") != "1":
-        extra += ["-fw_cfg", "name=opt/kosmos/usbaudio,string=full"]
 
     machine = PluggedMachine(image, extra)
     seed, frames, compared = 12345, 38400, 32768
@@ -5475,9 +5502,17 @@ print("BB done")
         machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
         check(machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30),
               "the speaker plugged in was not streamed")
-        check(re.search(r"speaker: its own volume at its top, \+8 dB, on 2 channels",
-                        machine.since(mark)) is not None,
-              "the speaker's own volume was not set at its top: %r"
+        check(machine.wait_for(mark, r"speaker: its own volume carries the master: unit 2, "
+                                     r"-128\.00 to \+8\.00 dB in steps of 0\.53 dB, its top "
+                                     r"\+8\.00 dB(?![ ,(])", 10)
+              and machine.wait_for(mark, r"speaker: its own volume is on each of 2 channels, "
+                                         r"a mute on its master \(QEMU's speaker: unity at "
+                                         r"its MAX\)", 10),
+              "the speaker's own volume was not said to carry the master: %r"
+              % [l for l in machine.since(mark).splitlines() if "speaker" in l][-4:])
+        first = volume_set(machine, mark, 256, 2048, 1)
+        check(first is not None and abs(first - 2048) <= 136, "the master's 256 was not set on the speaker's own volume as "
+                     "+8.00 dB (2048), its first set, and read back within a step: %r"
               % [l for l in machine.since(mark).splitlines() if "speaker" in l][-4:])
 
         for n, (rate, gain, two, _, _) in enumerate(cases):
@@ -5515,8 +5550,86 @@ print("BB done")
                 check(at is None,
                       "%s: the noise was found bit for bit, and it should not have been"
                       % label)
+
+        # **The master on the speaker's own volume** (U10g): 128, then 256.
+        for level, value, sets, whole in ((128, 553, 2, False), (256, 2048, 3, True)):
+            mark = machine.mark()
+            # The shell has no `use`; a program does.
+            machine.typed('fs.write("/Temporary/ms%d.lua", %s) print("WROTE")'
+                          % (level, lua_string('use("/Kosmos/Libraries/audio.lua")'
+                                               '.set({ master = %d }) print("MS" .. "SET")'
+                                               % level)), r"WROTE", 10)
+            machine.typed("run /Temporary/ms%d.lua" % level, r"MSSET", 10)
+            back = volume_set(machine, mark, level, value, sets)
+            check(back is not None and abs(back - value) <= 136,
+                  "the master at %d was not set on the speaker's own volume as %d, "
+                  "set %d, and read back within a step of it: %r"
+                  % (level, value, sets, machine.since(mark).splitlines()[-25:]))
+
+            label = "48000/16 at a master of %d" % level
+            size = os.path.getsize(wav) if os.path.exists(wav) else 44
+            _, out = machine.typed("run /Temporary/bb0.lua", r"BB (?:done|refused)[^\n]*\n", 120)
+            got = re.search(r"BB (\w+ \[[a-z, ]*\])", out)
+            check(got is not None and got.group(1) == "exact []",
+                  "%s: the server did not say exact [], the master being the "
+                  "speaker's: %r" % (label, [l for l in out.splitlines()
+                                             if l.startswith("BB")] or out[-400:]))
+            at = wav_holds(wav, size, want)
+
+            if whole:
+                check(at is not None,
+                      "%s: the speaker was not sent the noise bit for bit" % label)
+            else:
+                ratio = wav_loudness(wav, size, want)
+                check(at is None and ratio is not None and 0.93 <= ratio <= 0.98,
+                      "%s: the noise should have come at QEMU's 244/255 of itself and "
+                      "not bit for bit; found %s, at %s of itself"
+                      % (label, "bit for bit" if at is not None else "not bit for bit",
+                         "nothing" if ratio is None else "%.3f" % ratio))
+                if ratio is not None:
+                    print("usb_audio_exact_bits: %s - said exact, heard at %.3f of itself "
+                          "through QEMU's own volume" % (label, ratio))
     finally:
         machine.close()
+
+
+def volume_set(machine, mark, level, value, sets):
+    """`xhci`'s word that the master's `level` was set on the speaker's own
+    volume as `value`, its `sets`th time (U10g): what the speaker read back,
+    or None when the line did not come."""
+    said = r"speaker: master %d on its own volume, [-+]\d+\.\d\d dB \(%d\), read back " \
+           r"(-?\d+); %d sets?" % (level, value, sets)
+
+    if not machine.wait_for(mark, said, 10):
+        return None
+
+    got = re.search(said, machine.since(mark))
+    return int(got.group(1)) if got else None
+
+
+def wav_loudness(path, after, want):
+    """How loud QEMU's WAV is, past byte `after`, against `want`: the RMS of
+    its loudest tenth of a second over the RMS of `want`. None when there is
+    nothing there."""
+    import math
+    import struct
+
+    if not os.path.exists(path):
+        return None
+
+    with open(path, "rb") as f:
+        f.seek(max(44, after))
+        data = f.read()
+
+    samples = struct.unpack("<%dh" % (len(data) // 2), data[:len(data) // 2 * 2])
+    window, best = 9600, 0.0           # 4800 frames, both channels
+
+    for at in range(0, len(samples) - window, window // 2):
+        part = samples[at:at + window]
+        best = max(best, sum(v * v for v in part) / window)
+
+    whole = sum(v * v for v in want) / len(want)
+    return math.sqrt(best / whole) if best > 0 and whole > 0 else None
 
 
 def usb_audio_switch(image, check):

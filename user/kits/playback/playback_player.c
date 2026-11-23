@@ -24,29 +24,43 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audioproto.h"
 #include "audioring.h"
 #include "kosmos.h"
 #include "playback.h"
 #include "playback_core.h"
 
-_Static_assert(PLAYBACK_WAV == PB_WAV && PLAYBACK_MP3 == PB_MP3,
+_Static_assert(PLAYBACK_WAV == PB_WAV && PLAYBACK_MP3 == PB_MP3 && PLAYBACK_PCM == PB_PCM,
                "the door's kinds are the core's");
+_Static_assert(PLAYBACK_PCM_S16 == PB_PCM_S16 && PLAYBACK_PCM_S32 == PB_PCM_S32
+               && PLAYBACK_PCM_F32 == PB_PCM_F32
+               && PLAYBACK_MP3_DECODER_DELAY == PB_MP3_DECODER_DELAY,
+               "the door's formats are the core's");
+_Static_assert(sizeof(struct playback_song) == sizeof(struct pb_song)
+               && offsetof(struct playback_song, delay) == offsetof(struct pb_song, delay)
+               && offsetof(struct playback_song, from) == offsetof(struct pb_song, from),
+               "a song is the same record on both sides of the door");
 
 /*
  * **One megabyte of compressed sound**: a minute of a 128 kb/s song, half a
  * minute of most films' - so the window may be away for seconds and nothing
- * is heard (`docs/playback.md`, *The two rings*).
+ * is heard (`docs/playback.md`, *The two rings*). Decoded sound's ring is
+ * sized in seconds instead (`pb_input_bytes`), and never smaller than this.
  */
 #define INPUT_BYTES (1u << 20)
 
+/* A decoded song's piece: a third of a second of 96/24 stereo. */
+#define PCM_PIECE (64u * 1024u)
+
 /* ------------------------------------------------------------ commands */
 
-enum cmd_kind { CMD_PLAY, CMD_PAUSE, CMD_SEEK };
+enum cmd_kind { CMD_PLAY, CMD_PAUSE, CMD_SEEK, CMD_RING };
 
 struct cmd {
     enum cmd_kind kind;
     uint32_t generation;
     struct audio_ring *ring;
+    uint32_t rate, bits, channels;      /* the ring's, for decoded sound */
 };
 
 #define CMDS 64u
@@ -70,6 +84,7 @@ struct playback {
     uint32_t generation;
     bool ended;
     bool closed;
+    uint32_t song_frame;                /* bytes of the last song's frame; 0 before one */
 
     struct cmd cmds[CMDS];
     uint32_t cmd_head;                  /* written by the window */
@@ -118,6 +133,17 @@ static void take_commands(struct playback *pl)
         case CMD_SEEK:
             pb_restart(&pl->core, c->generation);
             pl->ring = c->ring;
+
+            if (pl->core.kind == PB_PCM) {
+                (void)pb_ring_format(&pl->core, c->rate, c->bits, c->channels,
+                                     c->ring->period_bytes);
+            }
+            break;
+
+        case CMD_RING:
+            pl->ring = c->ring;
+            (void)pb_ring_format(&pl->core, c->rate, c->bits, c->channels,
+                                 c->ring->period_bytes);
             break;
         }
 
@@ -190,8 +216,9 @@ static void playback_main(unsigned long arg)
 
 /* ------------------------------------------------------------ the caller's */
 
-static bool post(struct playback *pl, enum cmd_kind kind, uint32_t generation,
-                 struct audio_ring *ring)
+static bool post_format(struct playback *pl, enum cmd_kind kind, uint32_t generation,
+                        struct audio_ring *ring, uint32_t rate, uint32_t bits,
+                        uint32_t channels)
 {
     uint32_t tail = __atomic_load_n(&pl->cmd_tail, __ATOMIC_ACQUIRE);
 
@@ -199,9 +226,32 @@ static bool post(struct playback *pl, enum cmd_kind kind, uint32_t generation,
         return false;                   /* the thread is far behind */
     }
 
-    pl->cmds[pl->cmd_head % CMDS] = (struct cmd){ kind, generation, ring };
+    pl->cmds[pl->cmd_head % CMDS] = (struct cmd){ kind, generation, ring, rate, bits, channels };
     __atomic_store_n(&pl->cmd_head, pl->cmd_head + 1, __ATOMIC_RELEASE);
     return true;
+}
+
+static bool post(struct playback *pl, enum cmd_kind kind, uint32_t generation,
+                 struct audio_ring *ring)
+{
+    return post_format(pl, kind, generation, ring, 0, 0, 0);
+}
+
+/* Until the thread has done every command posted so far; bounded. */
+static bool applied(struct playback *pl)
+{
+    uint32_t want = pl->cmd_head;
+
+    /* Bounded: a thread a second late is a thread that has stopped. */
+    for (int i = 0; i < 250; i++) {
+        if ((int32_t)(__atomic_load_n(&pl->applied, __ATOMIC_ACQUIRE) - want) >= 0) {
+            return true;
+        }
+
+        kosmos_sleep(1);
+    }
+
+    return false;
 }
 
 static void player_free(struct playback *pl)
@@ -211,9 +261,8 @@ static void player_free(struct playback *pl)
     free(pl);
 }
 
-struct playback *playback_open(int kind, long rate, long channels,
-                               long bits, const uint8_t *config, size_t config_n,
-                               const char **why)
+static struct playback *player_open(int kind, long rate, long channels, long bits,
+                                    size_t input_bytes, const char **why)
 {
     struct playback *pl = (struct playback *)calloc(1, sizeof *pl);
 
@@ -222,17 +271,14 @@ struct playback *playback_open(int kind, long rate, long channels,
         return NULL;
     }
 
-    pl->in = (struct pb_input *)malloc(INPUT_BYTES);
+    pl->in = (struct pb_input *)malloc(input_bytes);
 
-    if (pl->in == NULL || !pb_input_init(pl->in, INPUT_BYTES)) {
+    if (pl->in == NULL || !pb_input_init(pl->in, input_bytes)) {
         free(pl->in);
         free(pl);
         *why = "no memory for the player's input ring";
         return NULL;
     }
-
-    (void)config;                       /* AAC's, before 0.12.97; see playback.h */
-    (void)config_n;
 
     if (pb_open(&pl->core, (enum pb_kind)kind, rate, channels, bits) != 0) {
         *why = pl->core.why ? pl->core.why : "this sound cannot be played";
@@ -261,34 +307,134 @@ struct playback *playback_open(int kind, long rate, long channels,
     return pl;
 }
 
-bool playback_seek(struct playback *pl, struct audio_ring *r)
+struct playback *playback_open(int kind, long rate, long channels,
+                               long bits, const uint8_t *config, size_t config_n,
+                               const char **why)
 {
-    uint32_t want;
+    (void)config;                       /* AAC's, before 0.12.97; see playback.h */
+    (void)config_n;
 
-    if (!audio_ring_valid(r) || r->period_bytes % 4u != 0
-        || r->period_bytes > sizeof pl->core.period) {
+    if (kind == PLAYBACK_PCM) {
+        *why = "decoded sound is opened with playback_open_pcm";
+        return NULL;
+    }
+
+    return player_open(kind, rate, channels, bits, INPUT_BYTES, why);
+}
+
+long playback_stream_bits(int format, long source_bits)
+{
+    return source_bits < 0 ? 0 : (long)pb_stream_bits((uint32_t)format, (uint32_t)source_bits);
+}
+
+struct playback *playback_open_pcm(int format, long rate, long channels,
+                                   unsigned seconds, const char **why)
+{
+    size_t bytes;
+
+    if (pb_stream_bits((uint32_t)format, 0) == 0 || rate < (long)AUDIO_RATE_MIN
+        || rate > (long)AUDIO_RATE_MAX || channels < 1 || channels > 2) {
+        *why = "decoded sound in a format this cannot play";
+        return NULL;
+    }
+
+    if (seconds == 0) {
+        seconds = PLAYBACK_AHEAD_SECONDS;
+    }
+
+    if (seconds > 60) {
+        seconds = 60;                   /* 92 MB at 192 kHz; an index stays 32 bits */
+    }
+
+    bytes = pb_input_bytes(seconds, (uint32_t)rate, (uint32_t)channels, (uint32_t)format);
+
+    if (bytes < INPUT_BYTES) {
+        bytes = INPUT_BYTES;
+    }
+
+    return player_open(PLAYBACK_PCM, 0, 0, 0, bytes, why);
+}
+
+/* A ring the core can fill: a coded kind's is 16-bit stereo, a decoded one's whole frames. */
+static bool ring_fits(const struct playback *pl, const struct audio_ring *r,
+                      long rate, long bits, long channels)
+{
+    if (!audio_ring_valid(r)) {
+        return false;
+    }
+
+    if (pl->core.kind != PB_PCM) {
+        return rate == 0 && bits == 0 && channels == 0 && r->period_bytes % 4u == 0
+               && r->period_bytes <= sizeof pl->core.period;
+    }
+
+    return audio_format_valid((uint32_t)rate, (uint32_t)bits, (uint32_t)channels)
+           && r->period_bytes % (uint32_t)(channels * (bits / 8)) == 0;
+}
+
+bool playback_seek_format(struct playback *pl, struct audio_ring *r,
+                          long rate, long bits, long channels)
+{
+    if (!ring_fits(pl, r, rate, bits, channels)) {
         return false;
     }
 
     pl->generation = (pl->generation + 1) & 0xffffu;
     pl->ended = false;
+    pl->song_frame = 0;                 /* a song's record comes first again */
 
-    if (!post(pl, CMD_SEEK, pl->generation, r)) {
+    if (!post_format(pl, CMD_SEEK, pl->generation, r, (uint32_t)rate, (uint32_t)bits,
+                     (uint32_t)channels)) {
         return false;
     }
 
-    want = pl->cmd_head;
+    return applied(pl);
+}
 
-    /* Bounded: a thread a second late is a thread that has stopped. */
-    for (int i = 0; i < 250; i++) {
-        if ((int32_t)(__atomic_load_n(&pl->applied, __ATOMIC_ACQUIRE) - want) >= 0) {
-            return true;
-        }
+bool playback_seek(struct playback *pl, struct audio_ring *r)
+{
+    return playback_seek_format(pl, r, 0, 0, 0);
+}
 
-        kosmos_sleep(1);
+bool playback_continue(struct playback *pl, struct audio_ring *r,
+                       long rate, long bits, long channels)
+{
+    if (pl->core.kind != PB_PCM || !ring_fits(pl, r, rate, bits, channels)) {
+        return false;
     }
 
-    return false;
+    if (!post_format(pl, CMD_RING, 0, r, (uint32_t)rate, (uint32_t)bits, (uint32_t)channels)) {
+        return false;
+    }
+
+    return applied(pl);
+}
+
+int playback_song(struct playback *pl, const struct playback_song *song, const char **why)
+{
+    uint32_t bits = pb_stream_bits(song->format, song->bits);
+
+    if (pl->core.kind != PB_PCM) {
+        *why = "songs are for a player of decoded sound";
+        return -1;
+    }
+
+    if (pl->ended) {
+        *why = "a song after the end";
+        return -1;
+    }
+
+    if (bits == 0 || !audio_format_valid(song->rate, bits, song->channels)) {
+        *why = "a song in a format this cannot play";
+        return -1;
+    }
+
+    if (!pb_input_put(pl->in, song, (uint32_t)sizeof *song, PB_SONG | (pl->generation << 16))) {
+        return 0;
+    }
+
+    pl->song_frame = song->channels * pb_sample_bytes(song->format);
+    return 1;
 }
 
 bool playback_play(struct playback *pl)
@@ -318,8 +464,7 @@ size_t playback_room(const struct playback *pl)
 
 size_t playback_piece(const struct playback *pl)
 {
-    (void)pl;
-    return PB_PIECE;
+    return pl->core.kind == PB_PCM ? PCM_PIECE : PB_PIECE;
 }
 
 int playback_frame(struct playback *pl, const void *bytes, size_t n, const char **why)
@@ -332,6 +477,18 @@ int playback_frame(struct playback *pl, const void *bytes, size_t n, const char 
     if (n > pl->in->size / 2) {
         *why = "a frame larger than the player takes";
         return -1;
+    }
+
+    /* Decoded sound: whole frames of the song, after its record. Any
+     * length up to half the ring, since the core takes a record in parts. */
+    if (pl->core.kind == PB_PCM) {
+        if (pl->song_frame == 0 || n % pl->song_frame != 0) {
+            *why = pl->song_frame == 0 ? "samples before their song"
+                                       : "samples that are not whole frames of their song";
+            return -1;
+        }
+
+        return pb_input_put(pl->in, bytes, (uint32_t)n, pl->generation << 16) ? 1 : 0;
     }
 
     if (n > PB_PIECE) {
@@ -415,6 +572,22 @@ void playback_state(const struct playback *pl, struct playback_state *out)
     out->audio_band = pl->audio_band;
     out->worst_pass = away;
     memcpy(out->why, copy.why, sizeof out->why);
+
+    out->ring = copy.core.ring;
+    out->ring_frames = copy.core.ring_frames;
+    out->marks = copy.core.marks;
+
+    for (uint32_t k = 0; k < 2 && k < copy.core.marks; k++) {
+        const struct pb_mark *m = &copy.core.mark[(copy.core.marks - 1 - k) % PB_MARKS];
+
+        out->mark[k] = (struct playback_mark){ m->song, m->ring, m->at, m->from };
+    }
+
+    out->change = copy.core.change && copy.generation == pl->generation;
+    out->change_rate = copy.core.change_rate;
+    out->change_bits = copy.core.change_bits;
+    out->change_channels = copy.core.change_channels;
+    out->untrusted = copy.core.untrusted;
 }
 
 void playback_close(struct playback *pl)

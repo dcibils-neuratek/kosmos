@@ -9,7 +9,12 @@
  *   media.open(path)           a source, or nil and why
  *   src:streams()              { { kind, codec, profile, duration_us, width,
  *                                  height, bits, fps_num, fps_den, rate,
- *                                  channels } }
+ *                                  channels, source_bits, lossless,
+ *                                  source_float, pcm, bitrate } } - a
+ *                              sound's source as `struct media_stream`
+ *                              says it (`player.md` P1): `pcm` is "s16",
+ *                              "s32" or "f32", what `dec:sound("native")`
+ *                              hands back, or absent while unknown
  *   src:read()                 the next packet, or nil at the end, or nil
  *                              and why when the reading stopped
  *   src:seek(us)               to the key picture at or before `us`
@@ -159,6 +164,11 @@ static int l_open(lua_State *L)
     return 1;
 }
 
+static const char *pcm_name(int format)
+{
+    return format == MEDIA_PCM_S16 ? "s16" : format == MEDIA_PCM_S32 ? "s32" : "f32";
+}
+
 static const char *kind_name(int kind)
 {
     return kind == MEDIA_VIDEO ? "video" : kind == MEDIA_AUDIO ? "audio" : "other";
@@ -206,6 +216,17 @@ static int l_streams(lua_State *L)
         } else if (m.kind == MEDIA_AUDIO) {
             set_int(L, "rate", m.rate);
             set_int(L, "channels", m.channels);
+            set_int(L, "source_bits", m.source_bits);
+            lua_pushboolean(L, m.lossless);
+            lua_setfield(L, -2, "lossless");
+            lua_pushboolean(L, m.source_float);
+            lua_setfield(L, -2, "source_float");
+            set_int(L, "bitrate", m.bitrate);
+
+            if (m.pcm != MEDIA_PCM_NATIVE) {
+                lua_pushstring(L, pcm_name(m.pcm));
+                lua_setfield(L, -2, "pcm");
+            }
         }
 
         lua_rawseti(L, -2, i + 1);
@@ -352,6 +373,12 @@ const struct media_packet *kosmos_media_packet(lua_State *L, int at)
  *                          frames - for `player:frame(at, n)`, as
  *                          `gfx.jpeg` takes a frame; false, nil, or nil and
  *                          why, as `picture`
+ *   dec:sound(format)      the same at the file's own resolution
+ *                          (`player.md` P1, `media_sound`): `format` is
+ *                          "native" - the decoder's own - or "s16", "s32"
+ *                          or "f32" (`media.h`, MEDIA_PCM_*); the address,
+ *                          the length, the time and the frames as above,
+ *                          then the format it is in and the source's bits
  *   dec:flush()            what it holds let go, after a seek
  *   dec:close()
  *
@@ -364,7 +391,10 @@ const struct media_packet *kosmos_media_packet(lua_State *L, int at)
  *
  * **A sound goes into the Playback Kit as PCM**, its WAV kind: the decoder
  * makes float, and this turns it into 16-bit, rounded and clipped, in a
- * buffer of its own that grows to the largest frame it has met.
+ * buffer of its own that grows to the largest frame it has met. Music asks
+ * with a format instead, and gets the decoder's own samples - a 24-bit
+ * FLAC as 32-bit integers, bit for bit - through `media_sound`, which
+ * hands packed PCM and FLAC back where the decoder put them.
  */
 
 #define DECODER_MT "kosmos.media.decoder"
@@ -394,6 +424,15 @@ static int l_decoder(lua_State *L)
     struct source *s = check_source(L);
     lua_Integer i = luaL_checkinteger(L, 2);
     lua_Integer threads = luaL_optinteger(L, 3, 0);
+    /* `src:decoder(i, threads, "untrimmed")`: priming and padding left in,
+     * for the Playback Kit to trim (`MEDIA_UNTRIMMED`). */
+    unsigned flags = 0;
+    if (!lua_isnoneornil(L, 4)) {
+        const char *how = luaL_checkstring(L, 4);
+        if (strcmp(how, "untrimmed") != 0)
+            return luaL_argerror(L, 4, "\"untrimmed\" or nothing");
+        flags |= MEDIA_UNTRIMMED;
+    }
     struct media_stream m;
     struct decoder *d;
     char why[160] = { 0 };
@@ -413,7 +452,7 @@ static int l_decoder(lua_State *L)
     lua_setiuservalue(L, -2, 1);
 
     d->kind = m.kind;
-    d->d = media_decoder_open(s->src, (int)i, (int)threads, why, sizeof why);
+    d->d = media_decoder_open_with(s->src, (int)i, (int)threads, flags, why, sizeof why);
 
     if (d->d == NULL) {
         lua_pushnil(L);
@@ -551,6 +590,27 @@ static int l_picture(lua_State *L)
     return 1;
 }
 
+/* `dec:sound(format)`: the decoder's own samples, or the format asked. */
+static int sound_as(lua_State *L, struct decoder *d)
+{
+    static const char *const names[] = { "native", "s16", "s32", "f32", NULL };
+    int format = luaL_checkoption(L, 2, NULL, names);   /* MEDIA_PCM_* in order */
+    struct media_sound s;
+    int r = media_sound(d->d, format, &s), n = not_a_frame(L, r);
+
+    if (n > 0) {
+        return n;
+    }
+
+    lua_pushinteger(L, (lua_Integer)(uintptr_t)s.pcm);
+    lua_pushinteger(L, (lua_Integer)s.bytes);
+    lua_pushinteger(L, s.pts_us);
+    lua_pushinteger(L, s.samples);
+    lua_pushstring(L, pcm_name(s.format));
+    lua_pushinteger(L, s.bits);
+    return 6;
+}
+
 static int l_sound(lua_State *L)
 {
     struct decoder *d = check_decoder(L);
@@ -560,6 +620,10 @@ static int l_sound(lua_State *L)
 
     if (d->kind != MEDIA_AUDIO) {
         return luaL_error(L, "this decoder's stream is not a sound");
+    }
+
+    if (!lua_isnoneornil(L, 2)) {
+        return sound_as(L, d);
     }
 
     r = media_frame(d->d, &f);

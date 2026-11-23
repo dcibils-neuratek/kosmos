@@ -43207,3 +43207,121 @@ spare slot now.
 **What it does not check**: WebKit still passes the AAC configuration
 arguments `playback_open` now ignores; they go when WebKit's player is
 built again (`roadmap.md`). And `arm-media` has no `media.elf` yet.
+
+## 18.1019 Six lanes folded: the new Music's P1 to P4, the speaker's own volume (U10g), and the display's registers and EDID (D1, D2)
+
+Built side by side by six lanes on 23 November, each on copies outside the
+checkout while a gate ran, and folded in here.
+
+**P1, the Media Kit for music** (`docs/player.md`). The W5 FFmpeg gains
+`alac`, the `aiff` demuxer and the big-endian and 64-bit PCM decoders.
+`struct media_stream` says a sound's source depth, whether it is lossless
+or float, its own sample format and its bit rate; `media_sound` hands the
+decoder's samples back as `s16`, `s32` (left-justified) or `f32`; and
+`media_decoder_open_with(..., MEDIA_UNTRIMMED, ...)` decodes a song whole
+for the Playback Kit to trim (decision 10). `tools/test_mediasound.c`
+makes 26 files with this Mac's `ffmpeg` - WAV and AIFF from 8 to 64 bits,
+FLAC and ALAC at 16 and 24, MP3, at 44.1 to 192 kHz, from a tone, a sweep
+and seeded noise - and holds each decode to `ffmpeg -f md5`, every FLAC to
+its own STREAMINFO MD5, and an MP3 decoded untrimmed to `ffmpeg -flags2
++skip_manual`: 320 checks, on FFmpeg built for the Mac from the images'
+own list. A 96/24 FLAC decodes at about 200 times real time on one core.
+
+**P2, the tag reader grown** (`tags.lua`): Vorbis comments, FLAC's and
+MP4's covers, MP4's `ilst`, ID3's album artist, disc and compilation,
+LAME's header and `iTunSMPB` as `gapless`, ReplayGain, AIFF's `ID3 `;
+every size checked against its parent. 83 checks. **Found**: this Mac's
+FFmpeg writes a wrong LAME header into an MP3 that carries a picture.
+
+**P3, the Playback Kit's decoded songs**: a song record (delay, length,
+from), PCM in any of the three formats, the input ring in seconds, two
+songs joined inside one period, each marked at its first kept frame, a
+format change reported, and a stated length far short of the stream not
+believed. `test_playback`, 53 checks: two halves of a tone, a sweep and
+noise, cut off a codec frame and encoded apart, join sample for sample to
+the uncut original in WAV and 96/24 FLAC, and to FFmpeg's own gapless
+decode in MP3 and AAC (`afconvert` for `iTunSMPB`); a seek into song 2
+lands at its frame.
+
+**P4, the Library kit** (`library.lua`): albums (compilations grouped,
+CD1 and CD2 one album), artists, search, smart rules, plays and ratings,
+its facts kept as attributes on each file and read again only when a
+file's stamp or size moved. 107 checks over an fs in memory.
+
+**U10g, the master on the speaker's own volume**: the ring says the
+master (`master`, `master_muted`, `master_set`) and the driver what it did
+(`master_hw`, `volume_cur`, `volume_sets`, the range); `xhci` reads the
+control's range once and sets it from its own loop, mute first and unmute
+last, and recovers the control endpoint after a stall; the mix goes out at
+unity when the speaker carries the master. `test_uacdecode` 197 checks, the
+master's curve onto QEMU's control among them. QEMU records after its own
+volume, so `x86-usb-3` checks the SET_CUR and its read-back at 50%, the
+sound said `exact` and about 0.957 as loud, and bit for bit again at the
+top.
+
+**D1 and D2, a display's registers and a monitor's EDID**:
+`intelgpu_display.c` decodes a transcoder's timings, M/N, DDI, DPLL and
+display clock into a mode and its refresh, which `gpu look` prints on the
+M700; the Display Kit's `edid.c` decodes EDID 1.3 and 1.4, CTA, DisplayID
+1 and 2, CVT and GTF into modes. 80 and 110 checks, on values built from
+i915's and DRM's own encodings, since QEMU has neither. The lane's frame
+count was left out: it waited a second inside the driver.
+
+**Controls**, each failing as it should: through float, 32-bit sources'
+MD5s (3 fail); a planar channel swap (6); the untrimmed flag ignored (4);
+songs joined untrimmed (10 of 51); delay ignored (13), padding kept (11),
+the wrong-length check off (2); the library's stamps ignored (7, every
+file read); every guard in the tag reader removed one at a time; the
+master left in the mix (`x86-usb-3`: the noise heard at 0.480 of
+itself, where 0.963 passes); a byte moved in
+each EDID fixture with its checksum kept (10); and the display decoder's
+link N halved, its HDMI P code and CDCLK select changed.
+
+**S2, `meters.lua`** (`docs/sysmonitor.md`), by a seventh lane the same
+afternoon: each monitor's differences from two readings - processor per
+core and its heat, the Deskbar's busy and memory, processes, the GPU, each
+drive, the network and its connections, the LLM server - in one library,
+and `sysmon`, `procs`, `gpumon`, `diskmon`, `netmon`, `llmmon` and
+`indicators.lua` reading it instead of seven copies. A counter that went
+backwards (a server started again) is nought now, not a negative rate.
+`test_meters.lua`, 84 checks on readings in the M700's shape; controls, each
+3 failures: a rate not divided by its time, a wrap not clamped, a first
+reading taken as though nought came before it.
+
+**Found on the way, in U10g**: the driver's range line passed
+`SAY_LINE_MAX`, 160, and was cut off at QEMU's note, so it is two lines; and
+the suite typed `use(...)` at the shell, which has no `use`, so the master
+was never set and the noise arrived bit for bit - the step is a program in
+`/Temporary` now, as the suite's others are. Under the gate the suite hung
+for twelve minutes; the gate now stops a suite at three times what it took
+last (`suite_limit`; Diego: "im really annoyed of waiting so much for tests").
+
+**`x86-usb-3` under the gate's load, and now why.** With both fixed, the
+suite's eight parts in a row stopped three runs of three, while each part
+alone, each pair and three copies side by side passed, and twice more the
+whole suite on an idle Mac and beside ten busy loops: 76 of 76. It is the
+starving 18.1013 recorded at 0.12.91, older than U10g, and it came back in
+this batch's gate. What was missing was a line to read, so the driver now
+has one: `serve_speakers` says, once, when nothing has come back from a
+speaker for `SPEAKER_SILENT_MS` (60 ms) - what is out, the ring's places,
+how often it ran dry - and again when TDs come back. It does not restart
+the speaker; nothing about it is stopped.
+
+Beside thirteen QEMU suites it said what is wrong, every cycle of the
+stream: 16 TDs out, nothing back for 105 to 112 ms, then all 16 at once and
+the ring 16 further on - never dry, never lost, never an error. So the
+controller plays the 16 ms it holds and the driver does not hear it until
+its nap ends: the speaker is served on the clock, not on its interrupts,
+and plays at a seventh of its speed, which is the suite's two minutes of
+silence. U10g sends nothing there (the master is set once, at the open, and
+the silences begin while the suite is still typing). **Left in the
+roadmap's item, with this**: why the speaker's interrupts do not wake the
+driver under load - the eighth TD's, which is all that is not `TRB_BEI` -
+and whether 16 ms in flight is too little for a guest a full host holds
+off.
+
+**Result**: the whole gate, 162 suites in 868 s, every one passing but
+`x86-usb-3`, whose two faults are above; then the fifteen suites the fixes
+and S2 reach. Then the batch's gate with the driver's silence line: 126
+suites in 611 s, every one passing but `x86-usb-3`, starved as above, and
+76 of 76 alone.

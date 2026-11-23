@@ -25,6 +25,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local gpu = use("/Kosmos/Libraries/gpu.lua")
+local meters = use("/Kosmos/Libraries/meters.lua")
 local rendering = use("/Kosmos/Libraries/rendering.lua")
 local theme = ui.theme
 local L = ui.layout
@@ -66,8 +67,10 @@ local MEMORY_SCALE = 256 * 1048576      -- the memory graph's top: room for the 
 -- What the window shows, refreshed a sample at a time.
 --------------------------------------------------------------------------
 
+-- The GPU's meter (`meters.gpu`): two snapshots' rates, the engines' busy,
+-- the buffers' bytes and the power plane's watts.
+local measured = meters.gpu(counter_hz)
 local now, rate = nil, nil              -- the latest snapshot, and rates from the one before
-local last, last_info = nil, nil
 local watts = nil                       -- the GPU's power, where it is known
 local why_not = nil                     -- the driver's sentence when there is no GPU
 local clock_h, mem_h, disp_h, busy_h = {}, {}, {}, {}
@@ -94,31 +97,21 @@ local function sample()
 
   for _, p in ipairs(sys.processes() or {}) do names[p.id] = p.name end
 
-  if last then
-    rate = gpu.since(last, s, counter_hz)
+  if measured:take(s, info) then
+    rate = measured.rate
 
-    if rate then
-      local bytes = 0
-
-      for _, b in ipairs(s.buffers) do bytes = bytes + b.bytes end
-
-      -- Busy is either engine at work: the blitter's copies and the
-      -- render engine's runs, each by its own clock, the larger of the two.
-      ui.history.push(busy_h, { math.floor(math.max(rate.blitter, rate.render or 0) * 100 + 0.5) }, COLUMNS)
-      ui.history.push(clock_h, { s.max_mhz > 0 and math.floor(100 * s.mhz / s.max_mhz) or 0 },
-                      COLUMNS)
-      ui.history.push(mem_h, { math.min(100, math.floor(100 * bytes / MEMORY_SCALE + 0.5)) },
-                      COLUMNS)
-      ui.history.push(disp_h, { rate.frames > 0 and math.min(100, math.floor(100 * rate.flips / rate.frames)) or 0 },
-                      COLUMNS)
-
-      if info.gpu_energy_uj and last_info and last_info.gpu_energy_uj then
-        watts = ((info.gpu_energy_uj - last_info.gpu_energy_uj) & 0xffffffff) / 1e6 / rate.seconds
-      end
-    end
+    -- Busy is either engine at work: the blitter's copies and the
+    -- render engine's runs, each by its own clock, the larger of the two.
+    ui.history.push(busy_h, { math.floor(measured.busy * 100 + 0.5) }, COLUMNS)
+    ui.history.push(clock_h, { s.max_mhz > 0 and math.floor(100 * s.mhz / s.max_mhz) or 0 },
+                    COLUMNS)
+    ui.history.push(mem_h, { math.min(100, math.floor(100 * measured.bytes / MEMORY_SCALE + 0.5)) },
+                    COLUMNS)
+    ui.history.push(disp_h, { rate.frames > 0 and math.min(100, math.floor(100 * rate.flips / rate.frames)) or 0 },
+                    COLUMNS)
   end
 
-  now, last, last_info = s, s, info
+  now, rate, watts = measured.now, measured.rate, measured.watts
 
   if TELL and rate then
     print(("gpumon: %s, %d MHz, asleep %.0f%%, %.1f frames a second, %.1f flips a second, %d buffers")
@@ -418,7 +411,8 @@ set_pace = function(p)
 
   -- Begun again: columns at one pace beside columns at another would be a
   -- time axis that lies.
-  clock_h, mem_h, disp_h, busy_h, last = {}, {}, {}, {}, nil
+  clock_h, mem_h, disp_h, busy_h = {}, {}, {}, {}
+  measured:restart()
   sample()
   print(("gpumon: %s"):format(p.menu:lower()))
 end

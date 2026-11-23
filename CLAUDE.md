@@ -1038,6 +1038,18 @@ once before a push, and is allowed past them - 870 s at 0.12.88, against
 4:37 on this Mac on 18 September, with each suite's time printed and the
 slowest named at the end - so the budget is watched rather than remembered.
 
+**Test what changed, and the whole gate once per batch** (Diego, 23
+November 2026: "we need to start working on paralellizing work more often
+and also work smarter by not testing all all the time and be smart on what
+to test beause it takes ages to test everything"). A revision is committed
+on the suites for what it changed - `make test ONLY=...`, the list `tools/gate.py
+--plan` gives - and the whole gate runs once over a batch of revisions,
+before every push (`make prepush`), and when the kernel, the runtime or the
+window manager changed. Lanes work on the next pieces while the main session
+builds or tests, so nobody waits on a gate; and a suite that hangs is
+stopped at three times what it took last (`tools/gate.py`, `suite_limit`).
+The paragraphs below are how the gate got here.
+
 **Test what changed; the whole gate when something shared changed.** Diego,
 1 October 2026, asking why Cafesa3D's suite ran for work on the browser:
 "the tests should be shorter", "and test whats changed", "and then do a

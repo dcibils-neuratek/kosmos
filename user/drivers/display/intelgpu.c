@@ -30,6 +30,7 @@
 #include "kosmos.h"
 #include "gpuproto.h"
 #include "intelgpu_decode.h"
+#include "intelgpu_display.h"
 #include "intelgpu_fill.h"
 #include "intelgpu_kernel.h"
 #include "intelgpu_lrc.h"
@@ -166,6 +167,112 @@ static struct {
     unsigned      fb_pages;         /* the pages plane 1 scans out */
     unsigned      fb_pitch;         /* and its bytes a row */
 } G = { .pipe = -1 };
+
+/*
+ * **What each lit transcoder is sending, and to whom** (`docs/displaymodes.md`
+ * D1): its DDI function, its timings and M/N, then the DDI, DPLL and
+ * display clock those name - two passes, since which port and which DPLL
+ * to read is in the first. Read only; nothing is written.
+ */
+static void outputs(long console, uintptr_t regs)
+{
+    struct say_line line;
+    struct igpu_cdclk cd;
+    uint32_t ctrl1 = reg(regs, IGPU_DPLL_CTRL1), ctrl2 = reg(regs, IGPU_DPLL_CTRL2);
+    unsigned t;
+
+    for (t = 0; t < IGPU_TRANSCODERS; t++) {
+        uint32_t at = igpu_transcoder_at(t);
+        struct igpu_output_regs r = { 0 };
+        struct igpu_output o;
+
+        r.edp_transcoder = t == 3;
+        r.ddi_func_ctl = reg(regs, at + IGPU_TRANS_DDI_FUNC_CTL);
+
+        if (r.ddi_func_ctl == 0xFFFFFFFFu || (r.ddi_func_ctl & (1u << 31)) == 0) {
+            continue;
+        }
+
+        r.timing.htotal = reg(regs, at + IGPU_TRANS_HTOTAL);
+        r.timing.hblank = reg(regs, at + IGPU_TRANS_HBLANK);
+        r.timing.hsync = reg(regs, at + IGPU_TRANS_HSYNC);
+        r.timing.vtotal = reg(regs, at + IGPU_TRANS_VTOTAL);
+        r.timing.vblank = reg(regs, at + IGPU_TRANS_VBLANK);
+        r.timing.vsync = reg(regs, at + IGPU_TRANS_VSYNC);
+        r.data_m1 = reg(regs, at + IGPU_TRANS_DATA_M1);
+        r.data_n1 = reg(regs, at + IGPU_TRANS_DATA_N1);
+        r.link_m1 = reg(regs, at + IGPU_TRANS_LINK_M1);
+        r.link_n1 = reg(regs, at + IGPU_TRANS_LINK_N1);
+        r.dpll_ctrl1 = ctrl1;
+        r.dpll_ctrl2 = ctrl2;
+
+        /* The second pass: the port and the DPLL the first one named. */
+        igpu_decode_output(&r, &o);
+        r.ddi_buf_ctl = reg(regs, igpu_ddi_buf_ctl_at(o.func.port));
+
+        if (o.dpll_known && o.dpll != 0) {
+            r.cfgcr1 = reg(regs, igpu_dpll_cfgcr1_at(o.dpll));
+            r.cfgcr2 = reg(regs, igpu_dpll_cfgcr2_at(o.dpll));
+        }
+
+        igpu_decode_output(&r, &o);
+
+        say_begin(&line);
+        say_text(&line, "intelgpu: transcoder ");
+        say_text(&line, igpu_transcoder_name(t));
+        say_text(&line, " -> ");
+        say_text(&line, igpu_port_name(o.func.port));
+        say_text(&line, ", ");
+        say_text(&line, o.func.mode_name != NULL ? o.func.mode_name : "mode unnamed");
+        say_text(&line, ", ");
+        say_dec(&line, o.func.lanes);
+        say_text(&line, " lanes, ");
+        say_dec(&line, o.func.bpc);
+        say_text(&line, " bpc, ");
+        say_dec(&line, o.t.hactive);
+        say_text(&line, "x");
+        say_dec(&line, o.t.vactive);
+        say_text(&line, " in ");
+        say_dec(&line, o.t.htotal);
+        say_text(&line, "x");
+        say_dec(&line, o.t.vtotal);
+        say_send(console, &line);
+
+        say_begin(&line);
+        say_text(&line, "intelgpu:   DPLL ");
+
+        if (o.dpll_known) {
+            say_dec(&line, o.dpll);
+        } else {
+            say_text(&line, "?");
+        }
+
+        say_text(&line, o.is_dp ? ", link " : ", TMDS ");
+        say_dec(&line, o.port_clock);
+        say_text(&line, o.is_dp ? " x10 kbit/s, pixel " : " kHz, pixel ");
+        say_dec(&line, o.pixel_khz);
+        say_text(&line, " kHz, ");
+        say_dec(&line, o.refresh_mhz);
+        say_text(&line, " mHz; DDI_BUF_CTL ");
+        say_hex(&line, r.ddi_buf_ctl, 8);
+        say_text(&line, ", M/N ");
+        say_hex(&line, r.link_m1, 8);
+        say_text(&line, "/");
+        say_hex(&line, r.link_n1, 8);
+        say_send(console, &line);
+    }
+
+    igpu_decode_cdclk(reg(regs, IGPU_CDCLK_CTL), reg(regs, IGPU_LCPLL1_CTL), ctrl1, &cd);
+    say_begin(&line);
+    say_text(&line, "intelgpu: display clock ");
+    say_dec(&line, cd.cdclk_khz);
+    say_text(&line, " kHz, VCO ");
+    say_dec(&line, cd.vco_khz);
+    say_text(&line, " kHz, at most ");
+    say_dec(&line, igpu_max_cdclk_khz(reg(regs, IGPU_SKL_DFSM), cd.vco_khz));
+    say_text(&line, " kHz - the highest pixel clock a pipe may take");
+    say_send(console, &line);
+}
 
 static void look(long console)
 {
@@ -323,6 +430,8 @@ static void look(long console)
 
         say_send(console, &line);
     }
+
+    outputs(console, regs);
 
     say_begin(&line);
     say_text(&line, "intelgpu: ");

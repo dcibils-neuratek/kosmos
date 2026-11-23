@@ -1496,6 +1496,23 @@ for board, image in (("arm", ARM), ("x86", X86)):
 # whether or not everything under it could be, and the log says why.
 SUITE_LIMIT = 12 * 60
 
+# **And a suite that has been timed is stopped at three times what it took
+# last** (Diego, 23 November 2026: "im really annoyed of waiting so much for
+# tests"), never under three minutes and never past twelve. `x86-usb-3`
+# takes 155 s; hung, it held the gate for the whole twelve. A suite never
+# timed keeps the twelve.
+SUITE_FLOOR = 3 * 60
+SUITE_TIMES = {}
+
+
+def suite_limit(name):
+    took = SUITE_TIMES.get(name)
+
+    if not took:
+        return SUITE_LIMIT
+
+    return int(min(SUITE_LIMIT, max(SUITE_FLOOR, 3 * took)))
+
 
 def reap(proc, limit):
     """A suite's exit code and the processor it and everything it waited
@@ -1532,7 +1549,8 @@ def run(suite, lock, started):
                                 start_new_session=True, env=env)
 
         try:
-            suite.code, suite.cpu = reap(proc, SUITE_LIMIT)
+            limit = suite_limit(suite.name)
+            suite.code, suite.cpu = reap(proc, limit)
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
@@ -1544,8 +1562,9 @@ def run(suite, lock, started):
             except subprocess.TimeoutExpired:
                 pass                    # something under it will not die
 
-            out.write(b"\nFAIL: hung - no answer in %d s, and the gate stopped "
-                      b"waiting for it\n" % SUITE_LIMIT)
+            out.write(b"\nFAIL: hung - no answer in %d s, three times what it took "
+                      b"last or the most a suite may, and the gate stopped "
+                      b"waiting for it\n" % limit)
             suite.code = -1
 
     suite.took = time.monotonic() - begin
@@ -1909,6 +1928,7 @@ def main():
     except (OSError, ValueError):
         last = {}
 
+    SUITE_TIMES.update(last)
     waiting = sorted(shared, key=lambda s: -last.get(s.name, 1e9))
     running = []
 

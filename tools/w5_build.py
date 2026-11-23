@@ -593,13 +593,20 @@ def build_dav1d(arch, src, top, out, prefix):
 # frame's colours are the painter's). Threads, since WebKit decodes on
 # threads of its own and FFmpeg built without them must not be used so.
 #
+# **Music's** (`docs/player.md` P1): ALAC, which an M4A from iTunes
+# holds, and AIFF, whose PCM is big-endian - 8, 16, 24 and 32-bit
+# integer and 32 and 64-bit float - with the 64-bit float WAV beside it.
+# `tools/test_mediasound.c` builds FFmpeg from this list on the Mac and
+# holds every one of them to the Mac's `ffmpeg -f md5`.
+#
 FFMPEG = ["--disable-everything", "--disable-programs", "--disable-doc",
           "--disable-network", "--disable-autodetect", "--disable-avdevice",
           "--disable-avfilter", "--disable-swscale", "--enable-swresample",
           "--enable-pthreads", "--enable-static", "--disable-shared", "--enable-libdav1d",
-          "--enable-decoder=libdav1d,vp9,vp8,h264,aac,opus,vorbis,mp3,flac,"
-          "pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8",
-          "--enable-demuxer=matroska,mov,mp3,ogg,flac,aac,wav",
+          "--enable-decoder=libdav1d,vp9,vp8,h264,aac,opus,vorbis,mp3,flac,alac,"
+          "pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,pcm_u8,"
+          "pcm_s8,pcm_s16be,pcm_s24be,pcm_s32be,pcm_f32be,pcm_f64be",
+          "--enable-demuxer=matroska,mov,mp3,ogg,flac,aac,wav,aiff",
           "--enable-parser=av1,vp9,vp8,h264,aac,opus,vorbis,mpegaudio,flac"]
 
 

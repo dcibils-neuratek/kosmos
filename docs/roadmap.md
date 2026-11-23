@@ -955,7 +955,10 @@ decisions), `docs/sysmonitor.html` and `docs/sysmonitor-architecture.png`.
 **S1 built** (0.12.97, `testing.md` 18.1018), by a lane: the Series Kit in
 C (`user/kits/series/`, `seriesring.h`), `ui.history` its door, and the
 five monitors drawing through it unchanged - held pixel for pixel to the
-old Lua by `test_series`. Next: S2, `meters.lua`.
+old Lua by `test_series`. **S2 built** (0.12.98, 18.1019), by a lane:
+`meters.lua`, every monitor's differences in one library, seven copies
+gone. Left from S2: the prompt's `htop`, `monitor`, `gpustat` and `llm`
+keep their own arithmetic, and should read it too. Next: S3, the window.
 
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64
@@ -4774,7 +4777,11 @@ processors, and still what follows USB:
    seven decisions), `docs/displaymodes.html` and
    `docs/displaymodes-architecture.png`. 3440x1440 at 144 Hz is probably
    past the HD 530's DisplayPort 1.2 and display clock; D1 reads what the
-   M700 really has. **Cafesa3D's ray tracer on the
+   M700 really has. **D1 and D2's decoders built in 0.12.98** (18.1019), by
+   a lane: a transcoder's timings, link and clocks from the registers, for
+   `gpu look`, and the Display Kit's EDID reader - held to values built from
+   i915's and DRM's encodings; `gpu look` on the M700 says what is lit.
+   **Cafesa3D's ray tracer on the
    GPU's 24 execution units** (Diego, the same day: "can we make cafesa3d
    use the gpu rendering for faster raytracing using the 24 Execution
    Units?"): GPU compute - the render engine's GPGPU pipeline, a context,
@@ -13226,7 +13233,12 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   **U10g AGREED 23 November** (Diego: "go with C"): Kosmos's master volume
   drives a USB speaker's own volume control where it has one, as macOS
   does, and the mix goes out at unity - exact at any volume; the master
-  in the mix where a speaker has none (`usbaudio.md`, U10g). To build.
+  in the mix where a speaker has none (`usbaudio.md`, U10g). **Built in
+  0.12.98** (`testing.md` 18.1019): the range read once, the level set from
+  the driver's own loop, QEMU's SET_CUR and its read-back held at 50% and
+  the noise bit for bit at the top. Left: the M60's range and a key press,
+  over Telnet on the M700; and the Sound and Mixer windows do not yet show
+  the speaker's own decibels (an `audio_device_info` change).
   **Hi-res FLAC and AIFF, file to speaker - AGREED 23 November** (Diego,
   showing an album sold as 96 kHz / 24-bit FLAC and AIFF: "will kosmos be
   able to play this hi res tracks?", then "yes add hi-res flac and aiff to
@@ -13256,12 +13268,21 @@ copied a phone's home grid and shade, and was redrawn the same hour.
      96 kHz - U10f's M700 half, with real files.
   These are not a second plan: 1 and 2 are the new Music's P1, 3 its P2 and
   P5, and 4 its P6 (`docs/player.md`), and are built as those steps.
+  **1 and 2 built in 0.12.98** as P1 (18.1019): ALAC, AIFF and big-endian
+  PCM in the W5 FFmpeg, a sound's own depth and format at the door, every
+  file held to `ffmpeg -f md5`.
   **The speaker's suite under the gate's load** (found 23 November,
   `testing.md` 18.1012): `x86-usb-3` fails one gate in two or three. A
   stream stops being taken, or a beep takes 41 s, because the guest is
   starved when the host has every core busy. 0.12.90's audio code fails
   the same way under the same load. To do: make the parts hold, or have
-  them say they were starved, as `x86-film` does.
+  them say they were starved, as `x86-film` does. **Found in 0.12.98**
+  (18.1019), with the driver's new silence line: under load the speaker
+  is served when `xhci`'s nap ends, not on its interrupts - 16 TDs out,
+  nothing back for 110 ms, then all 16 at once - so it plays at a seventh
+  of its speed. Next: why the eighth TD's interrupt (the only one not
+  `TRB_BEI`) does not wake the driver then, and whether 16 ms in flight
+  is too little.
 - **The best audio player, iTunes's ground, hi-res - ASKED 22 November
   2026** (Diego: "design and build a new audio player app inspired in
   itunes and will hires audio support with flac and mp4, m4a, mp3, wav,
@@ -13283,6 +13304,14 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   which is old and irrelevant once we have the newone"): `music.lua`, the
   VOX pilot, is removed at P5, with its pieces of `docs/music.md` marked
   answered by `docs/player.md`.
+  **P1 to P4 built in 0.12.98** (`testing.md` 18.1019), by four lanes side
+  by side: the Media Kit for music (P1), the tag reader (P2), the Playback
+  Kit's decoded songs joined gaplessly (P3) and the Library kit (P4).
+  Decision 10, the same day: the Playback Kit trims, FFmpeg decodes whole.
+  **P5, the window, being built** by a lane. Left from P3: the queue's
+  feeder as a thread of its own (`playback_queue_*`), more than two
+  channels mixed down, and the 24-bit packing in vector types. From P1:
+  MP3 comes out as 16 bits, FFmpeg's fixed-point decoder.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
 - **Music, as VOX is**, Diego's, 14 September: "the music player is really

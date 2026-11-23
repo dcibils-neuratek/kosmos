@@ -4,7 +4,8 @@
  * libavformat, libavcodec and libswresample. Everything here is the
  * translation between FFmpeg's terms and the header's: the caller's
  * reader as an AVIOContext, a container's time base as microseconds, a
- * decoder's frame as planes or as interleaved float.
+ * decoder's frame as planes, as interleaved float, or as interleaved
+ * samples in the decoder's own format (`media_sound`).
  */
 
 #include <stdio.h>
@@ -39,6 +40,13 @@ struct media_decoder {
     AVChannelLayout swr_layout;
     float *pcm;
     int pcm_room;
+    /* sound at its own resolution (`media_sound`): the source's bits, and
+     * the frame made interleaved, then converted when asked */
+    int source_bits;
+    void *native;
+    size_t native_room;
+    void *asked;
+    size_t asked_room;
 };
 
 static void say(char *why, size_t room, const char *what, int code)
@@ -207,6 +215,43 @@ int media_stream_count(const struct media_source *s)
     return (int)s->fmt->nb_streams;
 }
 
+/* What `media_sound` hands back by itself for a decoder's sample format. */
+static int pcm_of(int format)
+{
+    switch (format) {
+    case AV_SAMPLE_FMT_U8:  case AV_SAMPLE_FMT_U8P:
+    case AV_SAMPLE_FMT_S16: case AV_SAMPLE_FMT_S16P:
+        return MEDIA_PCM_S16;
+    case AV_SAMPLE_FMT_S32: case AV_SAMPLE_FMT_S32P:
+        return MEDIA_PCM_S32;
+    case AV_SAMPLE_FMT_FLT: case AV_SAMPLE_FMT_FLTP:
+    case AV_SAMPLE_FMT_DBL: case AV_SAMPLE_FMT_DBLP:
+        return MEDIA_PCM_F32;
+    default:
+        return 0;
+    }
+}
+
+static int is_lossless(enum AVCodecID id)
+{
+    const AVCodecDescriptor *desc = avcodec_descriptor_get(id);
+
+    return desc && (desc->props & AV_CODEC_PROP_LOSSLESS) && !(desc->props & AV_CODEC_PROP_LOSSY);
+}
+
+/* A lossless source's bits a sample: what the decoder or the container
+ * said (FLAC's STREAMINFO, ALAC's cookie), or what the PCM codec is. 0
+ * for a lossy one. */
+static int source_bits(enum AVCodecID id, int raw, int coded)
+{
+    int bits;
+
+    if (!is_lossless(id))
+        return 0;
+    bits = raw > 0 ? raw : av_get_exact_bits_per_sample(id);
+    return bits > 0 ? bits : coded > 0 ? coded : 0;
+}
+
 int media_stream(const struct media_source *s, int i, struct media_stream *out)
 {
     const AVStream *st;
@@ -241,6 +286,12 @@ int media_stream(const struct media_source *s, int i, struct media_stream *out)
     } else if (out->kind == MEDIA_AUDIO) {
         out->rate = p->sample_rate;
         out->channels = p->ch_layout.nb_channels;
+        out->lossless = is_lossless(p->codec_id);
+        out->source_bits = source_bits(p->codec_id, p->bits_per_raw_sample,
+                                       p->bits_per_coded_sample);
+        out->pcm = pcm_of(p->format);
+        out->source_float = out->lossless && out->pcm == MEDIA_PCM_F32;
+        out->bitrate = p->bit_rate > 0 ? p->bit_rate : 0;
     }
     return 0;
 }
@@ -308,6 +359,12 @@ void media_close(struct media_source *s)
 struct media_decoder *media_decoder_open(const struct media_source *s, int i, int threads,
                                          char *why, size_t room)
 {
+    return media_decoder_open_with(s, i, threads, 0, why, room);
+}
+
+struct media_decoder *media_decoder_open_with(const struct media_source *s, int i, int threads,
+                                              unsigned flags, char *why, size_t room)
+{
     const AVStream *st;
     const AVCodec *codec;
     struct media_decoder *d;
@@ -339,6 +396,8 @@ struct media_decoder *media_decoder_open(const struct media_source *s, int i, in
     d->ctx->pkt_timebase = st->time_base;
     d->ctx->thread_count = threads;
     d->ctx->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+    if ((flags & MEDIA_UNTRIMMED) && st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+        d->ctx->flags2 |= AV_CODEC_FLAG2_SKIP_MANUAL;
     d->kind = st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO ? MEDIA_VIDEO
             : st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO ? MEDIA_AUDIO : MEDIA_OTHER;
     r = avcodec_open2(d->ctx, codec, NULL);
@@ -347,6 +406,10 @@ struct media_decoder *media_decoder_open(const struct media_source *s, int i, in
         say(why, room, "media: the decoder would not open", r);
         return NULL;
     }
+    d->source_bits = source_bits(st->codecpar->codec_id,
+                                 d->ctx->bits_per_raw_sample > 0 ? d->ctx->bits_per_raw_sample
+                                                                 : st->codecpar->bits_per_raw_sample,
+                                 st->codecpar->bits_per_coded_sample);
     return d;
 }
 
@@ -451,11 +514,12 @@ static int sound(struct media_decoder *d, struct media_frame *out)
     return 1;
 }
 
-int media_frame(struct media_decoder *d, struct media_frame *out)
+/* The next frame into `d->frame`: 1, 0 for another packet, -1 at the end,
+ * or a fault below it. */
+static int receive(struct media_decoder *d)
 {
     int r;
 
-    memset(out, 0, sizeof *out);
     av_frame_unref(d->frame);
     r = avcodec_receive_frame(d->ctx, d->frame);
     if (r == AVERROR(EAGAIN))
@@ -464,11 +528,187 @@ int media_frame(struct media_decoder *d, struct media_frame *out)
         return -1;
     if (r < 0)
         return r < -1 ? r : -2;
+    return 1;
+}
+
+int media_frame(struct media_decoder *d, struct media_frame *out)
+{
+    int r;
+
+    memset(out, 0, sizeof *out);
+    r = receive(d);
+    if (r != 1)
+        return r;
     out->kind = d->kind;
     out->pts_us = to_us(d->frame->best_effort_timestamp, d->tb);
     r = d->kind == MEDIA_VIDEO ? picture(d, out)
       : d->kind == MEDIA_AUDIO ? sound(d, out) : 1;
     return r < -1 || r == 1 ? r : -2;
+}
+
+static void *grow(void **buf, size_t *have, size_t want)
+{
+    if (*have < want) {
+        void *grown = realloc(*buf, want);
+
+        if (!grown)
+            return NULL;
+        *buf = grown;
+        *have = want;
+    }
+    return *buf;
+}
+
+/* To the nearest, halves away from nought, and clipped: what narrowing
+ * does, without dither (ReplayGain's is `player.md` P11's). */
+static int32_t nearest(double v, double lo, double hi)
+{
+    v = v < lo ? lo : v > hi ? hi : v;
+    return (int32_t)(v < 0 ? v - 0.5 : v + 0.5);
+}
+
+/* The frame interleaved in its own format, MEDIA_PCM_S16, S32 or F32:
+ * packed 16-bit, 32-bit and float handed back where the decoder put them,
+ * planar ones interleaved, 8-bit widened and 64-bit float narrowed. */
+static const void *native(struct media_decoder *d, int *format)
+{
+    const AVFrame *f = d->frame;
+    int channels = f->ch_layout.nb_channels, n = f->nb_samples, c, i;
+    int planar = av_sample_fmt_is_planar((enum AVSampleFormat)f->format);
+    size_t total = (size_t)n * (size_t)channels;
+    uint8_t *const *in = f->extended_data;
+
+    *format = pcm_of(f->format);
+    switch (f->format) {
+    case AV_SAMPLE_FMT_S16: case AV_SAMPLE_FMT_S32: case AV_SAMPLE_FMT_FLT:
+        return in[0];
+    case AV_SAMPLE_FMT_S16P: {
+        int16_t *to = grow(&d->native, &d->native_room, total * sizeof *to);
+
+        if (!to)
+            return NULL;
+        for (c = 0; c < channels; c++) {
+            const int16_t *from = (const int16_t *)(const void *)in[c];
+
+            for (i = 0; i < n; i++)
+                to[(size_t)i * channels + c] = from[i];
+        }
+        return to;
+    }
+    case AV_SAMPLE_FMT_S32P: case AV_SAMPLE_FMT_FLTP: {
+        uint32_t *to = grow(&d->native, &d->native_room, total * sizeof *to);
+
+        if (!to)
+            return NULL;
+        for (c = 0; c < channels; c++) {
+            const uint32_t *from = (const uint32_t *)(const void *)in[c];
+
+            for (i = 0; i < n; i++)
+                to[(size_t)i * channels + c] = from[i];
+        }
+        return to;
+    }
+    case AV_SAMPLE_FMT_U8: case AV_SAMPLE_FMT_U8P: {
+        int16_t *to = grow(&d->native, &d->native_room, total * sizeof *to);
+
+        if (!to)
+            return NULL;
+        for (c = 0; c < (planar ? channels : 1); c++) {
+            const uint8_t *from = in[c];
+            size_t many = planar ? (size_t)n : total, k;
+
+            for (k = 0; k < many; k++) {
+                size_t at = planar ? k * (size_t)channels + (size_t)c : k;
+
+                to[at] = (int16_t)(((int)from[k] - 128) * 256);
+            }
+        }
+        return to;
+    }
+    case AV_SAMPLE_FMT_DBL: case AV_SAMPLE_FMT_DBLP: {
+        float *to = grow(&d->native, &d->native_room, total * sizeof *to);
+
+        if (!to)
+            return NULL;
+        for (c = 0; c < (planar ? channels : 1); c++) {
+            const double *from = (const double *)(const void *)in[c];
+            size_t many = planar ? (size_t)n : total, k;
+
+            for (k = 0; k < many; k++)
+                to[planar ? k * (size_t)channels + (size_t)c : k] = (float)from[k];
+        }
+        return to;
+    }
+    default:
+        return NULL;
+    }
+}
+
+/* `from`, `total` samples in `have`, converted to `want`. */
+static const void *convert(struct media_decoder *d, const void *from, int have, int want,
+                           size_t total)
+{
+    size_t size = want == MEDIA_PCM_S16 ? sizeof(int16_t) : 4, k;
+    void *to = grow(&d->asked, &d->asked_room, total * size);
+    const int16_t *s16 = from;
+    const int32_t *s32 = from;
+    const float *f32 = from;
+    int16_t *t16 = to;
+    int32_t *t32 = to;
+    float *tf = to;
+
+    if (!to)
+        return NULL;
+    for (k = 0; k < total; k++) {
+        if (have == MEDIA_PCM_S16 && want == MEDIA_PCM_S32)
+            t32[k] = (int32_t)((uint32_t)(int32_t)s16[k] << 16);
+        else if (have == MEDIA_PCM_S16)
+            tf[k] = (float)s16[k] / 32768.0f;
+        else if (have == MEDIA_PCM_S32 && want == MEDIA_PCM_S16)
+            t16[k] = (int16_t)nearest((double)s32[k] / 65536.0, -32768.0, 32767.0);
+        else if (have == MEDIA_PCM_S32)
+            tf[k] = (float)((double)s32[k] / 2147483648.0);
+        else if (want == MEDIA_PCM_S16)
+            t16[k] = (int16_t)nearest((double)f32[k] * 32768.0, -32768.0, 32767.0);
+        else
+            t32[k] = nearest((double)f32[k] * 2147483648.0, -2147483648.0, 2147483647.0);
+    }
+    return to;
+}
+
+int media_sound(struct media_decoder *d, int want, struct media_sound *out)
+{
+    const void *pcm;
+    size_t total;
+    int r, have;
+
+    memset(out, 0, sizeof *out);
+    if (d->kind != MEDIA_AUDIO || want < MEDIA_PCM_NATIVE || want > MEDIA_PCM_F32)
+        return AVERROR(EINVAL);
+    r = receive(d);
+    if (r != 1)
+        return r;
+    total = (size_t)d->frame->nb_samples * (size_t)d->frame->ch_layout.nb_channels;
+    pcm = native(d, &have);
+    if (!have)
+        return AVERROR(ENOSYS);         /* a sample format no codec here makes */
+    if (!pcm)
+        return AVERROR(ENOMEM);
+    if (want != MEDIA_PCM_NATIVE && want != have) {
+        pcm = convert(d, pcm, have, want, total);
+        if (!pcm)
+            return AVERROR(ENOMEM);
+        have = want;
+    }
+    out->pts_us = to_us(d->frame->best_effort_timestamp, d->tb);
+    out->samples = d->frame->nb_samples;
+    out->channels = d->frame->ch_layout.nb_channels;
+    out->rate = d->frame->sample_rate;
+    out->format = have;
+    out->bits = d->source_bits;
+    out->pcm = pcm;
+    out->bytes = total * (have == MEDIA_PCM_S16 ? sizeof(int16_t) : 4);
+    return 1;
 }
 
 void media_decoder_flush(struct media_decoder *d)
@@ -489,6 +729,8 @@ void media_decoder_close(struct media_decoder *d)
     swr_free(&d->swr);
     av_channel_layout_uninit(&d->swr_layout);
     free(d->pcm);
+    free(d->native);
+    free(d->asked);
     free(d);
 }
 

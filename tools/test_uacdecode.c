@@ -15,6 +15,13 @@
  *     USB 1.1 devices say it, a microphone, a setting in AC-3 that is not
  *     read, and a HID interface for its buttons;
  *   - a MIDI keyboard, which has an AudioControl interface and no sound;
+ *   - for the speaker's own volume (U10g): QEMU's, a master mute and a
+ *     volume on each channel, with the range `hw/usb/dev-audio.c` answers;
+ *     the M60's and the DAC's, on the master; a UAC1 speaker whose volume
+ *     is on its channels only, behind a unit with a mute, after a
+ *     microphone's unit; a UAC2 RANGE of two subranges; one whose controls
+ *     are read-only; and the headset, with none - every request's bytes,
+ *     and the master's levels mapped onto each;
  *   - every fixture cut short at every length, each copy ending on the last
  *     byte before a page that is not mapped, so a read past the end is a
  *     crash rather than a pass.
@@ -23,6 +30,7 @@
  * decoding, and the run must fail.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -190,6 +198,32 @@ static uint8_t MIDI[] = {
     5, 0x25, 0x01, 1, 1,
     9, 0x05, 0x81, 0x02, U16(64), 0, 0, 0,
     5, 0x25, 0x01, 1, 3,
+};
+
+/* ---- A UAC1 speaker whose volume is on its two channels only (U10g). Its
+ * microphone's feature unit, 5, comes first, so the first feature unit is
+ * not the speaker's; the speaker's path is output terminal 3 <- unit 8, a
+ * master mute only, <- unit 7, a volume on channel 1 and on channel 2 and
+ * none on the master, <- input terminal 1 - and terminal 3 is described
+ * before unit 7, so the path is found whatever the order. bControlSize 1:
+ * bLength 7 + (ch + 1) x 1 (Audio 1.0 Table 4-7). */
+static uint8_t PERCH[] = {
+    9, 0x02, U16(0), 2, 1, 0, 0x80, 0x32,
+    9, 0x04, 0, 0, 0, 0x01, 0x01, 0x00, 0,
+    9, 0x24, 0x01, U16(0x0100), U16(0), 1, 1,
+    12, 0x24, 0x02, 1, U16(0x0101), 0, 2, U16(0x3), 0, 0,
+    12, 0x24, 0x02, 4, U16(0x0201), 0, 1, U16(0), 0, 0,
+    9, 0x24, 0x06, 5, 4, 1, 0x03, 0x00, 0,
+    9, 0x24, 0x03, 6, U16(0x0101), 0, 5, 0,
+    9, 0x24, 0x03, 3, U16(0x0301), 0, 8, 0,
+    10, 0x24, 0x06, 7, 1, 1, 0x00, 0x02, 0x02, 0,
+    10, 0x24, 0x06, 8, 7, 1, 0x01, 0x00, 0x00, 0,
+    9, 0x04, 1, 0, 0, 0x01, 0x02, 0x00, 0,
+    9, 0x04, 1, 1, 1, 0x01, 0x02, 0x00, 0,
+    7, 0x24, 0x01, 1, 0, U16(0x0001),
+    11, 0x24, 0x02, 1, 2, 2, 16, 1, U24(48000),
+    9, 0x05, 0x01, 0x09, U16(192), 1, 0, 0,
+    7, 0x25, 0x01, 0, 0, U16(0),
 };
 
 static void total(uint8_t *bytes, unsigned n)
@@ -557,6 +591,406 @@ static void test_not_audio(void)
     check(d.malformed && !d.ok, "a descriptor of length zero stops it");
 }
 
+/*
+ * ---- **The speaker's own volume** (U10g) ----
+ */
+
+/* A setup packet is what it should be, byte for byte. */
+static int setup_is(const struct uac_setup *u, uint8_t type, uint8_t request,
+                    uint16_t value, uint16_t index, uint16_t length)
+{
+    return u->request_type == type && u->request == request
+        && u->value == value && u->index == index && u->length == length;
+}
+
+/* Every value `uac_volume_value` gives over a range, for every level, is
+ * on the control's steps, inside it, at or below the top, and as near the
+ * curve as a step allows: within half a step of it, or within one where it
+ * had to come down a step to stay under the top. And louder never quieter
+ * as the level rises. */
+static void volume_ok_everywhere(const struct uac_volume_range *r, int16_t top,
+                                 const char *what)
+{
+    int32_t ceiling = top < r->max ? top : r->max, want, v, last = -40000;
+    unsigned level;
+    int ok = 1;
+    char line[128];
+
+    ceiling = ceiling < r->min ? r->min : ceiling;
+
+    for (level = 1; level <= 256; level++) {
+        v = uac_volume_value(r, top, level);
+        want = (int32_t)lround(top + 5120.0 * log10(level / 256.0));
+        want = want < r->min ? r->min : want > ceiling ? ceiling : want;
+
+        if (v < r->min || v > ceiling || v < last
+            || (level < 256 && (v - r->min) % r->res != 0)
+            || (level < 256 && labs((long)(v - want)) > r->res)
+            || (level == 256 && v != ceiling)) {
+            ok = 0;
+            printf("  level %u: %d, the curve %d\n", level, v, want);
+        }
+
+        last = v;
+    }
+
+    snprintf(line, sizeof line, "%s: every level on a step, under the top, "
+             "near the curve, rising", what);
+    check(ok, line);
+}
+
+static void test_volume_curve(void)
+{
+    struct uac_volume_range fine;
+    unsigned level, ok = 1, back = 1;
+
+    /* A control of every 1/256 dB from -127.99 to +127.99: the curve
+     * itself, each of its 256 numbers held to the logarithm. */
+    check(uac_volume_range_v1(UAC_VOLUME_LEAST, 32767, 1, &fine),
+          "a range of every 1/256 dB");
+
+    for (level = 1; level <= 256; level++) {
+        long want = lround(5120.0 * log10(level / 256.0));
+
+        if (uac_volume_value(&fine, 0, level) != want) {
+            ok = 0;
+            printf("  level %u: %d, 20 log10 says %ld\n", level,
+                   uac_volume_value(&fine, 0, level), want);
+        }
+
+        if (uac_volume_level(0, uac_volume_value(&fine, 0, level)) != level) {
+            back = 0;
+        }
+    }
+
+    check(ok, "the curve is 20 log10(level / 256) dB at every level");
+    check(back, "and read back, every level is itself");
+    check(uac_volume_value(&fine, 0, 128) == -1541
+          && uac_volume_value(&fine, 0, 16) == -6165
+          && uac_volume_value(&fine, 0, 1) == -12330,
+          "-6.02 dB at 128, -24.08 at 16, -48.16 at 1");
+    check(uac_volume_level(0, UAC_VOLUME_SILENCE) == 0
+          && uac_volume_level(0, -20000) == 1
+          && uac_volume_level(0, 0) == 256 && uac_volume_level(0, 600) == 256,
+          "silence reads 0, quieter than 1 reads 1, the top and above 256");
+    check(uac_volume_level(-1536, -1536) == 256
+          && uac_volume_level(256, 256 - 1541) == 128,
+          "and read against its top, wherever the top is");
+    volume_ok_everywhere(&fine, 0, "every 1/256 dB, top at 0 dB");
+}
+
+/*
+ * QEMU's speaker taking a SET_CUR of its volume, as `hw/usb/dev-audio.c`
+ * does: the value less 0x8000, in sixteen bits, onto 0..255 by
+ * (v x 255 + 0x4400) / 0x8800, and no more than 255. Its mixing engine
+ * then scales each sample by that over 255. What `run_x86.py`'s
+ * `usb_audio_exact_bits` expects to hear at the master's 256 and 128 on
+ * the top `xhci` gives QEMU's speaker, its MAX (U10g).
+ */
+static unsigned qemu_takes(int16_t value)
+{
+    uint16_t v = (uint16_t)((uint16_t)value - 0x8000u);
+    unsigned vol = ((unsigned)v * 255u + 0x4400u) / 0x8800u;
+
+    return vol > 255u ? 255u : vol;
+}
+
+static void test_volume_qemu_heard(void)
+{
+    struct uac_volume_range r;
+    int16_t top;
+
+    check(uac_volume_range_v1((int16_t)0x8001, 0x0800, 0x0088, &r), "QEMU's range again");
+    top = r.max;
+
+    check(qemu_takes(0) == 240, "QEMU's 0 dB is 240 of 255 (testing.md 18.1014)");
+    check(qemu_takes(uac_volume_value(&r, top, 256)) == 255,
+          "the master's 256 on QEMU's top is its 255, unity: the noise bit for bit");
+    check(uac_volume_value(&r, top, 128) == 553 && qemu_takes(553) == 244,
+          "the master's 128 is 553, which QEMU takes as 244: 0.957 of the sample, "
+          "inside run_x86.py's 0.93 to 0.98");
+    check(qemu_takes(uac_volume_value(&r, top, 128)) * 128u / 256u < 0.93 * 255,
+          "and the master left in the mix as well would be 0.48, outside it: "
+          "the part's control");
+}
+
+static void test_volume_qemu(void)
+{
+    struct uac_device d;
+    struct uac_setup u;
+    struct uac_volume_range r;
+    struct uac_volume_set set;
+    uint8_t ch[4], two[2];
+    int16_t unity;
+
+    uac_decode_config(QEMU, sizeof QEMU, &d);
+
+    /* Feature unit 2: bmaControls(0) 0x0001, a mute on the master;
+     * (1) and (2) 0x0002, a volume on each channel (dev-audio.c). */
+    check(d.volume.unit == 2 && d.volume.source == 1 && d.volume.channels == 2,
+          "QEMU's speaker: unit 2, from terminal 1, two channels");
+    check(d.volume.mute == UAC_CONTROL_MASTER
+          && d.volume.volume == UAC_CONTROL_CHANNELS
+          && d.volume.volume_channels == 0x3 && !d.volume.read_only,
+          "a mute on the master, a volume on each channel and none on it");
+    check(uac_fu_channels(&d.volume, UAC_FU_VOLUME, ch, 4) == 2
+          && ch[0] == 1 && ch[1] == 2, "so the volume is set on 1 and 2");
+    check(uac_fu_channels(&d.volume, UAC_FU_MUTE, ch, 4) == 1 && ch[0] == 0,
+          "and the mute on the master");
+    check(uac_fu_channels(&d.volume, UAC_FU_VOLUME, ch, 1) == 1 && ch[0] == 1,
+          "as many as there is room for");
+
+    /* Its requests: wIndex 0x0200, unit 2 on interface 0. */
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_MIN, false, 1, &u)
+          && setup_is(&u, 0xA1, 0x82, 0x0201, 0x0200, 2), "GET_MIN, channel 1");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_MAX, false, 2, &u)
+          && setup_is(&u, 0xA1, 0x83, 0x0202, 0x0200, 2), "GET_MAX, channel 2");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_RES, false, 1, &u)
+          && setup_is(&u, 0xA1, 0x84, 0x0201, 0x0200, 2), "GET_RES");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, false, 1, &u)
+          && setup_is(&u, 0xA1, 0x81, 0x0201, 0x0200, 2), "GET_CUR");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, true, 2, &u)
+          && setup_is(&u, 0x21, 0x01, 0x0202, 0x0200, 2), "SET_CUR of a volume");
+    check(uac_fu_request(&d, UAC_FU_MUTE, UAC_ATTR_CUR, true, 0, &u)
+          && setup_is(&u, 0x21, 0x01, 0x0100, 0x0200, 1), "SET_CUR of the mute");
+    check(uac_fu_request(&d, UAC_FU_MUTE, UAC_ATTR_CUR, false, 0, &u)
+          && setup_is(&u, 0xA1, 0x81, 0x0100, 0x0200, 1), "GET_CUR of the mute");
+    u.request = 0x5A;
+    check(!uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_RANGE, false, 1, &u)
+          && !uac_fu_request(&d, UAC_FU_MUTE, UAC_ATTR_MAX, false, 0, &u)
+          && !uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_MAX, true, 1, &u)
+          && !uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, false, 3, &u)
+          && !uac_fu_request(&d, 0x03, UAC_ATTR_CUR, false, 0, &u)
+          && u.request == 0x5A,
+          "no RANGE on UAC1, no MAX of a mute, no SET_MAX, no channel 3, "
+          "no bass - and nothing written for them");
+
+    uac_volume_put(-12367, two);
+    check(two[0] == 0xB1 && two[1] == 0xCF && uac_volume_get(two) == -12367,
+          "a volume's two bytes, signed, little-endian");
+    two[0] = 0x00; two[1] = 0x80;
+    check(uac_volume_get(two) == UAC_VOLUME_SILENCE, "0x8000 is silence");
+
+    /* Its range, as GET_MIN, GET_MAX and GET_RES answer: 0x8001, 0x0800
+     * and 0x0088 - -127.996 dB to +8 dB in 0.53 dB steps. */
+    check(uac_volume_range_v1((int16_t)0x8001, 0x0800, 0x0088, &r)
+          && r.min == -32767 && r.max == 2048 && r.res == 136,
+          "QEMU's range: -128 to +8 dB, in steps of 136/256 dB");
+    unity = uac_volume_unity(&r);
+    check(unity == 0, "its unity is 0 dB, inside it");
+
+    /* On the steps from MIN: -32767 + 136k. 0 dB is between two. */
+    check(uac_volume_value(&r, unity, 256) == 0,
+          "level 256 is 0 dB exactly, though no step lands there");
+    check(uac_volume_value(&r, unity, 128) == -1487,
+          "level 128, -6.02 dB, is the step at -5.81");
+    check(uac_volume_value(&r, unity, 100) == -2031,
+          "level 100, -8.16 dB, the step at -7.93");
+    check(uac_volume_value(&r, unity, 50) == -3663,
+          "level 50, -14.18 dB, the step at -14.31");
+    check(uac_volume_value(&r, unity, 1) == -12367,
+          "level 1, -48.16 dB, the step at -48.31");
+    check(uac_volume_value(&r, unity, 0) == -32767, "level 0 is MIN");
+    volume_ok_everywhere(&r, unity, "QEMU's, top at 0 dB");
+
+    /* With its top as the master's top - QEMU's 255 of 255, which passes
+     * samples untouched (U10f). */
+    check(uac_volume_value(&r, r.max, 256) == 2048
+          && uac_volume_value(&r, r.max, 128) == 553,
+          "top at +8 dB: 256 is +8, 128 is +2.16, the step under +1.98");
+    volume_ok_everywhere(&r, r.max, "QEMU's, top at its MAX");
+    check(uac_volume_level(unity, -1487) == 131 && uac_volume_level(unity, 0) == 256
+          && uac_volume_level(unity, -32767) == 1,
+          "read back: -5.81 dB is 131, 0 dB 256, MIN 1");
+
+    uac_volume_for(&d, &r, unity, 128, false, &set);
+    check(!set.mute && set.value == -1487 && !set.silent, "128: its value, heard");
+    uac_volume_for(&d, &r, unity, 0, false, &set);
+    check(set.mute && set.value == -32767 && set.silent,
+          "0: the mute, which silences it");
+    uac_volume_for(&d, &r, unity, 128, true, &set);
+    check(set.mute && set.value == -1487 && set.silent,
+          "muted at 128: the mute, and 128's value kept for unmuting");
+}
+
+static void test_volume_master(void)
+{
+    struct uac_device d;
+    struct uac_setup u;
+    uint8_t ch[4];
+
+    /* The M60's unit 5: bmaControls(0) 0x0003, a mute and a volume on
+     * the master; its channels none. */
+    uac_decode_config(M60, sizeof M60, &d);
+    check(d.volume.unit == 5 && d.volume.channels == 2
+          && d.volume.volume == UAC_CONTROL_MASTER
+          && d.volume.mute == UAC_CONTROL_MASTER,
+          "the M60: unit 5, a volume and a mute on its master");
+    check(uac_fu_channels(&d.volume, UAC_FU_VOLUME, ch, 4) == 1 && ch[0] == 0,
+          "set on channel 0 alone");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, true, 0, &u)
+          && setup_is(&u, 0x21, 0x01, 0x0200, 0x0500, 2),
+          "SET_CUR of the M60's volume: 21 01 0200 0500 0002");
+
+    /* The DAC's unit 0x0A: bmaControls(0) 0xF - mute and volume, each
+     * 0b11, programmable; its channels 0xC, a volume each. */
+    uac_decode_config(DAC, sizeof DAC, &d);
+    check(d.volume.unit == 0x0A && d.volume.source == 0x02
+          && d.volume.channels == 2 && d.volume.volume == UAC_CONTROL_MASTER
+          && d.volume.mute == UAC_CONTROL_MASTER && !d.volume.read_only,
+          "the DAC: unit 0x0A, a volume and a mute on the master, UAC2");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_RANGE, false, 0, &u)
+          && setup_is(&u, 0xA1, 0x02, 0x0200, 0x0A00, 2 + 6 * UAC_VOLUME_SUBRANGES_MAX),
+          "UAC2 GET RANGE: A1 02 0200 0A00, room for eight subranges");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, false, 0, &u)
+          && setup_is(&u, 0xA1, 0x01, 0x0200, 0x0A00, 2), "UAC2 GET CUR");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, true, 0, &u)
+          && setup_is(&u, 0x21, 0x01, 0x0200, 0x0A00, 2), "UAC2 SET CUR");
+    check(uac_fu_request(&d, UAC_FU_MUTE, UAC_ATTR_CUR, true, 0, &u)
+          && setup_is(&u, 0x21, 0x01, 0x0100, 0x0A00, 1), "UAC2 SET CUR of the mute");
+    check(!uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_MIN, false, 0, &u)
+          && !uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_RES, false, 0, &u)
+          && !uac_fu_request(&d, UAC_FU_MUTE, UAC_ATTR_RANGE, false, 0, &u),
+          "no MIN or RES on UAC2, and no RANGE of a mute");
+}
+
+static void test_volume_range_v2(void)
+{
+    struct uac_device d;
+    struct uac_volume_range r;
+    struct uac_volume_set set;
+    /* -50 to -30 dB in 2 dB steps, then -29 to +6 dB in half decibels:
+     * the second covers most. */
+    static const uint8_t two[] = {
+        U16(2), U16(-12800), U16(-7680), U16(512),
+                U16(-7424), U16(1536), U16(128),
+    };
+    /* A MIN of 0x8000, which 2.0 5.2.5.7.2 forbids, and one subrange the
+     * wrong way round before it. */
+    static const uint8_t odd[] = {
+        U16(2), U16(0), U16(-256), U16(1),
+                U16(0x8000), U16(0), U16(0),
+    };
+    uint8_t broken_two[sizeof two];
+
+    memcpy(broken_two, two, sizeof two);
+    /* The control: the first subrange made the widest. */
+    if (broken) {
+        broken_two[2] = 0x00; broken_two[3] = 0x80;
+    }
+
+    check(uac_volume_range_v2(broken_two, sizeof two, &r)
+          && r.min == -7424 && r.max == 1536 && r.res == 128,
+          "two subranges: the one that covers most, -29 to +6 dB");
+    check(uac_volume_range_v2(two, 8, &r) && r.min == -12800 && r.max == -7680
+          && r.res == 512, "cut to wLength: the subrange whole in it");
+    check(!uac_volume_range_v2(two, 7, &r) && !uac_volume_range_v2(two, 1, &r),
+          "no subrange whole: refused");
+    check(uac_volume_range_v2(odd, sizeof odd, &r) && r.min == -32767
+          && r.max == 0 && r.res == 1,
+          "MIN above MAX passed over; MIN 0x8000 taken as 0x8001, RES 0 as 1");
+
+    check(uac_volume_range_v2(two, sizeof two, &r), "the range again");
+    check(uac_volume_unity(&r) == 0, "unity 0 dB, inside it");
+    check(uac_volume_value(&r, 0, 256) == 0 && uac_volume_value(&r, 0, 128) == -1536
+          && uac_volume_value(&r, 0, 50) == -3584
+          && uac_volume_value(&r, 0, 100) == -2048
+          && uac_volume_value(&r, 0, 1) == -7424,
+          "256 0 dB, 128 -6, 100 -8, 50 -14 and 1 its MIN, -29");
+    volume_ok_everywhere(&r, 0, "the DAC's, top at 0 dB");
+    check(uac_volume_level(0, -7424) == 9,
+          "its MIN reads 9 - where -29 dB is on the curve - not 1");
+
+    uac_decode_config(DAC, sizeof DAC, &d);
+    uac_volume_for(&d, &r, 0, 0, false, &set);
+    check(set.mute && set.silent, "0 on the DAC: its mute");
+
+    /* A range all below 0 dB: unity is its MAX; all above, its MIN. */
+    check(uac_volume_range_v1(-6000, -1000, 100, &r) && uac_volume_unity(&r) == -1000
+          && uac_volume_range_v1(100, 900, 1, &r) && uac_volume_unity(&r) == 100,
+          "unity clamped into a range that does not hold 0 dB");
+    check(!uac_volume_range_v1(10, -10, 1, &r), "MIN above MAX refused");
+}
+
+static void test_volume_channels(void)
+{
+    struct uac_device d;
+    struct uac_volume_range r;
+    struct uac_volume_set set;
+    struct uac_setup u;
+    uint8_t ch[4];
+
+    total(PERCH, sizeof PERCH);
+    /* The control: channel 2's volume bit cleared, so the volume is on
+     * one channel of two, which is not used. */
+    corrupt(PERCH, sizeof PERCH, nth(PERCH, sizeof PERCH, 0x24, 0x06, 2) + 8, 0x00);
+
+    uac_decode_config(PERCH, sizeof PERCH, &d);
+    check(d.ok && d.plays && d.output_type == 0x0301,
+          "the speaker with its volume on its channels: a speaker");
+    check(d.feature == 5 && d.volume.unit == 7,
+          "the first unit is the microphone's; the speaker's volume is unit 7, "
+          "behind unit 8's mute");
+    check(d.volume.volume == UAC_CONTROL_CHANNELS && d.volume.volume_channels == 0x3
+          && d.volume.mute == UAC_CONTROL_NONE && d.volume.channels == 2,
+          "a volume on channels 1 and 2 and none on the master; no mute in it");
+    check(uac_fu_channels(&d.volume, UAC_FU_VOLUME, ch, 4) == 2 && ch[0] == 1
+          && ch[1] == 2 && uac_fu_channels(&d.volume, UAC_FU_MUTE, ch, 4) == 0,
+          "set on both channels the same; no mute to set");
+    check(uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, true, 2, &u)
+          && setup_is(&u, 0x21, 0x01, 0x0202, 0x0700, 2), "SET_CUR on unit 7, channel 2");
+
+    /* -60 to 0 dB in whole decibels. */
+    check(uac_volume_range_v1(-15360, 0, 256, &r), "-60 to 0 dB by 1 dB");
+    check(uac_volume_value(&r, 0, 256) == 0 && uac_volume_value(&r, 0, 128) == -1536
+          && uac_volume_value(&r, 0, 100) == -2048 && uac_volume_value(&r, 0, 50) == -3584
+          && uac_volume_value(&r, 0, 1) == -12288,
+          "256 0 dB, 128 -6, 100 -8, 50 -14, 1 -48");
+    volume_ok_everywhere(&r, 0, "-60 to 0 by 1 dB");
+
+    uac_volume_for(&d, &r, 0, 0, false, &set);
+    check(!set.mute && set.value == UAC_VOLUME_SILENCE && !set.silent,
+          "0 with no mute on UAC1: 0x8000, and the server silent as well");
+    uac_volume_for(&d, &r, 0, 200, true, &set);
+    check(!set.mute && set.value == UAC_VOLUME_SILENCE && !set.silent,
+          "muted, the same");
+}
+
+static void test_volume_none(void)
+{
+    struct uac_device d;
+    struct uac_setup u;
+    uint8_t ch[4];
+    uint8_t ro[sizeof DAC];
+    unsigned at;
+
+    /* The headset: its earpiece's terminal 3 takes its sound from
+     * terminal 1, no unit between. */
+    uac_decode_config(HEADSET, sizeof HEADSET, &d);
+    check(d.volume.unit == 0 && d.feature == 0 && !d.volume.read_only,
+          "the headset has no volume of its own: the master stays in the mix");
+    check(!uac_fu_request(&d, UAC_FU_VOLUME, UAC_ATTR_CUR, true, 0, &u)
+          && uac_fu_channels(&d.volume, UAC_FU_VOLUME, ch, 4) == 0,
+          "and nothing to ask it");
+
+    /* The DAC with its unit's controls read-only: 0b01 each. */
+    memcpy(ro, DAC, sizeof DAC);
+    at = nth(ro, sizeof ro, 0x24, 0x06, 1);
+    ro[at + 5] = 0x05;
+    ro[at + 9] = 0x04;
+    ro[at + 13] = 0x04;
+    uac_decode_config(ro, sizeof ro, &d);
+    check(d.feature == 0x0A && d.volume.unit == 0 && d.volume.read_only,
+          "a UAC2 unit whose volume and mute are read-only carries no master, "
+          "and says why");
+
+    /* One channel of two, programmable, the other read-only: neither. */
+    ro[at + 5] = 0x00;
+    ro[at + 9] = 0x0C;
+    uac_decode_config(ro, sizeof ro, &d);
+    check(d.volume.unit == 0, "a volume on one channel of two is not used");
+}
+
 /* ---- Every length, at the edge of an unmapped page. */
 static uint8_t *guarded;
 static size_t guarded_room;
@@ -621,6 +1055,13 @@ int main(void)
     test_m60();
     test_stream();
     test_not_audio();
+    test_volume_curve();
+    test_volume_qemu();
+    test_volume_qemu_heard();
+    test_volume_master();
+    test_volume_range_v2();
+    test_volume_channels();
+    test_volume_none();
 
     if (!broken) {
         cut_short("QEMU's speaker", QEMU, sizeof QEMU);
@@ -629,6 +1070,7 @@ int main(void)
         cut_short("the headset", HEADSET, sizeof HEADSET);
         cut_short("the M60", M60, sizeof M60);
         cut_short("the MIDI keyboard", MIDI, sizeof MIDI);
+        cut_short("the speaker with a volume on each channel", PERCH, sizeof PERCH);
     }
 
     if (fails) {
@@ -639,7 +1081,8 @@ int main(void)
 
     printf("PASS: %d checks on USB Audio Class decoding (QEMU's speaker byte "
            "for byte and its 5.1 and 7.1, a UAC2 DAC and its clock's rates, "
-           "a UAC1 headset with feedback, Diego's EDIFIER M60, a second of every rate and the tone, a MIDI keyboard, every length cut "
+           "a UAC1 headset with feedback, Diego's EDIFIER M60, a second of every rate and the tone, a MIDI keyboard, "
+           "each one's own volume and its requests and the master's curve onto it, every length cut "
            "short)\n", checks);
     return 0;
 }

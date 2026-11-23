@@ -6333,13 +6333,11 @@ static bool read_configuration(struct controller *c, struct device *d,
 #define EP_TYPE_ISOCH_OUT   1u
 #define UAC1_SET_CUR_EP     (0x22u | (0x01u << 8))
 #define UAC1_SAM_FREQ       0x0100u     /* SAMPLING_FREQ_CONTROL << 8 */
-#define UAC1_SET_CUR_IF     (0x21u | (0x01u << 8))
-#define UAC1_GET_MAX_IF     (0xA1u | (0x83u << 8))
-#define UAC1_VOLUME         0x0200u     /* VOLUME_CONTROL << 8, a channel */
 
 #define SPEAKERS_MAX        2u
 #define SPEAKER_TDS         16u         /* 16 ms in flight at full speed */
 #define SPEAKER_BELL_EVERY  8u
+#define SPEAKER_SILENT_MS   60u         /* nothing back for this long is said */
 #define SPEAKER_MIX_RATE    44100u      /* the audio server's, today */
 #define SPEAKER_TONE_HZ     440u
 #define SPEAKER_TONE_LEVEL  4096        /* -18 dB: a test tone, not a test */
@@ -6395,6 +6393,18 @@ struct speaker {
     uint32_t      tone_frames;          /* how many the beeps take */
 
     unsigned long intervals, missed, errors, underruns, lost;
+    unsigned long last_back;            /* when a TD last came back */
+    bool          stall_said;           /* and a silence since, said */
+
+    /* **The master on its own volume** (U10g): the range asked once, and
+     * what was last set - the ring's count followed, the level and mute it
+     * said, the value sent and whether the mute is on. Kept across a switch
+     * of setting; `speaker_start` clears it for a speaker new. */
+    bool          vol_read, vol_ok;
+    struct uac_volume_range vol_range;
+    int16_t       vol_top, vol_value;
+    bool          vol_muted, vol_mute_on, vol_sent;
+    uint32_t      vol_seen, vol_level;
 };
 
 static struct speaker speakers[SPEAKERS_MAX];
@@ -6682,6 +6692,7 @@ static void take_audio(struct controller *c, const uint32_t *event)
     s->oldest = ring_next(place);
     s->out--;
     s->intervals++;
+    s->last_back = kosmos_ticks();
     speaker_played(s, s->td_of[place]);
 
     if (code == CC_MISSED_SERVICE) {
@@ -6720,6 +6731,7 @@ static void speaker_gone(struct controller *c, unsigned slot)
             usb_ring->present = 0;
             RING_BARRIER();
             usb_ring->switching = 0;    /* nor is it changing any more */
+            usb_ring->master_hw = 0;    /* nor carrying the master (U10g) */
             RING_BARRIER();
 
             if (audio_door >= 0) {
@@ -6793,8 +6805,10 @@ static bool speaker_open(struct speaker *s, int which, uint32_t rate,
                          struct say_line *line);
 
 /*
- * **`opt/kosmos/usbaudio`, read once**: `tone` (U2), `switch` (U10d) or
- * `full` (U10f), or nothing - which is every real machine.
+ * **`opt/kosmos/usbaudio`, read once**: `tone` (U2) or `switch` (U10d), or
+ * nothing - which is every real machine. `full` (U10f) set QEMU's speaker's
+ * own volume at its top; since U10g the master at 256 does that on every
+ * speaker, and the word means nothing any more.
  */
 static bool speaker_option_is(const char *word)
 {
@@ -6811,53 +6825,375 @@ static bool speaker_option_is(const char *word)
 }
 
 /*
- * **The speaker's own volume at its top** (U10f), under
- * `opt/kosmos/usbaudio=full` only. QEMU's speaker scales what it is sent by
- * its volume over 255 and calls 240 of 255 nought decibels, so a stream the
- * server says is exact arrives at 0.941 of itself; only its top, +8 dB, is
- * 255, and passes samples untouched (`hw/usb/dev-audio.c`, `mixeng.c`).
- * The proof that `exact` is true needs that, so the part asks for it. A
- * real speaker's unity is 0 dB, and its own volume is left as it was: what
- * it should be set to on the M60 is Diego's to say (`usbaudio.md` U10f).
- * Each channel's maximum is asked (GET_MAX) and set (SET_CUR) on the first
- * feature unit; a speaker without one is left alone, and said.
+ * ---- **The master on the speaker's own volume** (`docs/usbaudio.md` U10g) ----
+ *
+ * Where a speaker has a volume control it will take - the feature unit
+ * `uac_decode` found on the path to its output terminal - Kosmos's master
+ * drives it and the audio server mixes at unity, so a stream alone at its
+ * own full gain reaches the speaker bit for bit at any level (macOS's way,
+ * and PipeWire's where a device has a control). The control's range is
+ * asked once (GET_MIN, GET_MAX and GET_RES on UAC1, GET RANGE on UAC2), the
+ * level set when the speaker is opened, so it starts at the master's rather
+ * than at whatever it held, and again whenever the ring's `master_set`
+ * moves. Every request is made here, in this driver's own loop
+ * (`serve_speakers`) or while a speaker is being opened - never inside the
+ * server's call, which only writes the ring (CLAUDE.md: nothing waits on
+ * hardware).
+ *
+ * The master's level goes onto the control on `uac_volume_value`'s curve:
+ * 20 log10(level / 256) dB below the control's top, which is the loudness
+ * the server's multiplication gave the same level. A muted master, or one at
+ * nought, is the control's mute where it has one; the server sends silence
+ * as well, whatever the speaker does.
+ *
+ * Where the speaker has no volume, only one it will not take, or refuses a
+ * request, `master_hw` stays nought and the master stays in the mix, said.
  */
-static void speaker_full(struct speaker *s, struct say_line *line)
+
+/* **QEMU's speaker, a quirk named as one.** `hw/usb/dev-audio.c` maps its
+ * control linearly onto 0..255 - -128 dB at 0, +8 dB at 255 - and its
+ * mixing engine scales every sample by that over 255, so it is unity only at
+ * its MAX, +8 dB, and 0 dB is 240/255 of the sample (`testing.md` 18.1014).
+ * So its top is its MAX. A real speaker's top is 0 dB, clamped into its
+ * range (`uac_volume_unity`). The curve below the top is the same for both,
+ * which on QEMU's - linear in its code, not in decibels - is quieter than
+ * the number says only a little: half is 244/255 there. */
+#define QEMU_SPEAKER_VENDOR     0x46F4u
+#define QEMU_SPEAKER_PRODUCT    0x0002u
+
+/* A volume's value in decibels, to two places: +8.00, -5.81 - or a step,
+ * which has no sign: 0.53. */
+static void say_db_as(struct say_line *line, int32_t value, bool sign)
+{
+    uint32_t mag = (uint32_t)(value < 0 ? -value : value);
+    uint32_t hundredths = (mag * 100u + 128u) / 256u;
+
+    say_text(line, value < 0 ? "-" : sign ? "+" : "");
+    say_dec(line, hundredths / 100u);
+    say_text(line, hundredths % 100u < 10u ? ".0" : ".");
+    say_dec(line, hundredths % 100u);
+}
+
+static void say_db(struct say_line *line, int32_t value)
+{
+    say_db_as(line, value, true);
+}
+
+static void say_speaker(struct say_line *line, const struct speaker *s)
+{
+    about(line, s->c);
+    say_text(line, " port ");
+    say_dec(line, s->dev.port);
+    say_text(line, ": speaker: ");
+}
+
+/*
+ * **A control on endpoint 0 made usable after it stalled** (xHCI 1.2
+ * 4.6.8, 4.10.2.1): a request the speaker does not take is answered with a
+ * STALL, which halts the default control endpoint on the controller's side
+ * as well; Reset Endpoint and the dequeue pointer moved to where the next
+ * TRB goes, past what was left of the refused one. The device's side needs
+ * nothing: a protocol stall clears at the next SETUP (USB 2.0 8.5.3.4). So
+ * a refused volume request costs that request, and not the rate a switch
+ * sets next.
+ */
+static void speaker_ep0_recover(struct speaker *s)
 {
     struct controller *c = s->c;
     struct device *d = &s->dev;
-    unsigned ch, set = 0;
-    uint8_t top[2];
-    int16_t db = 0;
+    uint32_t target = TRB_ENDPOINT(1u) | TRB_SLOT(d->slot), done[4];
+    uint64_t next;
 
-    for (ch = 1; s->info.feature != 0 && ch <= s->alt.channels; ch++) {
-        uint16_t index = (uint16_t)((s->info.feature << 8) | s->info.control);
+    if (ep_state(c, d, 1u) != EP_STATE_HALTED
+        || !command(c, 0, 0, TRB_TYPE(TRB_RESET_ENDPOINT) | target, done)) {
+        return;
+    }
 
-        if (control_in(c, d, UAC1_GET_MAX_IF, (uint16_t)(UAC1_VOLUME | ch), index, 2u)
-            && (memcpy(top, d->buffer, 2u), true)
-            && control_out(c, d, UAC1_SET_CUR_IF, (uint16_t)(UAC1_VOLUME | ch), index,
-                           top, 2u)) {
-            db = (int16_t)(top[0] | (top[1] << 8));
-            set++;
+    next = d->ep0.bus + (uint64_t)d->ep0.enqueue * 16u;
+    (void)command(c, (uint32_t)next | (d->ep0.cycle == TRB_C ? 1u : 0u),
+                  (uint32_t)(next >> 32), TRB_TYPE(TRB_SET_DEQUEUE) | target,
+                  done);
+}
+
+/* One request to the speaker's feature unit, as `uac_fu_request` lays it
+ * out: `bytes` sent with a set, the answer into `answer` with a get. */
+static bool speaker_fu(struct speaker *s, unsigned selector,
+                       enum uac_attribute attribute, bool set, uint8_t channel,
+                       const uint8_t *bytes, uint8_t *answer)
+{
+    struct uac_setup u;
+    uint32_t request;
+    bool ok;
+
+    if (!uac_fu_request(&s->info, selector, attribute, set, channel, &u)) {
+        return false;
+    }
+
+    request = u.request_type | ((uint32_t)u.request << 8);
+
+    if (set) {
+        ok = control_out(s->c, &s->dev, request, u.value, u.index, bytes,
+                         u.length);
+    } else {
+        ok = control_in(s->c, &s->dev, request, u.value, u.index, u.length);
+
+        if (ok) {
+            memcpy(answer, s->dev.buffer, u.length);
         }
     }
 
-    about(line, c);
-    say_text(line, " port ");
-    say_dec(line, d->port);
+    /* Recovered, with the refusal's code kept for whoever says it. */
+    if (!ok) {
+        uint32_t code = s->c->last_code;
 
-    if (set == 0) {
-        say_text(line, ": speaker: no volume of its own to set");
-    } else {
-        say_text(line, ": speaker: its own volume at its top, ");
-        say_text(line, db < 0 ? "-" : "+");
-        say_dec(line, (unsigned)((db < 0 ? -db : db) / 256));
-        say_text(line, " dB, on ");
-        say_dec(line, set);
-        say_text(line, set == 1 ? " channel" : " channels");
+        speaker_ep0_recover(s);
+        s->c->last_code = code;
     }
 
+    return ok;
+}
+
+/* Its range, asked of the first channel the volume is on; true when it
+ * has one this can drive, written into the ring and said. */
+static bool speaker_volume_range(struct speaker *s, struct say_line *line)
+{
+    const struct uac_feature *f = &s->info.volume;
+    struct usb_audio_ring *r = usb_ring;
+    uint8_t ch[UAC_FU_CHANNELS_MAX], a[2 + 6 * UAC_VOLUME_SUBRANGES_MAX];
+    unsigned n = uac_fu_channels(f, UAC_FU_VOLUME, ch, UAC_FU_CHANNELS_MAX);
+    bool ok, qemu;
+
+    r->volume_min = r->volume_max = r->volume_res = r->volume_top = 0;
+
+    if (n == 0) {
+        say_speaker(line, s);
+        say_text(line, f->read_only
+                       ? "its own volume will not be set; the master stays in the mix"
+                       : "no volume of its own; the master stays in the mix");
+        say_send(console, line);
+        return false;
+    }
+
+    if (s->info.version == 2) {
+        ok = speaker_fu(s, UAC_FU_VOLUME, UAC_ATTR_RANGE, false, ch[0], NULL, a)
+             && uac_volume_range_v2(a, sizeof(a), &s->vol_range);
+    } else {
+        int16_t min = 0, max = 0, res = 1;
+
+        ok = speaker_fu(s, UAC_FU_VOLUME, UAC_ATTR_MIN, false, ch[0], NULL, a)
+             && (min = uac_volume_get(a), true)
+             && speaker_fu(s, UAC_FU_VOLUME, UAC_ATTR_MAX, false, ch[0], NULL, a)
+             && (max = uac_volume_get(a), true);
+
+        /* A GET_RES refused is a step of one (Linux's get_ctl_range_v1). */
+        if (ok && speaker_fu(s, UAC_FU_VOLUME, UAC_ATTR_RES, false, ch[0], NULL, a)) {
+            res = uac_volume_get(a);
+        }
+
+        ok = ok && uac_volume_range_v1(min, max, res, &s->vol_range);
+    }
+
+    if (!ok) {
+        say_failure(s->c, s->dev.port, "speaker: asking its own volume's range",
+                    "; the master stays in the mix", line);
+        return false;
+    }
+
+    qemu = s->c->vendor[s->slot] == QEMU_SPEAKER_VENDOR
+           && s->c->product[s->slot] == QEMU_SPEAKER_PRODUCT;
+    s->vol_top = qemu ? s->vol_range.max : uac_volume_unity(&s->vol_range);
+
+    r->volume_min = s->vol_range.min;
+    r->volume_max = s->vol_range.max;
+    r->volume_res = s->vol_range.res;
+    r->volume_top = s->vol_top;
+
+    say_speaker(line, s);
+    say_text(line, "its own volume carries the master: unit ");
+    say_dec(line, f->unit);
+    say_text(line, ", ");
+    say_db(line, s->vol_range.min);
+    say_text(line, " to ");
+    say_db(line, s->vol_range.max);
+    say_text(line, " dB in steps of ");
+    say_db_as(line, s->vol_range.res, false);
+    say_text(line, " dB, its top ");
+    say_db(line, s->vol_top);
+    say_text(line, " dB");
+    /* Two lines: a line is SAY_LINE_MAX, and the whole of it was cut off
+     * at QEMU's note. */
     say_send(console, line);
+    say_speaker(line, s);
+    say_text(line, "its own volume is on ");
+    say_text(line, f->volume == UAC_CONTROL_MASTER ? "its master" : "each of ");
+
+    if (f->volume != UAC_CONTROL_MASTER) {
+        say_dec(line, n);
+        say_text(line, " channels");
+    }
+
+    say_text(line, f->mute == UAC_CONTROL_NONE ? ", no mute"
+                   : f->mute == UAC_CONTROL_MASTER ? ", a mute on its master"
+                   : ", a mute on each channel");
+    say_text(line, qemu ? " (QEMU's speaker: unity at its MAX)" : "");
+    say_send(console, line);
+    return true;
+}
+
+/* Its mute, on every channel it is on. */
+static bool speaker_mute(struct speaker *s, bool on)
+{
+    uint8_t ch[UAC_FU_CHANNELS_MAX], one = on ? 1u : 0u;
+    unsigned n = uac_fu_channels(&s->info.volume, UAC_FU_MUTE, ch,
+                                 UAC_FU_CHANNELS_MAX), i;
+    bool ok = n > 0;
+
+    for (i = 0; ok && i < n; i++) {
+        ok = speaker_fu(s, UAC_FU_MUTE, UAC_ATTR_CUR, true, ch[i], &one, NULL);
+    }
+
+    return ok;
+}
+
+/*
+ * **The master's level and mute onto the control**: muted first when it
+ * goes quiet, the volume, unmuted last when it comes back - so nothing is
+ * heard loud for a moment either way - and the first channel's volume read
+ * back, which is what the speaker says it took. A request refused gives the
+ * master back to the mix. `first` is a speaker just opened, which is set
+ * whatever it held.
+ */
+static void speaker_volume_apply(struct speaker *s, unsigned level, bool muted,
+                                 bool first, struct say_line *line)
+{
+    struct usb_audio_ring *r = usb_ring;
+    struct uac_volume_set set;
+    uint8_t ch[UAC_FU_CHANNELS_MAX], bytes[2], back[2];
+    unsigned n = uac_fu_channels(&s->info.volume, UAC_FU_VOLUME, ch,
+                                 UAC_FU_CHANNELS_MAX), i;
+    bool has_mute = s->info.volume.mute != UAC_CONTROL_NONE;
+    bool ok = true, sent = false, read = false;
+
+    uac_volume_for(&s->info, &s->vol_range, s->vol_top, level, muted, &set);
+
+    if (has_mute && set.mute && (first || !s->vol_mute_on)) {
+        ok = speaker_mute(s, true);
+        sent = true;
+    }
+
+    /* Silence on a control that is not made to take it (UAC1 without a
+     * mute, `uac_volume_for`) is not sent: the mix is silence already, and
+     * the level is set again when it comes back. */
+    if (ok && !(set.value == UAC_VOLUME_SILENCE && !set.silent)
+        && (first || !s->vol_sent || set.value != s->vol_value)) {
+        uac_volume_put(set.value, bytes);
+
+        for (i = 0; ok && i < n; i++) {
+            ok = speaker_fu(s, UAC_FU_VOLUME, UAC_ATTR_CUR, true, ch[i], bytes, NULL);
+        }
+
+        s->vol_value = set.value;
+        s->vol_sent = true;
+        sent = true;
+    }
+
+    if (ok && has_mute && !set.mute && (first || s->vol_mute_on)) {
+        ok = speaker_mute(s, false);
+        sent = true;
+    }
+
+    if (!ok) {
+        s->vol_ok = false;
+        RING_BARRIER();
+        r->master_hw = 0;
+        say_failure(s->c, s->dev.port, "speaker: setting its own volume",
+                    "; the master goes back into the mix", line);
+        return;
+    }
+
+    if (!sent) {
+        return;
+    }
+
+    s->vol_mute_on = has_mute && set.mute;
+    read = n > 0 && speaker_fu(s, UAC_FU_VOLUME, UAC_ATTR_CUR, false, ch[0], NULL, back);
+
+    r->volume_cur = s->vol_value;
+    r->volume_sets++;
+    RING_BARRIER();
+    r->master_hw = 1;
+
+    say_speaker(line, s);
+    say_text(line, "master ");
+    say_dec(line, level);
+    say_text(line, muted ? " muted" : "");
+    say_text(line, " on its own volume, ");
+    say_db(line, s->vol_value);
+    say_text(line, " dB (");
+    say_text(line, s->vol_value < 0 ? "-" : "");
+    say_dec(line, (unsigned long)(s->vol_value < 0 ? -(int32_t)s->vol_value
+                                                    : s->vol_value));
+    say_text(line, s->vol_mute_on ? ", its mute on" : "");
+    say_text(line, "), read back ");
+
+    if (read) {
+        int16_t v = uac_volume_get(back);
+
+        say_text(line, v < 0 ? "-" : "");
+        say_dec(line, (unsigned long)(v < 0 ? -(int32_t)v : v));
+    } else {
+        say_text(line, "nothing");
+    }
+
+    say_text(line, "; ");
+    say_dec(line, r->volume_sets);
+    say_text(line, r->volume_sets == 1 ? " set" : " sets");
+    say_send(console, line);
+}
+
+/*
+ * **The ring's master followed**: read after its count, behind the barrier,
+ * so the level and the mute are one change's (`usbaudioring.h`). A count of
+ * nought is a server that has not said, and its own start is 256, unmuted.
+ */
+static void speaker_volume_follow(struct speaker *s, bool first,
+                                  struct say_line *line)
+{
+    struct usb_audio_ring *r = usb_ring;
+    uint32_t count = r->master_set, level;
+    bool muted;
+
+    if (!s->vol_ok || (!first && count == s->vol_seen)) {
+        return;
+    }
+
+    RING_BARRIER();
+    level = count == 0 ? 256u : r->master;
+    muted = count != 0 && r->master_muted != 0;
+    level = level > 256u ? 256u : level;
+    s->vol_seen = count;
+
+    if (!first && level == s->vol_level && muted == s->vol_muted) {
+        return;
+    }
+
+    s->vol_level = level;
+    s->vol_muted = muted;
+    speaker_volume_apply(s, level, muted, first, line);
+}
+
+/* As a speaker is opened, with the ring absent: its range asked the first
+ * time, and the master's level set every time - a switch of setting too,
+ * since a setting can come up at a level of its own. */
+static void speaker_volume_open(struct speaker *s, struct say_line *line)
+{
+    if (!s->vol_read) {
+        s->vol_read = true;
+        s->vol_ok = speaker_volume_range(s, line);
+    }
+
+    usb_ring->master_hw = 0;
+    speaker_volume_follow(s, true, line);
 }
 
 static bool speaker_start(struct controller *c, struct device *d,
@@ -7009,10 +7345,6 @@ static bool speaker_open(struct speaker *s, int which, uint32_t rate,
         return false;
     }
 
-    if (!tone && speaker_option_is("full")) {
-        speaker_full(s, line);
-    }
-
     uac_clock_init(&s->clock, rate, s->uframes);
     uac_tone_init(&s->beeps, SPEAKER_TONE_HZ, rate, SPEAKER_TONE_LEVEL);
     s->tone_frames = tone ? rate * SPEAKER_BEEPS : 0;
@@ -7028,6 +7360,7 @@ static bool speaker_open(struct speaker *s, int which, uint32_t rate,
 
         r->present = 0;
         RING_BARRIER();
+        speaker_volume_open(s, line);   /* before the server may send (U10g) */
         speaker_named(c, d, info, r);
         r->rate = rate;
         r->channels = s->alt.channels;
@@ -7052,6 +7385,9 @@ static bool speaker_open(struct speaker *s, int which, uint32_t rate,
     for (i = 0; i < SPEAKER_TDS; i++) {
         speaker_queue(s, i);
     }
+
+    s->last_back = kosmos_ticks();
+    s->stall_said = false;
 
     speaker_bells(c);
 
@@ -7189,6 +7525,49 @@ static void serve_speakers(struct say_line *line)
         if (!s->used || !s->streaming || s->tone || r == NULL
             || usb_ring_owner != s) {
             continue;
+        }
+
+        /*
+         * **A speaker nothing comes back from**, said once and again when
+         * it plays. It holds 16 ms in flight and refills only as a TD
+         * returns, so one that stops answering stops for good, and the
+         * server's ring with it: a hang that was seen three times on 23
+         * November and never again (`testing.md` 18.1019), and that left
+         * no line to read. This is that line. Not a restart: what would be
+         * restarted, and why it stopped, is not known.
+         */
+        if (!s->draining && kosmos_ticks() - s->last_back
+                            > counter_for(SPEAKER_SILENT_MS)) {
+            if (!s->stall_said) {
+                s->stall_said = true;
+                say_speaker(line, s);
+                say_text(line, "nothing back from the controller for ");
+                say_dec(line, (unsigned long)((uint64_t)(kosmos_ticks() - s->last_back)
+                                              * 1000u / counter_hz));
+                say_text(line, " ms; out ");
+                say_dec(line, s->out);
+                say_text(line, ", oldest ");
+                say_dec(line, s->oldest);
+                say_text(line, ", enqueue ");
+                say_dec(line, s->ring.enqueue);
+                say_text(line, ", ran dry ");
+                say_dec(line, s->underruns);
+                say_text(line, ", errors ");
+                say_dec(line, s->errors);
+                say_text(line, ", lost ");
+                say_dec(line, s->lost);
+                say_send(console, line);
+            }
+        } else if (s->stall_said) {
+            s->stall_said = false;
+            say_speaker(line, s);
+            say_text(line, "TDs coming back again");
+            say_send(console, line);
+        }
+
+        /* The master, where the speaker carries it (U10g). */
+        if (!s->draining) {
+            speaker_volume_follow(s, false, line);
         }
 
         if (!s->draining) {

@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-23, at 0.12.97. Pushed to 0.12.0; 0.12.1 to
-0.12.97 are committed on `main`, and go out with `make prepush`.
+Last updated: 2026-11-23, at 0.12.98. Pushed to 0.12.0; 0.12.1 to
+0.12.98 are committed on `main`, and go out with `make prepush`.
 
 ---
 
@@ -364,8 +364,16 @@ tests moved onto `ffprobe`, a WAV seek and the door. **System Monitor S1 in
 the same revision**: the Series Kit, `ui.history` kept and drawn in C, built
 by a lane. **Lanes running**: the display decoders and EDID (D1-D2), the
 new Music's tags (P2) and Library (P4), and U10g's decoders (folded next,
-with the server's half: the speaker's own volume). Next: M6e, Big Buck
-Bunny. Then the new Music (`docs/player.md`, agreed, the old Music retired
+with the server's half: the speaker's own volume). **0.12.98** (18.1019): six lanes and a seventh
+folded - the new Music's P1 to P4, U10g (the master on the speaker's own
+volume), D1 and D2's decoders, and System Monitor S2 (`meters.lua`). **P5,
+the Music window, is with a lane.** **How the work is run, from 23 November**
+(Diego: "work smarter by not testing all all the time"): a revision is
+committed on the suites it reaches, the whole gate once per batch and
+before a push, lanes always working beside the main session, and a hung
+suite stopped at three times its last time (`CLAUDE.md`). **For Diego on
+the M700**: `gpu look` (D1), and the M60's volume range and a key press
+(U10g). Next: P5 folded and its `x86-player`; M6e, Big Buck Bunny; S3. Then the new Music (`docs/player.md`, agreed, the old Music retired
 at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for

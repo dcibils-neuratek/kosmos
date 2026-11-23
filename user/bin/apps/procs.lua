@@ -132,8 +132,10 @@ end
 
 local rows = {}          -- { name, kind, id, pct, pages, caps, owns, exited }
 local totals = { procs = 0, threads = 0 }
-local share = use("/Kosmos/Libraries/procshare.lua")
-local sampled = {}       -- what `share.rows` keeps from one sample to the next
+-- Each process's share and the machine's totals: `meters.processes`, which
+-- keeps what `procshare` needs from one sample to the next.
+local meters = use("/Kosmos/Libraries/meters.lua")
+local measured = meters.processes()
 
 --
 -- How each process gets its pixels, asked of the desktop.
@@ -973,11 +975,11 @@ function sampler:tick()
   -- Each process's share of every tick since the last sample, and the
   -- kernel's row beside them - and no idle row, which read as a process
   -- eating the machine. `/Kosmos/Libraries/procshare.lua` has why, and is tested on the
-  -- Mac.
+  -- Mac; `meters.processes` keeps its state and counts the threads.
   --
   local fresh = {}
 
-  for _, r in ipairs(share.rows(sampled, list, k)) do
+  for _, r in ipairs(measured:take(list, k)) do
     local p = r.process
 
     if r.kernel then
@@ -1008,17 +1010,14 @@ function sampler:tick()
   --
   -- **The kernel's own threads are what is left** when every process's are
   -- taken from the machine's: one idle thread a core and the workers it
-  -- keeps. The header said "in the kernel" by taking one thread a process
-  -- for granted, which a process with workers made wrong.
+  -- keeps (`meters.processes`' `kernel_threads`). The header said "in the
+  -- kernel" by taking one thread a process for granted, which a process
+  -- with workers made wrong.
   --
-  local theirs, kernel_row = 0, nil
+  local kernel_row = nil
 
   for _, r in ipairs(fresh) do
-    if r.synthetic then
-      kernel_row = r
-    elseif not r.exited then
-      theirs = theirs + (r.threads or 1)
-    end
+    if r.synthetic then kernel_row = r end
   end
 
   -- **The kernel's row from the first sample**, at nothing until there are
@@ -1031,9 +1030,9 @@ function sampler:tick()
     fresh[#fresh + 1] = kernel_row
   end
 
-  totals.procs = #fresh - (kernel_row and 1 or 0)
-  totals.threads = k and k.threads or 0
-  totals.kernel = math.max(0, totals.threads - theirs)
+  totals.procs = measured.count
+  totals.threads = measured.threads
+  totals.kernel = measured.kernel_threads
 
   if kernel_row then kernel_row.threads = totals.kernel end
 
@@ -1067,19 +1066,7 @@ function sampler:tick()
   -- reads `/Devices/kernel` every tick for the idle and busy counters, and the
   -- memory node is the only other place the free page count lives.
   --
-  local m = fs.read("/Devices/memory")
-
-  if k then
-    totals_state.threads,   totals_state.threads_max   = k.threads, k.threads_max
-    totals_state.processes, totals_state.processes_max = k.processes, k.processes_max
-    totals_state.endpoints, totals_state.endpoints_max = k.endpoints, k.endpoints_max
-    totals_state.spaces,    totals_state.spaces_max    = k.spaces, k.spaces_max
-  end
-
-  if m then
-    totals_state.used_mb  = m.total_mb - m.free_mb
-    totals_state.total_mb = m.total_mb
-  end
+  meters.totals(k, fs.read("/Devices/memory"), totals_state)
 
   local up = sys.ticks() // counter_hz
 

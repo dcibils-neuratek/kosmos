@@ -143,6 +143,44 @@ static uint32_t      device_rate;       /* the machine's own, 44.1 kHz: format 0
 static uint32_t      mix_rate;          /* the mix's: the device's, or the speaker's */
 static unsigned      mix_frames;        /* a period of the mix, in its frames */
 static bool          usb_quiet;         /* the speaker's setting is changing */
+
+/*
+ * **The master, where the speaker carries it** (`docs/usbaudio.md` U10g).
+ * The master is told to `xhci` through the ring, which sets the speaker's
+ * own volume to it and says so with `master_hw`; while the mix goes to that
+ * speaker it is mixed at unity, and a stream alone at its own full gain is
+ * heard bit for bit at any level. Muted, or at nought, the mix is silence
+ * all the same: a speaker whose control cannot silence it is not trusted
+ * to, and the samples in the ring and in the controller's TDs - 40 ms -
+ * stop at once rather than when the request lands.
+ */
+static bool master_on_speaker(void)
+{
+    return usb_active && usb != NULL && usb->master_hw != 0;
+}
+
+static int32_t master_in_mix(void)
+{
+    if (master_on_speaker()) {
+        return (master_muted || master == 0) ? 0 : 256;
+    }
+
+    return master_muted ? 0 : master;
+}
+
+/* The master into the ring, then its count: `xhci` reads the pair after
+ * the count, so it never sets half of a change. */
+static void usb_tell_master(void)
+{
+    if (usb == NULL) {
+        return;
+    }
+
+    usb->master = (uint32_t)master;
+    usb->master_muted = master_muted ? 1u : 0u;
+    RING_BARRIER();
+    usb->master_set++;
+}
 static double        usb_phase;
 /* The mix not yet converted, 32-bit stereo: a period, and the frames the
  * filter keeps behind its phase as taps. */
@@ -327,7 +365,7 @@ static bool mix(int32_t *out)
          * real pan holds the total power constant and needs a square root.
          * This is the simple one, and saying so beats implying the other.
          */
-        g = (s->muted || master_muted) ? 0 : ((s->gain * master) / 256);
+        g = s->muted ? 0 : ((s->gain * master_in_mix()) / 256);
         left = right = g;
 
         if (s->balance > 0) {
@@ -933,6 +971,10 @@ static void do_set(const struct audio_request *req, struct audio_reply *rep)
         master = (req->master > 256) ? 256 : req->master;
     }
 
+    if (req->master_muted >= 0 || req->master >= 0) {
+        usb_tell_master();              /* the speaker's own, U10g */
+    }
+
     if (req->stream == 0) {
         rep->error = AUDIO_OK;
         return;
@@ -969,8 +1011,10 @@ static uint32_t inexact(const struct stream *s)
         why |= AUDIO_INEXACT_RATE;
     }
 
-    if (s->gain != 256 || s->balance != 0 || s->muted
-        || master != 256 || master_muted) {
+    /* The master is not a stream's volume where the speaker carries it
+     * (U10g) - only nought, or muted, which the mix still makes silence. */
+    if (s->gain != 256 || s->balance != 0 || s->muted || master_muted
+        || (master_on_speaker() ? master == 0 : master != 256)) {
         why |= AUDIO_INEXACT_VOLUME;
     }
 
@@ -1272,6 +1316,7 @@ void audio_server(long endpoint, long usb_ring)
         long at = usb_ring < 0 ? -1 : kosmos_mem_map(usb_ring);
 
         usb = at < 0 ? NULL : (struct usb_audio_ring *)(uintptr_t)at;
+        usb_tell_master();              /* the level a speaker starts at */
 
         /* The machine's own from the start, where the boot says so. */
         if (kosmos_boot_option("opt/kosmos/audio", option, sizeof(option)) == 7

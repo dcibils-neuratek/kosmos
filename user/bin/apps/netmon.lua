@@ -27,6 +27,7 @@ local theme = ui.theme
 local L = ui.layout
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local meters = use("/Kosmos/Libraries/meters.lua")
 
 -- Monitor's three paces, and what sixty columns of each come to.
 local PACES = {
@@ -121,8 +122,10 @@ local now_in, now_out = 0, 0            -- bytes a second, now
 local history = {}                      -- { in, out } a column
 local totals = nil                      -- the server's, as last read
 local rows, open = {}, 0                -- the connections, busiest first
-local last, last_at = nil, nil          -- the reading before
-local last_conn = {}                    -- handle -> { in, out } then
+-- The network's meter (`meters.network`): the machine's rates from two
+-- readings, and each connection's by its handle - one opened since the
+-- last reading counted from nought.
+local measured = meters.network(counter_hz)
 
 local function sample()
   local s = fs.net_stats("/Network")
@@ -130,31 +133,23 @@ local function sample()
 
   if not s then return end
 
-  local seconds = last_at and (at - last_at) / counter_hz or 0
   local names = {}
 
   for _, p in ipairs(sys.processes() or {}) do names[p.id] = p.name end
 
-  if last and seconds > 0 then
-    now_in = (s.bytes_in - last.bytes_in) / seconds
-    now_out = (s.bytes_out - last.bytes_out) / seconds
+  if measured:take(s, at) then
+    now_in, now_out = measured.rin, measured.rout
     ui.history.push(history, { now_in, now_out }, COLUMNS)
   end
 
-  local seen, list = {}, {}
+  local list = {}
 
   for _, c in ipairs(s.connections) do
-    -- A connection not there at the last reading opened since, so every
-    -- byte it has is new: a short one - a request, an answer, closed - would
-    -- otherwise never be seen twice and never have a rate.
-    local was = last_conn[c.handle] or (last and { 0, 0 })
-    local rin = was and seconds > 0 and (c.bytes_in - was[1]) / seconds or 0
-    local rout = was and seconds > 0 and (c.bytes_out - was[2]) / seconds or 0
+    local rin, rout = measured:conn(c)
     local to = c.kind == "listener" and ("listening on %d"):format(c.local_port)
                or c.kind == "udp" and ("port %d, datagrams"):format(c.local_port)
                or ("%s:%d"):format(address(c.remote), c.remote_port)
 
-    seen[c.handle] = { c.bytes_in, c.bytes_out }
     list[#list + 1] = {
       program = names[c.process] or (c.process > 0 and ("process " .. c.process) or "the stack"),
       to = to,
@@ -169,7 +164,6 @@ local function sample()
   end)
 
   rows, open, totals = list, s.there, s
-  last, last_at, last_conn = s, at, seen
 
   local top = rows[1]
 
@@ -397,7 +391,8 @@ set_pace = function(p)
 
   -- Begun again, from a reading taken now: columns at one pace beside
   -- columns at another would be a time axis that lies.
-  history, last = {}, nil
+  history = {}
+  measured:restart()
   sample()
   print(("netmon: %s, %s"):format(p.menu:lower(), p.heading:lower()))
 end

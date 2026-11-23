@@ -27,6 +27,7 @@ local theme = ui.theme
 local L = ui.layout
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local meters = use("/Kosmos/Libraries/meters.lua")
 local TELL = (tostring(args or "")):find("%-%-tell") ~= nil   -- a line a sample, for its suite
 
 local PACES = {
@@ -161,14 +162,20 @@ end
 
 local drives, chosen = find_drives(), 1
 local by_key = {}
-local programs, prog_last, prog_open = {}, {}, 0
+local programs, prog_open = {}, 0
 local samples = 0
 
+-- The chosen drive's programs' rates, by the difference in each one's own
+-- totals (`meters.flows`): a program not seen before has no rate yet.
+local prog_rates = meters.flows(counter_hz)
+
+-- A drive's meter (`meters.drive`): its rates, how long a read and a write
+-- take, the cache's share, its counts - with its graph's history beside them.
 local function state_of(d)
   local s = by_key[d.key]
 
   if not s then
-    s = { history = {}, rin = 0, rout = 0 }
+    s = meters.drive(counter_hz, { history = {} })
     by_key[d.key] = s
   end
 
@@ -192,28 +199,9 @@ local function sample()
 
   for _, d in ipairs(drives) do
     local s = state_of(d)
-    local c = fs.read(d.path .. "/.device")
 
-    if type(c) == "table" then
-      if s.last and now > s.at then
-        local seconds = (now - s.at) / counter_hz
-        local dr, dw = c.reads - s.last.reads, c.writes - s.last.writes
-
-        s.rin = (c.read_bytes - s.last.read_bytes) / seconds
-        s.rout = (c.write_bytes - s.last.write_bytes) / seconds
-        s.read_ms = dr > 0 and (c.read_counter_ticks - s.last.read_counter_ticks) / dr / counter_hz * 1000 or nil
-        s.write_ms = dw > 0 and (c.write_counter_ticks - s.last.write_counter_ticks) / dw / counter_hz * 1000 or nil
-
-        local hits = c.cache_hits - s.last.cache_hits
-        local asks = hits + c.cache_misses - s.last.cache_misses
-
-        s.cache = asks > 0 and hits * 100 // asks or s.cache
-        ui.history.push(s.history, { s.rin, s.rout }, COLUMNS)
-      end
-
-      s.last, s.at, s.counts = c, now, c
-    else
-      s.silent = true
+    if s:take(fs.read(d.path .. "/.device"), now) then
+      ui.history.push(s.history, { s.rin, s.rout }, COLUMNS)
     end
   end
 
@@ -225,15 +213,13 @@ local function sample()
 
   for _, p in ipairs(sys.processes() or {}) do names[p.id] = p.name end
 
-  local seen, list = {}, {}
-  local seconds = prog_last.at and (now - prog_last.at) / counter_hz or 0
+  local list = {}
+
+  prog_rates:begin(now, false)
 
   for _, r in ipairs(type(rows) == "table" and rows or {}) do
-    local was = prog_last.rows and prog_last.rows[r.process]
-    local rin = was and seconds > 0 and (r.read_bytes - was.read_bytes) / seconds or 0
-    local rout = was and seconds > 0 and (r.write_bytes - was.write_bytes) / seconds or 0
+    local rin, rout = prog_rates:rate(r.process, r.read_bytes, r.write_bytes)
 
-    seen[r.process] = r
     list[#list + 1] = { program = names[r.process] or ("process " .. r.process .. ", ended"),
                         rin = rin, rout = rout, last = r.last, alive = names[r.process] ~= nil }
   end
@@ -244,7 +230,7 @@ local function sample()
     return a.program < b.program
   end)
 
-  programs, prog_last = list, { rows = seen, at = now, key = d and d.key }
+  programs = list
   prog_open = 0
 
   for _, p in ipairs(list) do if p.rin + p.rout > 0 then prog_open = prog_open + 1 end end
@@ -384,7 +370,7 @@ function list:mouse(action, x, y)
     if drives[i] then
       return i, function()
         chosen = i
-        prog_last = {}
+        prog_rates:restart()
         print(("diskmon: chose %s"):format(drives[i].key))
       end
     end
@@ -524,7 +510,10 @@ set_pace = function(p)
   win.tick_every = counter_hz * p.half // 2
   win.last_tick = sys.ticks()
 
-  for _, s in pairs(by_key) do s.history, s.last = {}, nil end
+  for _, s in pairs(by_key) do
+    s.history = {}
+    s:restart()
+  end
 
   sample()
   print(("diskmon: %s, %s"):format(p.menu:lower(), p.heading:lower()))

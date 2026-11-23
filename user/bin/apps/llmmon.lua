@@ -43,6 +43,7 @@ local theme = ui.theme
 local L = ui.layout
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local meters = use("/Kosmos/Libraries/meters.lua")
 
 -- `--tell`: a line a sample, for a suite to read.
 local TELL = (tostring(args or "")):find("%-%-tell") ~= nil
@@ -67,11 +68,13 @@ local FAINT        = 0xff8b949e
 -- What the window shows, refreshed a sample at a time.
 --------------------------------------------------------------------------
 
-local now, last, why_not = nil, nil, nil
+local now, why_not = nil, nil
+-- The server's meter (`meters.llm`): tokens written a second between two
+-- readings, and each answer seen to end.
+local measured = meters.llm()
 local rates = {}                        -- tokens written a second, a column each
 local firsts = {}                       -- { at, first_us } of each answer seen to end
 local writes = {}                       -- { at, tokens a second } of each answer seen to end
-local seen_answers = nil
 local best = 0
 
 local function seconds() return sys.ticks() / counter_hz end
@@ -93,25 +96,19 @@ local function sample()
     return
   end
 
-  if last and s.up_us > last.up_us then
-    local dt = (s.up_us - last.up_us) / 1e6
-    -- A server started again counts from nought: no column below zero.
-    local wrote = s.written_tokens >= last.written_tokens and s.written_tokens - last.written_tokens or 0
+  -- A server started again counts from nought: no column below zero.
+  local wrote, r, first = measured:take(s)
 
-    ui.history.push(rates, { wrote / dt }, COLUMNS)
-  end
+  if wrote then ui.history.push(rates, { wrote }, COLUMNS) end
 
   -- An answer that ended since the last look: its speed, and its first word.
-  if seen_answers and s.answers > seen_answers and s.answer_us > 0 then
-    local r = s.answer_tokens * 1e6 / s.answer_us
-
+  if r then
     writes[#writes + 1] = { seconds(), r }
-    firsts[#firsts + 1] = { seconds(), s.first_us / 1e6 }
+    firsts[#firsts + 1] = { seconds(), first }
     if r > best then best = r end
   end
 
-  seen_answers = s.answers
-  now, last, why_not = s, s, nil
+  now, why_not = s, nil
 
   if TELL then
     local who = {}

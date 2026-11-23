@@ -855,6 +855,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/drivers/display/backlight_decode.c \
              user/drivers/display/intelgpu.c \
              user/drivers/display/intelgpu_decode.c \
+             user/drivers/display/intelgpu_display.c \
+             user/kits/display/edid.c \
              user/drivers/display/intelgpu_kernel.c \
              user/drivers/display/intelgpu_lrc.c \
              user/drivers/display/intelgpu_ctx.c \
@@ -2184,6 +2186,34 @@ $(HOSTDIR)/test_backlightdecode: tools/test_backlightdecode.c user/drivers/displ
 # And an Intel display engine's registers, for the same reason: QEMU has no
 # Intel GPU, and the M700 is the one machine that reads them. `intelgpu_decode.h`.
 #
+# The display's timings, links and clocks as the registers say them, for the
+# M700's `gpu look` (`docs/displaymodes.md` D1), and a monitor's EDID decoded
+# into its modes by the Display Kit (D2): both on values built from i915's
+# and DRM's own encodings, since QEMU has neither.
+$(HOSTDIR)/test_intelgpu_display: tools/test_intelgpu_display.c user/drivers/display/intelgpu_display.c user/drivers/display/intelgpu_display.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_intelgpu_display.c user/drivers/display/intelgpu_display.c
+
+$(HOSTDIR)/test_edid: tools/test_edid.c user/kits/display/edid.c user/kits/display/edid.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_edid.c user/kits/display/edid.c
+
+# The Media Kit's sound at the file's own resolution (`docs/player.md` P1):
+# `media_sound` held to this Mac's `ffmpeg -f md5`, on FFmpeg built for this
+# Mac by `tools/w5_build.py` from the list the images' FFmpeg is built from.
+W5_HOST := build/w5/host/install
+$(W5_HOST)/lib/libavcodec.a: tools/w5_build.py tools/upstream.py
+	python3 tools/w5_build.py host dav1d ffmpeg
+$(HOSTDIR)/test_mediasound: tools/test_mediasound.c user/kits/media/media.c \
+                            user/kits/media/media.h $(W5_HOST)/lib/libavcodec.a
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/media -isystem $(W5_HOST)/include \
+	    -o $@ tools/test_mediasound.c user/kits/media/media.c \
+	    $(W5_HOST)/lib/libavformat.a $(W5_HOST)/lib/libavcodec.a $(W5_HOST)/lib/libswresample.a \
+	    $(W5_HOST)/lib/libavutil.a $(W5_HOST)/lib/libdav1d.a -lpthread -lm
+
 $(HOSTDIR)/test_intelgpu_decode: tools/test_intelgpu_decode.c user/drivers/display/intelgpu_decode.c user/drivers/display/intelgpu_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
@@ -2873,7 +2903,8 @@ $(HOSTDIR)/test_k3d_gpu: tools/test_k3d_gpu.c $(K3D_CORE) user/kits/3d/k3d_trace
 # `tools/mp3_conformance.txt`. AAC was a third until M6d.
 $(HOSTDIR)/test_playback: tools/test_playback.c user/kits/playback/playback_core.c \
                           user/kits/playback/playback_core.h user/kits/mp3/minimp3.c \
-                          user/include/pcmconvert.h user/include/audioring.h
+                          user/include/pcmconvert.h user/include/audioring.h \
+                          user/include/audioproto.h
 	@mkdir -p $(dir $@)
 	python3 tools/fetch_conformance.py mp3
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 \
@@ -6404,7 +6435,7 @@ build/airports/airports.tsv: tools/airports.py
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_uacdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_amdgpu_decode $(HOSTDIR)/test_amdgpu_engine $(HOSTDIR)/test_intelgpu_lrc $(HOSTDIR)/test_intelgpu_ctx $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_debug $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_picture_decode $(HOSTDIR)/test_glb $(HOSTDIR)/test_blur $(HOSTDIR)/test_blur_x86 $(HOSTDIR)/test_lens $(HOSTDIR)/test_lens_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_terrain $(HOSTDIR)/test_extrude $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_synth $(HOSTDIR)/test_series $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86 $(HOSTDIR)/llm_answer $(HOSTDIR)/llm_answer_x86
+host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_uacdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_display $(HOSTDIR)/test_edid $(HOSTDIR)/test_mediasound $(HOSTDIR)/test_amdgpu_decode $(HOSTDIR)/test_amdgpu_engine $(HOSTDIR)/test_intelgpu_lrc $(HOSTDIR)/test_intelgpu_ctx $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_debug $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_picture_decode $(HOSTDIR)/test_glb $(HOSTDIR)/test_blur $(HOSTDIR)/test_blur_x86 $(HOSTDIR)/test_lens $(HOSTDIR)/test_lens_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_terrain $(HOSTDIR)/test_extrude $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_synth $(HOSTDIR)/test_series $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86 $(HOSTDIR)/llm_answer $(HOSTDIR)/llm_answer_x86
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -6491,6 +6522,17 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
 	@# INFO - read through the same tags.lua Music uses, on this machine.
 	$(HOSTDIR)/lua tools/test_tags.lua
+	@# And the Library kit over an fs in memory: albums, compilations, a file
+	@# read again only when its stamp or size moved, search and smart rules
+	@# (`docs/player.md` P4).
+	$(HOSTDIR)/lua tools/test_library.lua
+	@# And every monitor's differences from two readings, the M700's
+	@# (`docs/sysmonitor.md` S2): a counter that wrapped, a server started
+	@# again, a source that vanished, a first reading; then the controls.
+	$(HOSTDIR)/lua tools/test_meters.lua
+	@for c in no-seconds no-wrap no-first; do \
+	  if $(HOSTDIR)/lua tools/test_meters.lua $$c >/dev/null; then \
+	    echo "FAIL: the meters' control $$c passed: the checks do not bite"; exit 1; fi; done
 	$(HOSTDIR)/lua tools/test_procshare.lua
 	@# The kit's keys: every sequence the board makes read back whole, as
 	@# its key and its modifiers, and nothing typed that was not (6n, step 0).
@@ -6704,6 +6746,14 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	$(HOSTDIR)/test_depth
 	$(HOSTDIR)/test_backlightdecode
 	$(HOSTDIR)/test_intelgpu_decode
+	$(HOSTDIR)/test_intelgpu_display
+	! IGPUDISPLAYTEST_BROKEN=1 $(HOSTDIR)/test_intelgpu_display > /dev/null
+	$(HOSTDIR)/test_edid
+	! EDIDTEST_BROKEN=1 $(HOSTDIR)/test_edid > /dev/null
+	@# The Media Kit's sound, every format at its own depth, against ffmpeg's
+	@# MD5 (`docs/player.md` P1); through float, 32 bits must not survive.
+	$(HOSTDIR)/test_mediasound $(HOSTDIR)/mediasound
+	! MEDIASOUNDTEST_BROKEN=1 $(HOSTDIR)/test_mediasound $(HOSTDIR)/mediasound > /dev/null
 	$(HOSTDIR)/test_amdgpu_decode
 	$(HOSTDIR)/test_amdgpu_engine build/downloads/linux-amd build/downloads/radeon-firmware
 	$(HOSTDIR)/test_intelgpu_lrc
@@ -6804,8 +6854,11 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	python3 tools/test_gatelibs.py
 	@# And the resampler sys.pcm and the Playback Kit share.
 	$(HOSTDIR)/test_pcmconvert
-	@# And the Playback Kit's core: WAV, MP3 and AAC into a stream's ring.
+	@# And the Playback Kit's core: WAV and MP3 into a stream's ring, and
+	@# decoded songs joined sample for sample, trimmed (`docs/player.md` P3);
+	@# joined untrimmed, it must fail.
 	$(HOSTDIR)/test_playback
+	! PLAYBACKTEST_BROKEN=untrimmed $(HOSTDIR)/test_playback > /dev/null
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

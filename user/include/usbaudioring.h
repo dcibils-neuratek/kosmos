@@ -12,8 +12,9 @@
  * and no capability is passed at run time that another program could pass.
  *
  * **One producer and one consumer, indices only** (`audioring.h`'s shape,
- * and its barrier): the server alone writes `write` and the data behind it;
- * `xhci` alone writes everything else. They count frames for ever, in 64
+ * and its barrier): the server alone writes `write`, the data behind it,
+ * and the fields marked as the server's below; `xhci` alone writes
+ * everything else. They count frames for ever, in 64
  * bits, so the difference is what is waiting and nothing wraps but the
  * place in `data`.
  *
@@ -48,6 +49,20 @@
  * format and generation before it clears `switching`. While `switching`
  * holds, the server writes nothing and sends the mix nowhere else: the
  * speaker is still the one chosen, only quiet for the moment it takes.
+ *
+ * **And the master, on the speaker's own volume** (U10g): `master` and
+ * `master_muted` are the server's, written whenever either changes and
+ * then `master_set` counted up, behind the barrier, so `xhci` reads a pair
+ * that belongs together and notices a change by a number rather than by
+ * comparing levels (50, 30, 50 is two changes). `master_set` nought is a
+ * server that has not said, and is read as 256, unmuted - its own start.
+ * Where the speaker has a volume control it will take, `xhci` sets it to
+ * the master - from its own loop, never inside anybody's call - writes
+ * `volume_cur` and counts `volume_sets`, and holds `master_hw` at 1; the
+ * server then mixes at unity and leaves the master to the speaker. Where
+ * it has none, or one refused a request, `master_hw` is nought and the
+ * master stays in the mix. `volume_min` to `volume_top` say the control's
+ * range in its own 1/256 dB, for whoever shows it to a person.
  */
 
 #include <stdint.h>
@@ -90,11 +105,20 @@ struct usb_audio_ring {
     uint32_t want_bits;         /* the server's: its bits, 16, 24 or 32 */
     uint32_t switching;         /* xhci's: 1 while the setting changes */
     uint32_t switches;          /* xhci's: how many times it has, ever */
-    uint8_t  pad[USB_AUDIO_RING_HEADER - 140];
+    uint32_t master;            /* the server's: 0..256, audioproto.h's */
+    uint32_t master_muted;      /* the server's: 1 silent, `master` kept */
+    uint32_t master_set;        /* the server's: one more after each change */
+    uint32_t master_hw;         /* xhci's: 1 while the speaker carries it */
+    int32_t  volume_cur;        /* xhci's: the control's value last set, 1/256 dB */
+    uint32_t volume_sets;       /* xhci's: how many times it was set, ever */
+    int16_t  volume_min, volume_max, volume_res;    /* xhci's: its range */
+    int16_t  volume_top;        /* xhci's: the value the master's 256 is */
+    uint8_t  pad[USB_AUDIO_RING_HEADER - 172];
     uint8_t  data[USB_AUDIO_RING_BYTES];
 };
 
-_Static_assert(__builtin_offsetof(struct usb_audio_ring, pad) == 140,
+_Static_assert(__builtin_offsetof(struct usb_audio_ring, master) == 140
+               && __builtin_offsetof(struct usb_audio_ring, pad) == 172,
                "the USB audio ring's header is as written");
 _Static_assert(sizeof(struct usb_audio_ring) == USB_AUDIO_RING_PAGES * 4096u,
                "the USB audio ring is its pages exactly");

@@ -473,9 +473,44 @@ adaptive; U6 and U7 if they are not. U1 says which.
     stream whose master is the speaker's (`AUDIO_INEXACT_VOLUME`), and its
     own gain still is. `usbaudio=full`, the proof's setting, becomes the
     master at its top. **Tests**: under QEMU, whose speaker has a volume
-    control, the noise found bit for bit at a master of 50% with the
-    speaker's control said to have moved, and a master change heard as a
-    new SET_CUR; the M60 says over Telnet whether it has one.
+    control - a mute on its master channel and a volume on each of its two,
+    none on the master - the master at 50% is a SET_CUR of the value the
+    curve gives on that range, read back from the speaker, and the noise
+    played at its own unity is said `exact` (the master is the speaker's,
+    not the stream's) and heard at QEMU's own level for that value; a
+    master change is a new SET_CUR; and the noise is found bit for bit at a
+    master of 100%. **Not bit for bit at 50% under QEMU, and that is
+    QEMU's**: it writes its WAV after its own volume, so what it records at
+    any level but its top is the samples scaled, whatever Kosmos sent. That
+    the samples leave Kosmos untouched at 50% is the server's mix at unity,
+    which the 100% case and the words hold; the M60 says over Telnet
+    whether it has a control, its range, and what it took.
+
+    **How it is built** (written before the gate ran it). The ring
+    (`usbaudioring.h`) takes 32 of its 52 spare header bytes, from offset
+    140: `master`, `master_muted` and `master_set` are the server's -
+    written on every `AUDIO_OP_SET` that names the master, and at start,
+    the count last, behind the barrier; `master_hw`, `volume_cur`,
+    `volume_sets` and the control's range (`volume_min`, `_max`, `_res`,
+    `_top`, in 1/256 dB) are `xhci`'s. The header stays 192 bytes.
+    `xhci` asks the range once (GET_MIN, GET_MAX, GET_RES on UAC1, GET
+    RANGE on UAC2, on the feature unit `uac_decode` found nearest the
+    output terminal), sets the master's level as the speaker is opened,
+    with the ring absent, and again from its own loop whenever
+    `master_set` moves - never inside the server's call. Muting goes
+    first and unmuting last, so neither way is loud for a moment; the
+    first channel's volume is read back and said with each set. A request
+    the speaker refuses (a STALL) is recovered on the controller (Reset
+    Endpoint, the dequeue moved on) and gives the master back to the mix.
+    **QEMU's speaker is a quirk named as one** (46f4:0002): its top is its
+    MAX, +8 dB, the one value it passes untouched (18.1014); every other
+    speaker's top is 0 dB, clamped into its range. QEMU's control is
+    linear in its code rather than in decibels, so below the top it is
+    louder than the curve says - half is 244/255 there - which is QEMU's
+    and is left alone. The server mixes at unity while the speaker carries
+    the master, and at silence when it is muted or at nought, whatever the
+    speaker does; `volume` is said only for the master at nought or muted.
+    `usbaudio=full` is gone: the master at 256 is what it did.
 
     **The question as it was asked.** A speaker's own volume can change the
     samples after Kosmos has sent them, which makes `exact` untrue at the
