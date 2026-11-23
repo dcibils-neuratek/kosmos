@@ -11889,6 +11889,16 @@ the applications make the system useful, and is not pulled forward.
     `-Werror=return-type` in WebKit's build (`runtime/cxx/kosmos.cmake`)
     at the next full WebKit rebuild, so every other function that runs
     off its end on Kosmos is named rather than found by a crash.
+  - *`x86-machine`'s two choices unanswered under load* (23 November,
+    0.12.87's gate, `testing.md` 18.1009): By connection and No driver
+    clicked where the window said they are, and neither said its line in
+    15 s; alone both do. Keep the serial log of the next one
+    (`build/gate/serial/`) and see whether the clicks arrived.
+  - *Sound under the gate's load* (0.12.85, 18.1005): JetSki's tone at 403
+    Hz, a gap in `x86-film-load` - which runs alone and had not failed - and
+    the USB speaker's beep in two; each passes alone, and the speaker's
+    passed beside twelve spinners on the Mac. Radio's "0 frames heard"
+    was a bug and is fixed (18.1009); these three are not understood.
   - *`x86-script`'s budget check under load* (16 November, 0.11.448's
     prepush): "a loop without end was not stopped by its budget" and the
     reopened scene's Run, in a gate where the suite took 268 s; alone it

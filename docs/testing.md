@@ -42697,3 +42697,28 @@ same 29 checks, the four F16 answers the kit's own byte for byte: **136 s
 alone and 325 s of processor**, against 200 and 943; the first answer 39
 s from boot against 54. `x86-llm`, the processor's server, passes as it
 was (60 checks).
+
+## 18.1009 0.12.87's gate, its processor, and Radio's nought
+
+The gate now says what each suite took of the Mac (`os.wait4`, `cpu.json`).
+**0.12.87's whole gate: 870 s, against 948 at 0.12.85, and 6,473 s of
+processor** - so 647 s is as soon as ten cores can end it however the
+suites are packed. The most: `x86-llm-vk` 613 s (302 s long), `host-llmvk`
+569 (188 long: lavapipe on the Mac, three cores), `x86-flight` 389,
+`x86-cafesa3d-2` 363, `x86-sql` 252, `arm-sandbox-linuxsetup` 202. Two
+failed and passed alone:
+
+- **`x86-radio`: a bug, now fixed.** Its closing line said "0 frames
+  heard, 0 dry" a second after "frames=316928". `playback_state` reads the
+  player's counts under a sequence number, tried a thousand times without
+  yielding, and then answered with the copy it had cleared: a writer held
+  off half way outlasted a thousand reads in microseconds. Each failed try
+  yields now (`playback_player.c`). `x86-radio`, `x86-film` and `x86-jetski`
+  pass.
+- **`x86-machine`**: By connection and No driver each clicked, and neither
+  answered in 15 s; alone, both do. Not understood: on the roadmap.
+
+The POSIX layer's mutexes and condition variables wait on futexes
+(`runtime/posix/pthread.c`), so ported threads waiting do not spin -
+checked, since `x86-llm-vk` takes 325 s of processor alone and 613 in the
+gate. What grows under load there is TCG's own cost, not waiting.

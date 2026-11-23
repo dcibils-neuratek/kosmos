@@ -356,6 +356,15 @@ bool playback_ended(struct playback *pl)
  * Copied under the sequence number, and the longest the thread was away
  * between two passes while playing counted up to now as well, so a thread
  * held off for good is seen.
+ *
+ * **Yielding while the writer is half way, and never giving up on zeros**
+ * (`testing.md` 18.1009). This tried a thousand times without yielding and
+ * then answered with the copy it had cleared: a writer held off mid-update -
+ * on a loaded machine, or by this thread itself on its core - outlasted a
+ * thousand reads in microseconds, and Radio said "0 frames heard, 0 dry"
+ * a second after 316,928. Now each failed try gives the core away, so the
+ * writer, wherever it is, has a thousand turns of the scheduler to finish
+ * a dozen stores in. Only a writer that died half way outlasts them.
  */
 void playback_state(const struct playback *pl, struct playback_state *out)
 {
@@ -365,6 +374,10 @@ void playback_state(const struct playback *pl, struct playback_state *out)
     memset(&copy, 0, sizeof copy);
 
     for (int tries = 0; tries < 1000; tries++) {
+        if (tries > 0) {
+            kosmos_yield();
+        }
+
         seq = __atomic_load_n(&pl->heard_seq, __ATOMIC_ACQUIRE);
 
         if (seq & 1u) {
