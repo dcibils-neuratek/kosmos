@@ -5224,6 +5224,118 @@ s:close()
         machine.close()
 
 
+def usb_audio_exact(image, check):
+    """**Whether a stream is heard bit for bit, and why not** -
+    `docs/usbaudio.md` U10e.
+
+    HD Audio for the machine's clock and QEMU's USB speaker plugged in, at
+    48 kHz and 16 bits, so the mix runs at 48 kHz (U10d). A program plays
+    0.6 s of a tone and, half way, asks `audio.streams()` about its own
+    stream:
+
+      * 48 kHz, 16 bits, at unity, alone - exact;
+      * the same at a gain of 253 of 256 - "volume";
+      * 44.1 kHz, 16 bits - "rate";
+      * 48 kHz, 24 bits, into the speaker's 16 - "narrowed";
+      * 48 kHz, 16 bits, with a second stream playing beside it - "mixed".
+
+    Each is held to its exact words, and the stream's own format to what
+    it opened. Its control is the server built to call every stream exact
+    (`testing.md` 18.1013): the four reasons fail and the first passes.
+    """
+    wav = os.path.join(os.path.dirname(image), "usb-audio-exact.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    extra = ("-device", "ich9-intel-hda",
+             "-device", "hda-output,audiodev=a0",
+             "-audiodev", "none,id=a0",
+             "-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav)
+    machine = PluggedMachine(image, extra)
+    program = r"""
+local A = use("/Kosmos/Libraries/audio.lua")
+local rate, bits, gain, two = %d, %d, %d, %d
+local function tone(r, b, hz)
+  local per = r // hz
+  local code = b == 16 and "<i2" or "<i3"
+  local amp = (1 << (b - 1)) // 2
+  local cyc = {}
+  for i = 0, per - 1 do
+    local one = string.pack(code, math.floor(math.sin(2 * math.pi * i / per) * amp))
+    cyc[#cyc + 1] = one .. one
+  end
+  return table.concat(cyc):rep(hz * 6 // 10)
+end
+local s, why = A.open("exact", 8, { rate = rate, bits = bits, channels = 2 })
+if not s then print("EX refused " .. tostring(why)) return end
+if gain ~= 256 then A.set({ stream = s.id, gain = gain }) end
+local t = two == 1 and A.open("other", 8, { rate = 48000, bits = 16, channels = 2 }) or nil
+local mine, other = tone(rate, bits, 1000), tone(48000, 16, 700)
+local said = false
+for at = 1, #mine, s.period do
+  s:write(mine:sub(at, at + s.period - 1))
+  if t then t:write(other:sub(at, at + t.period - 1)) end
+  if not said and at > #mine // 2 then
+    said = true
+    for _, e in ipairs(A.streams()) do
+      if e.stream == s.id then
+        print("EX " .. e.rate .. "/" .. e.bits .. "/" .. e.channels .. " "
+              .. (e.exact and "exact" or "inexact") .. " [" .. e.why .. "]")
+      end
+    end
+  end
+end
+s:close()
+if t then t:close() end
+print("EX done")
+"""
+    cases = [(48000, 16, 256, 0, "exact []"),
+             (48000, 16, 253, 0, "inexact [volume]"),
+             (44100, 16, 256, 0, "inexact [rate]"),
+             (48000, 24, 256, 0, "inexact [narrowed]"),
+             (48000, 16, 256, 1, "inexact [mixed]")]
+
+    try:
+        if not machine.wait_for(0, r"kosmos> ", 90) or \
+           not machine.wait_for(0, r"xhci: watching for devices plugged in and out", 60):
+            check(False, "the machine did not reach a prompt with its USB driver watching")
+            return
+
+        mark = machine.mark()
+        machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
+        check(machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30),
+              "the speaker plugged in was not streamed")
+
+        for n, (rate, bits, gain, two, _) in enumerate(cases):
+            text = " ".join(l.strip() for l in
+                            (program % (rate, bits, gain, two)).splitlines() if l.strip())
+            machine.typed('EX_T = ""', r"", 10)
+
+            for at in range(0, len(text), 300):
+                machine.typed('EX_T = EX_T .. %s' % lua_string(text[at:at + 300]), r"", 10)
+
+            wrote, said = machine.typed('fs.write("/Temporary/ex%d.lua", EX_T) print("WROTE")'
+                                        % n, r"WROTE", 10)
+            check(wrote, "the program for case %d was not written: %r" % (n, said[-300:]))
+
+        for n, (rate, bits, gain, two, want) in enumerate(cases):
+            label = "%d/%d, gain %d%s" % (rate, bits, gain, ", beside another" if two else "")
+            _, out = machine.typed("run /Temporary/ex%d.lua" % n,
+                                   r"EX (?:done|refused)[^\n]*\n", 120)
+            got = re.search(r"EX (\d+)/(\d+)/(\d+) (\w+ \[[a-z, ]*\])", out)
+            check(got is not None and got.group(4) == want
+                  and got.group(1, 2, 3) == (str(rate), str(bits), "2"),
+                  "%s: the stream was not said %s at %d/%d/2: %r"
+                  % (label, want, rate, bits,
+                     [l for l in out.splitlines() if l.startswith("EX")] or out[-400:]))
+    finally:
+        machine.close()
+
+
 def usb_audio_switch(image, check):
     """**The speaker's setting follows the best stream** -
     `docs/usbaudio.md` U10d.
@@ -6611,7 +6723,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_audio_format', 'usb_audio_switch', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_audio_format', 'usb_audio_switch', 'usb_audio_exact', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6735,6 +6847,8 @@ def main():
         usb_audio_format(image, check)
     if 'usb_audio_switch' in wanted:
         usb_audio_switch(image, check)
+    if 'usb_audio_exact' in wanted:
+        usb_audio_exact(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

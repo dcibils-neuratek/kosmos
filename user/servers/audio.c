@@ -50,6 +50,7 @@ struct stream {
     int32_t            balance;         /* -100 .. +100 */
     bool               muted;
     uint32_t           peak;            /* from the last mix, before gain */
+    bool               loud;            /* heard in the last mix: U10e's MIXED */
     uint64_t           consumed;        /* frames taken from this ring, ever */
     char               name[AUDIO_NAME_MAX];
 
@@ -309,6 +310,8 @@ static bool mix(int32_t *out)
             continue;
         }
 
+        s->loud = false;
+
         /* Acquire: having seen this index, the samples behind it are there.
          * A converting stream may have a period in hand with its ring
          * empty, and `converted` is what knows. */
@@ -354,6 +357,7 @@ static bool mix(int32_t *out)
             }
 
             s->peak = (uint32_t)peak;
+            s->loud = peak > 0 && (left > 0 || right > 0);
             s->conv->got = 0;
             s->consumed += mix_frames;
             mixed++;
@@ -377,6 +381,7 @@ static bool mix(int32_t *out)
         }
 
         s->peak = (uint32_t)peak;
+        s->loud = peak > 0 && (left > 0 || right > 0);
         audio_ring_consumed(s->ring, s->ring->read + 1);
 
         /* Taken, which is not yet heard: the device is holding some of what
@@ -864,6 +869,7 @@ static void do_open(const struct audio_request *req, long cap,
     streams[i].balance = 0;
     streams[i].muted = false;
     streams[i].peak = 0;
+    streams[i].loud = false;
     streams[i].consumed = 0;
 
     /* Zeroed here as well as in the client's `ring_create`, because a slot
@@ -946,6 +952,42 @@ static void do_set(const struct audio_request *req, struct audio_reply *rep)
     rep->error = AUDIO_OK;
 }
 
+/*
+ * **What is done to a stream on its way out** (U10e), as
+ * `AUDIO_INEXACT_*`: the output is the speaker while one plays and the
+ * machine's device, at sixteen bits, otherwise. A stream's samples reach it
+ * unchanged only at its own rate, at unity, alone, and no wider than it.
+ */
+static uint32_t inexact(const struct stream *s)
+{
+    uint32_t out_rate = usb_active ? usb->rate : device_rate;
+    uint32_t out_bits = usb_active ? usb->subframe * 8u : 16u;
+    uint32_t why = 0;
+    unsigned i;
+
+    if (s->rate != out_rate) {
+        why |= AUDIO_INEXACT_RATE;
+    }
+
+    if (s->gain != 256 || s->balance != 0 || s->muted
+        || master != 256 || master_muted) {
+        why |= AUDIO_INEXACT_VOLUME;
+    }
+
+    for (i = 0; i < STREAM_MAX; i++) {
+        if (&streams[i] != s && streams[i].open && streams[i].loud) {
+            why |= AUDIO_INEXACT_MIXED;
+            break;
+        }
+    }
+
+    if (s->bits > out_bits) {
+        why |= AUDIO_INEXACT_NARROWED;
+    }
+
+    return why;
+}
+
 static void do_streams(struct audio_reply *rep)
 {
     unsigned i;
@@ -977,6 +1019,10 @@ static void do_streams(struct audio_reply *rep)
         o->muted = s->muted ? 1u : 0u;
         o->peak = s->peak;
         o->queued = audio_ring_valid(s->ring) ? audio_ring_ready(s->ring) : 0u;
+        o->rate = s->rate;
+        o->bits = s->bits;
+        o->channels = s->channels;
+        o->inexact = inexact(s);
         memcpy(o->name, s->name, AUDIO_NAME_MAX);
     }
 }

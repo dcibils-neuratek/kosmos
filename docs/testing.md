@@ -42942,3 +42942,50 @@ came out of the hunt and stay:
   `PluggedMachine`;
 * the format part's "stopped" line carries the server's `mixes`,
   `starved` and `late`.
+
+
+## 18.1013 Whether a stream is heard bit for bit, and why not (USB audio, U10e)
+
+**What it is.** Each stream in `AUDIO_OP_STREAMS` now carries its own
+format - `rate`, `bits`, `channels`, format 0's being the machine's rate at
+16 bits and two channels - and `inexact`, the things done to its samples
+on the way out, as `AUDIO_INEXACT_*` (`audioproto.h`):
+
+* `RATE`: it is resampled, because its rate is not the output's;
+* `VOLUME`: its gain, its balance or the master is not unity, or it is
+  muted;
+* `MIXED`: another stream was heard with it in the last period;
+* `NARROWED`: it has more bits than the output takes.
+
+Nought is exact. The output is the speaker while one plays, and otherwise
+the machine's device at 16 bits. Widening is exact, and so is a mono stream
+copied to both channels. MIXED is read from the last period mixed: each
+stream records whether it was heard, meaning it had samples, a nonzero peak
+and a gain above nought. A silent stream beside it does not count. The Lua
+door, `audio.streams()`, gives `exact` and `why` - "rate", "volume",
+"mixed", "narrowed", joined by commas - for the player's badge. The stream
+entry grows from 48 to 64 bytes, and the reply stays well inside a message.
+
+**The part, `usb_audio_exact`** (`x86-usb-3`): QEMU's speaker at 48/16, so
+the mix runs at 48 kHz. A program plays 0.6 s of a tone and, half way,
+asks about its own stream:
+
+| stream                              | said               |
+|-------------------------------------|--------------------|
+| 48/16, unity, alone                 | `exact []`         |
+| 48/16, gain 253 of 256              | `inexact [volume]` |
+| 44.1/16                             | `inexact [rate]`   |
+| 48/24, into the speaker's 16        | `inexact [narrowed]` |
+| 48/16, with a second stream playing | `inexact [mixed]`  |
+
+Each is held to its words and to the format it opened. **The suite passed
+all 55 checks** (11 of them this part's).
+
+**Control**: the server built to call every stream exact (`return why &
+0u`). It **fails 4 of 11**, the four reasons, each said `exact []`; the
+exact case passes. Restored, the part passed again.
+
+What it does not prove: that `exact` matches what reaches the speaker.
+That is U10f's - a FLAC of noise found bit for bit in QEMU's WAV when
+`exact`, and not when each reason is introduced.
+

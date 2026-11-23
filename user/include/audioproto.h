@@ -120,8 +120,32 @@ struct audio_stream_info {
     uint32_t muted;
     uint32_t peak;              /* before gain: who is making a noise */
     uint32_t queued;            /* periods waiting in its ring */
+    uint32_t rate;              /* its own format: format 0's is the */
+    uint32_t bits;              /* machine's rate, 16 bits, 2 channels */
+    uint32_t channels;
+    uint32_t inexact;           /* AUDIO_INEXACT_*; 0: heard bit for bit */
     char     name[AUDIO_NAME_MAX];
 };
+
+/*
+ * **Whether a stream reaches the output bit for bit, and if not why**
+ * (`docs/usbaudio.md` U10e), for a player's badge. Each is a thing done to
+ * its samples on the way, and any one of them is enough:
+ *
+ *   RATE      it is resampled - its rate is not the output's;
+ *   VOLUME    its gain, its balance or the master is not unity, or it is
+ *             muted;
+ *   MIXED     another stream was heard with it in the last period;
+ *   NARROWED  it has more bits than the output takes.
+ *
+ * Widening is exact, and so is a mono stream copied to both channels. Read
+ * from the last period mixed, so it can say MIXED for a beep that has just
+ * ended until the next.
+ */
+#define AUDIO_INEXACT_RATE      1u
+#define AUDIO_INEXACT_VOLUME    2u
+#define AUDIO_INEXACT_MIXED     4u
+#define AUDIO_INEXACT_NARROWED  8u
 
 struct audio_device_info {
     uint32_t id;                /* AUDIO_DEVICE_* */

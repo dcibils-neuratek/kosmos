@@ -291,9 +291,13 @@ end
 local REQUEST  = "<I4I4i4i4i4i4i4c24c32I4I4I4"   -- ..., name, device, format
 local REQ_SIZE = 96
 
--- struct audio_stream_info: stream, gain, balance, muted, peak, queued, name
-local INFO      = "<I4I4i4I4I4I4c24"
-local INFO_SIZE = 48
+-- struct audio_stream_info: stream, gain, balance, muted, peak, queued,
+-- its format - rate, bits, channels - inexact, name
+local INFO      = "<I4I4i4I4I4I4I4I4I4I4c24"
+local INFO_SIZE = 64
+
+-- AUDIO_INEXACT_*, in the order a badge says them
+local INEXACT = { { 1, "rate" }, { 2, "volume" }, { 4, "mixed" }, { 8, "narrowed" } }
 
 -- struct audio_reply, as far as the list
 local REPLY      = "<I4I4I4I4I4I4I4I4I4I4I4I4"   -- ..., late, kept, device_dry, count
@@ -302,7 +306,7 @@ local REPLY_HEAD = 48
 -- And after the list, `devices`: their count, the name chosen, and each
 -- struct audio_device_info - id, playing, rate, bits, channels,
 -- bits_offered, vendor, product, rates[6], name[32].
-local DEVICES_AT   = REPLY_HEAD + 8 * 48
+local DEVICES_AT   = REPLY_HEAD + 8 * INFO_SIZE
 local DEVICES_HEAD = "<I4c32"
 local DEVICE       = "<I4I4I4I4I4I4I4I4I4I4I4I4I4I4c32"
 local DEVICE_SIZE  = 88
@@ -311,7 +315,7 @@ assert(#string.pack(DEVICE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "") == DEV
        "audio: the device layout does not match audioproto.h")
 assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, "", "", 0, 0, 0) == REQ_SIZE,
        "audio: the request layout does not match audioproto.h")
-assert(#string.pack(INFO, 0, 0, 0, 0, 0, 0, "") == INFO_SIZE,
+assert(#string.pack(INFO, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "") == INFO_SIZE,
        "audio: the stream layout does not match audioproto.h")
 
 --
@@ -383,6 +387,10 @@ end
 -- stream that is still playing shows a moving meter - which is the question
 -- a meter answers: who is sending audio.
 --
+-- `exact` says its samples reach the output unchanged, and `why` what is
+-- done to them when they do not - "rate", "volume", "mixed", "narrowed",
+-- joined by commas - as `AUDIO_INEXACT_*` has it (`docs/usbaudio.md` U10e).
+--
 function audio.streams()
   local r = request(OP_STREAMS, {})
 
@@ -392,11 +400,18 @@ function audio.streams()
 
   for i = 1, r.count do
     local at = REPLY_HEAD + (i - 1) * INFO_SIZE + 1
-    local id, gain, balance, muted, peak, queued, name =
-        string.unpack(INFO, r.bytes, at)
+    local id, gain, balance, muted, peak, queued, rate, bits, channels,
+          inexact, name = string.unpack(INFO, r.bytes, at)
+    local why = {}
+
+    for _, e in ipairs(INEXACT) do
+      if inexact & e[1] ~= 0 then why[#why + 1] = e[2] end
+    end
 
     out[i] = { stream = id, gain = gain, balance = balance,
                muted = muted ~= 0, peak = peak, queued = queued,
+               rate = rate, bits = bits, channels = channels,
+               exact = inexact == 0, why = table.concat(why, ", "),
                name = (name:gsub("%z.*$", "")) }
   end
 

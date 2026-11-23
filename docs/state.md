@@ -339,8 +339,11 @@ setting follows the best stream - the server asks in the ring
 (`want_rate`, `want_bits`), `xhci` picks with `uac_pick_for` and switches,
 drained (6 ms) and switched (2 ms) under QEMU, said on the console - and
 the mix runs at the speaker's rate, so a stream in its format is not
-resampled. 1.1 to 1.2 at 96/24 is the M60's to show. **Next**: U10e
-(`exact` per stream) and U10f (bit for bit, then 96/24 on the M60); then the new Music (`docs/player.md`, agreed,
+resampled. 1.1 to 1.2 at 96/24 is the M60's to show. **U10e built in 0.12.92**
+(18.1013): each stream in `AUDIO_OP_STREAMS` carries its format and
+`inexact` - rate, volume, mixed, narrowed - and `audio.streams()` gives
+`exact` and `why` for the player's badge. **Next**: U10f (bit for bit
+under QEMU, then 96/24 on the M60); then the new Music (`docs/player.md`, agreed,
 the old Music retired at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for

@@ -436,6 +436,13 @@ adaptive; U6 and U7 if they are not. U1 says which.
     the format itself is the M60's to prove, 1.1 to 1.2.
   - **U10e, `exact`.** Per stream in `AUDIO_OP_STREAMS`, with its reason
     (rate, volume, mixed, narrowed), for the player's badge.
+    **Built in 0.12.92** (`testing.md` 18.1013): each stream's entry
+    carries its format and `inexact`, `AUDIO_INEXACT_RATE`, `_VOLUME`,
+    `_MIXED` and `_NARROWED` (`audioproto.h`), nought for bit for bit, and
+    `audio.streams()` gives `exact` and `why`. The output is the speaker
+    while one plays, the machine's 16 bits otherwise; MIXED means another
+    stream was heard - samples, a nonzero peak, a gain - in the last
+    period.
   - **U10f, the proof.** QEMU's speaker at 48/16: a FLAC of noise at 48/16
     found bit for bit in QEMU's WAV, and broken, each said, by a volume of
     99%, a beep over it, or a 44.1 kHz file. Then 96/24 on the M60.
