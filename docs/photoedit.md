@@ -11,8 +11,10 @@ This document has the feature set, what other editors do, the
 architecture, the busiest paths, large images, the steps and the
 decisions. `photoedit.html` is the window, and `photoedit-architecture.png`
 is what it stands on, drawn from `photoedit-architecture.html`. It was
-written on 22 November 2026, before any of it is built, and is **for Diego
-to agree or change**. *Kosmos Paint* is a working name (decision 1).
+written on 22 November 2026, before any of it is built. **Agreed the same
+day, every recommendation taken** (Diego: "Agreed with your
+recomendations"): the family is Kosmos Studio, and this is Kosmos Paint
+(decision 1).
 
 It is the second of three applications in one family. **Kosmos Cut**
 (`videoedit.md`) was agreed the same day, with every recommendation taken.
@@ -1026,7 +1028,11 @@ Kit, the UI kit or `media.elf`'s kits change, since others stand on them.
 
 ---
 
-## 8. Decisions that are Diego's
+## 8. Decisions - agreed
+
+**Agreed on 22 November 2026, every recommendation taken** (Diego: "Agreed
+with your recomendations"). Each decision below stands as recommended: the
+first option of each, marked *(recommended)*.
 
 1. **The names.** *Kosmos Studio* for the family, with **Kosmos Paint**
    for pixels and *Kosmos Draw* for vectors beside *Kosmos Cut*

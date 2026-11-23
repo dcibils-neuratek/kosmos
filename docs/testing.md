@@ -42497,3 +42497,63 @@ JetSki's tone touches the audio path U4 and U5 changed, so it is the one to
 read first if it fails again.
 
 **Next**: U10, hi-res, then the new Music.
+
+## 18.1003 The converter past 16 bits, and the mix in 32 (USB audio, U10a and U10b)
+
+`docs/usbaudio.md` U10, its first two steps.
+
+**U10a, `pcm_convert_wide`** (`pcmconvert.h`): 16, 24 or 32-bit integer in,
+32-bit stereo out at full scale 2^31. At the same rate it copies, each
+sample itself. Across rates it uses a windowed sinc, 32 taps a side, a
+Blackman window, cut off at 0.9 of the lower Nyquist, as a table of 256
+phases interpolated between rows. Held by `test_pcmconvert`, 29 checks
+(was 22):
+
+| 1 kHz, 24-bit | sinc | linear (`pcm_convert_to`) |
+|---|---|---|
+| 44.1 to 48 kHz | -117.1 dB | -54.5 dB |
+| 48 to 96 kHz | -114.2 dB | -56.3 dB |
+| 96 to 48 kHz | -105.5 dB | -86.4 dB |
+
+Sixteen taps a side gave 96 to 48 kHz only -89.8 dB. Halving the rate
+halves the cutoff, and the same taps then span half the sinc's lobes. The
+same rate is a bit-exact copy for each size, mono and stereo. A file in
+pieces of random length is the file whole, within a 24-bit step: the phase
+is a double, carried small in pieces and growing whole. A constant stays
+the constant within a step. **Its control**, the table's rows scaled by
+1.001 and one sample of the copy flipped, fails 10 of 26.
+
+**U10b, the mix in 32 bits** (`audio.c`): each stream's sample is placed at
+the top of 32 bits and scaled there, summed in 64, clipped to 32. The
+machine's device takes it narrowed to 16, exact when the low bits are
+nought (every 16-bit stream at unity) and given triangular dither of one
+step when not. A USB speaker takes it through `pcm_convert_wide` at its own
+size, so a 24-bit setting gets 24 bits.
+
+**The narrowing is `pcm_narrow`** in `pcmconvert.h`, so the host test holds
+it. A sample with nought below the device's bits comes out exactly, at 16,
+24 and 32. 1000.3 steps, dithered to 16 bits, averages 1000.30 and is never
+more than two steps off. Full scale stays at the ends. **Its control**,
+without the exact path, fails the first: 9938 of 60000 samples changed.
+
+**And the tone check had been counting the quiet** (`wav_tone` in
+`run_x86.py`). The first run of `x86-usb-2` on the 32-bit mix heard the
+speaker's beep at 1007.6 Hz, against 1000 within 5. The beep ends
+mid-cycle, and the sinc rings after a cut like that: a few dozen samples
+under the check's threshold, at most +-45 (-57 dB). `wav_tone` counted
+crossings through the 96 quiet samples that end a run, so it counted those.
+The linear converter left nothing there. Simulated on the host - the beep
+built as `beep` builds it, through `pcm_convert_wide` from 44.1 to 48 kHz -
+every tenth of a second had its 99 to 100 crossings and the tail had 14
+more. It counts to the run's last loud sample now. The simulated beep and an
+ideal tone both read 998.8 Hz: one crossing at the very end is no longer
+counted, 1.25 Hz in 0.8 s.
+
+**The gate**, 0.12.84: 1167 s, past the ten minutes, as 0.12.83's was. Six
+failed under that load and passed alone, 6 of 6 in 254 s: `x86-flight-land`,
+`x86-display-4`, `x86-jetski`, `x86-cafesa3d-2`, `x86-pdfkit` (QEMU ended
+before telnetd listened) and `x86-desktops`. JetSki's tone was 418 Hz this
+time and 396 at 0.12.83, before the mix changed, so it is the load and not
+U10b. **The gate's length is the next thing to fix** (`CLAUDE.md`, five to
+ten minutes): Flight's 747 alone took 624 s.
+

@@ -845,10 +845,15 @@ door: **(1) Kosmos Cut**, the video editor, agreed (below); **(2) a photo
 editor**, Photoshop's ground with Lightroom's development - layers, masks,
 selections, brushes, adjustments, filters, RAW, large images in tiles -
 **Kosmos Paint**, designed 22 November in `docs/photoedit.md`,
-`photoedit.html` and `photoedit-architecture.png` - for Diego to decide,
-thirteen decisions, steps P0 to P15 after Cut's V1 to V7 - sharing Cut's
+`photoedit.html` and `photoedit-architecture.png` - **AGREED on 22 November,
+every recommendation taken** (Diego: "Agreed with your recomendations"):
+Kosmos Studio the family, one application with Simple and Full views, one
+`media.elf`, `.paint` a folder, PSD read at P12, 8- and 16-bit from P1,
+blending in the document's encoding, skcms, LibRaw, CPU first and Vulkan at
+P15, built after Cut's V1 to V7, the demo Paint retired at P3, and a pen
+tablet's driver as an item of its own; steps P0 to P15 after Cut's V1 to V7 - sharing Cut's
 grading, scopes, effects, undo and export through the Graphics Kit and
-three Lua pieces, with a Canvas, Picture, Brush and Selection Kit new; **(3) a vector editor**, Illustrator's ground - paths and
+three Lua pieces, with a Canvas, Picture, Brush and Selection Kit new; **A pen tablet's driver - AGREED 22 November with Paint's decision 13**: a USB HID digitiser (a Wacom) in `user/drivers/usb/`, its pressure and tilt to the Brush Kit, which takes them from the start (a mouse gives 1.0); not before a tablet is here to test on. **(3) a vector editor**, Illustrator's ground - paths and
 the pen, shapes, strokes and fills, type on a path, artboards, SVG and PDF -
 designed after the photo editor, on the same kits (the Graphics Kit's
 `path` rasteriser, the PDF Kit). Each designed and agreed before code.

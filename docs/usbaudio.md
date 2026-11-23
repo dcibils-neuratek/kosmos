@@ -371,6 +371,43 @@ adaptive; U6 and U7 if they are not. U1 says which.
   and by the driver's counts.
   The ring holds 64 ms of 96/24 at nine pages, so it stays.
 
+  **How it is built, in steps** (written 22 November, before the code).
+  Every program that plays today - Doom, Quake, Quake III, the SNES, the
+  Playback Kit, the Synth Kit, `sys.pcm` - opens a ring of 44.1 kHz 16-bit
+  stereo periods. **That ring and that open stay exactly as they are**, as
+  format 0. Hi-res is a second format beside it, so nothing that plays has
+  to change, or be built again, for any step but U10c.
+  - **U10a, the converter past 16 bits.** `pcm_convert_wide` in
+    `pcmconvert.h`: 16, 24 or 32-bit integer in, 32-bit frames out at any
+    rate. At the same rate it copies, with no interpolation, so a sample is
+    itself. Across rates it uses a windowed-sinc filter (decision 5).
+    `pcm_convert` stays linear for `sys.pcm` until something asks for
+    better. Held by `test_pcmconvert`: bit-exact at the same rate for each
+    size, and a sine resampled 44.1 to 48 and 48 to 96 with its error
+    measured against the linear one.
+  - **U10b, the mix in 32 bits.** The sum in 64 bits, the mix in 32. The
+    machine's device takes it narrowed to 16: exact when the low bits are
+    nought, which every format-0 stream's are, and dithered when not. A USB
+    speaker takes it through `pcm_convert_wide` at its own size. For
+    everything that plays today nothing changes, and `x86-usb-2`'s tone
+    checks and `x86-sound` say so.
+    **U10a and U10b built in 0.12.84** (`testing.md` 18.1003).
+  - **U10c, `AUDIO_OP_OPEN` with a format** - rate, 16, 24 or 32 bits,
+    channels - in `audio_request`. The ring's periods are that format's,
+    the same length of time as the mix's. The server converts each such
+    stream into the mix. The protocol changes here, so installed
+    applications are built again (P5 brings them).
+  - **U10d, the output follows the best stream.** The mix runs at the
+    output's rate. A USB speaker's setting and rate follow the
+    highest-resolution stream playing, within what it offers, and the
+    driver switches them (drain, SET_INTERFACE, SET_CUR of the rate,
+    start), timed and said.
+  - **U10e, `exact`.** Per stream in `AUDIO_OP_STREAMS`, with its reason
+    (rate, volume, mixed, narrowed), for the player's badge.
+  - **U10f, the proof.** QEMU's speaker at 48/16: a FLAC of noise at 48/16
+    found bit for bit in QEMU's WAV, and broken, each said, by a volume of
+    99%, a beep over it, or a 44.1 kHz file. Then 96/24 on the M60.
+
 ---
 
 ## Decisions - agreed

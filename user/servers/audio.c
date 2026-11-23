@@ -105,8 +105,11 @@ static uint32_t      usb_generation;
 static uint32_t      usb_keep;          /* frames of the speaker's to hold */
 static uint32_t      mix_rate;          /* the mix's: the device's, 44.1 kHz */
 static double        usb_phase;
-static unsigned char usb_carry[(HAL_SND_PERIOD_BYTES_MAX / 4u + 2u) * 4u];
+/* The mix not yet converted, 32-bit stereo: a period, and the frames the
+ * filter keeps behind its phase as taps. */
+static unsigned char usb_carry[(HAL_SND_PERIOD_BYTES_MAX / 4u + 2u * PCM_SINC_HALF + 2u) * 8u];
 static size_t        usb_have;          /* bytes of the mix not yet converted */
+static struct pcm_sinc usb_sinc;        /* mix_rate to the speaker's, made once */
 static uint32_t      usb_periods;       /* written into the ring, ever */
 
 /*
@@ -160,14 +163,20 @@ static struct stream *find(uint32_t id)
  * it.
  */
 /*
- * One period summed from whatever the rings hold, into `out`, as 16-bit
- * stereo at the mix's rate: `period_bytes` of it. False when no ring had
- * anything. Wherever it is going - the machine's own device or a USB
- * speaker - this is the one mix.
+ * One period summed from whatever the rings hold, into `out`, as 32-bit
+ * stereo at the mix's rate - full scale at 2^31 - `period_bytes / 2`
+ * samples of it. False when no ring had anything. Wherever it is going -
+ * the machine's own device or a USB speaker - this is the one mix.
+ *
+ * **In 32 bits, summed in 64** (`docs/usbaudio.md` U10b). A stream's
+ * sample is placed at the top of 32 bits and scaled there, so a gain below
+ * unity keeps what it would have thrown away in 16, and the device that
+ * takes 24 bits gets 24 of them. At unity a 16-bit sample is itself with
+ * sixteen noughts under it, so narrowing back to 16 gives it back exactly.
  */
-static bool mix(int16_t *out)
+static bool mix(int32_t *out)
 {
-    static int32_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
+    static int64_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
 
     unsigned samples = period_bytes / 2;
     unsigned mixed = 0;
@@ -223,7 +232,7 @@ static bool mix(int16_t *out)
 
             /* Even samples are the left channel, odd the right: that is what
              * interleaved stereo means and the only place a balance fits. */
-            acc[k] += (v * ((k & 1u) ? right : left)) >> 8;
+            acc[k] += ((int64_t)v * 65536 * ((k & 1u) ? right : left)) / 256;
         }
 
         s->peak = (uint32_t)peak;
@@ -242,26 +251,37 @@ static bool mix(int16_t *out)
 
     /*
      * Clipped rather than wrapped. Two streams at full scale sum past what
-     * sixteen bits hold, and wrapping turns a peak into the opposite sign -
-     * the worst noise a mixer can make.
+     * the mix holds, and wrapping turns a peak into the opposite sign - the
+     * worst noise a mixer can make.
      */
     for (k = 0; k < samples; k++) {
-        int32_t v = acc[k];
+        int64_t v = acc[k];
 
-        if (v > 32767)  { v = 32767; }
-        if (v < -32768) { v = -32768; }
+        if (v > INT32_MAX) { v = INT32_MAX; }
+        if (v < INT32_MIN) { v = INT32_MIN; }
 
-        out[k] = (int16_t)v;
+        out[k] = (int32_t)v;
     }
 
     mixes++;
     return true;
 }
 
+/* Narrowing to the device's size: `pcm_narrow` in `pcmconvert.h`, exact
+ * when it can be and dithered when not (U10 point 4), with this server's
+ * one seed. */
+static uint32_t dither_seed = 0x2545f491u;
+
+static int32_t narrowed(int32_t v, unsigned bits)
+{
+    return pcm_narrow(v, bits, &dither_seed);
+}
+
 static bool refill(void)
 {
+    static int32_t wide[HAL_SND_PERIOD_BYTES_MAX / 2];
     static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
-    unsigned queued;
+    unsigned queued, k;
 
     if (period_bytes == 0) {
         return false;
@@ -283,8 +303,13 @@ static bool refill(void)
         return false;                   /* the device has all it is to hold */
     }
 
-    if (!mix(out)) {
+    if (!mix(wide)) {
         return false;
+    }
+
+    /* The machine's device takes sixteen bits. */
+    for (k = 0; k < period_bytes / 2; k++) {
+        out[k] = (int16_t)narrowed(wide[k], 16);
     }
 
     kosmos_snd_write(out, (unsigned long)period_bytes);
@@ -343,6 +368,11 @@ static void usb_check(void)
         usb_generation = generation;
         usb_phase = 0;
         usb_have = 0;
+
+        if (usb->rate != 0 && (usb_sinc.in_rate != (long)mix_rate
+                               || usb_sinc.out_rate != (long)usb->rate)) {
+            pcm_sinc_prepare(&usb_sinc, (long)mix_rate, (long)usb->rate);
+        }
         usb_keep = usb->rate / 1000u * USB_AUDIO_KEEP_MS;
 
         if (usb_keep > usb->frames / 2u) {
@@ -362,11 +392,13 @@ static void usb_check(void)
  */
 static bool refill_usb(void)
 {
-    static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
-    static int16_t converted[HAL_SND_PERIOD_BYTES_MAX];  /* to 2x the rate */
+    static int32_t wide[HAL_SND_PERIOD_BYTES_MAX / 2];
+    /* Converted: up to 96 kHz from 44.1, so three periods' frames. */
+    static int32_t converted[(HAL_SND_PERIOD_BYTES_MAX / 4) * 3 * 2];
     uint64_t write = usb->write;
     uint64_t waiting = write - usb_audio_load(&usb->read);
-    unsigned frame_bytes = usb_audio_frame_bytes(usb);
+    unsigned bytes = period_bytes * 2u;         /* the mix, at 32 bits */
+    unsigned bits = usb->subframe * 8u;
     size_t used = 0;
     long n, i;
 
@@ -374,30 +406,41 @@ static bool refill_usb(void)
         return false;
     }
 
-    if (period_bytes == 0 || !mix(out)) {
+    if (period_bytes == 0 || !mix(wide)) {
         return false;
     }
 
-    if (usb_have + period_bytes > sizeof(usb_carry)) {
-        usb_have = 0;                   /* cannot happen: one frame carries */
+    if (usb_have + bytes > sizeof(usb_carry)) {
+        usb_have = 0;                   /* cannot happen: the filter keeps 31 */
     }
 
-    memcpy(usb_carry + usb_have, out, period_bytes);
-    usb_have += period_bytes;
+    memcpy(usb_carry + usb_have, wide, bytes);
+    usb_have += bytes;
 
-    n = pcm_convert_to(usb_carry, usb_have, (long)mix_rate, 2, 16, 0,
-                       &usb_phase, converted, (long)sizeof(converted), &used,
-                       (long)usb->rate);
+    n = pcm_convert_wide(usb_carry, usb_have, (long)mix_rate, 2, 32, 0,
+                         &usb_phase, converted,
+                         (long)(sizeof(converted) / sizeof(converted[0]) / 2), &used,
+                         (long)usb->rate, &usb_sinc);
     memmove(usb_carry, usb_carry + used, usb_have - used);
     usb_have -= used;
 
     for (i = 0; i < n && waiting + (uint64_t)i < usb->frames; i++) {
-        usb_audio_put(usb_audio_at(usb, write + (uint64_t)i),
-                      converted[2 * i], converted[2 * i + 1],
-                      usb->channels, usb->subframe);
+        uint8_t *at = usb_audio_at(usb, write + (uint64_t)i);
+        int32_t l = narrowed(converted[2 * i], bits);
+        int32_t r = narrowed(converted[2 * i + 1], bits);
+        unsigned ch, b;
+
+        /* As `usb_audio_put`, at the speaker's own size rather than 16. */
+        for (ch = 0; ch < usb->channels; ch++) {
+            int32_t v = usb->channels == 1 ? (int32_t)(((int64_t)l + r) / 2)
+                      : ch == 0 ? l : ch == 1 ? r : 0;
+
+            for (b = 0; b < usb->subframe; b++) {
+                *at++ = (uint8_t)((uint32_t)v >> (8u * b));
+            }
+        }
     }
 
-    (void)frame_bytes;
     usb_audio_store(&usb->write, write + (uint64_t)i);
     usb_periods++;
     return true;
@@ -429,7 +472,7 @@ static void publish_positions(void)
     if (usb_active) {
         uint64_t ahead = usb->write - usb_audio_load(&usb->played);
 
-        held = (unsigned)(ahead * mix_rate / usb->rate) + (unsigned)(usb_have / 4u);
+        held = (unsigned)(ahead * mix_rate / usb->rate) + (unsigned)(usb_have / 8u);
     }
 
     for (i = 0; i < STREAM_MAX; i++) {

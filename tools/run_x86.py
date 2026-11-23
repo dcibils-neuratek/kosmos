@@ -4915,7 +4915,13 @@ def lua_string(text):
 def wav_tone(path, after=44):
     """The longest run of sound in QEMU's WAV past byte `after`, a gap of
     2 ms of quiet ending it: its seconds and its pitch, from the left
-    channel's rising crossings."""
+    channel's rising crossings up to its last loud sample.
+
+    **Up to it, not through the quiet after.** A tone cut off mid-cycle
+    and resampled by a sinc rings for a few dozen samples under the
+    threshold (testing.md 18.1003, U10b: +-45 at most, -57 dB), and counting
+    those crossings read a 1000 Hz beep as 1007.6. The linear converter
+    left nothing there to count."""
     import struct
 
     samples = []
@@ -4927,24 +4933,25 @@ def wav_tone(path, after=44):
         n = len(data) // 4
         samples = list(struct.unpack("<%dh" % (2 * n), data[:4 * n]))[0::2]
 
-    best, start, quiet, crossings, last = (0, 0, 0), None, 0, 0, 0
+    best, start, quiet, crossings, last, loud = (0, 0, 0), None, 0, 0, 0, 0
 
     for i, v in enumerate(samples + [0] * 200):
+        if start is not None:
+            if last < 0 <= v:
+                crossings += 1
+            last = v
         if abs(v) > 64:
             if start is None:
                 start, crossings, last = i, 0, v
             quiet = 0
+            loud = crossings
         elif start is not None:
             quiet += 1
             if quiet > 96:
                 end = i - quiet
                 if end - start > best[1] - best[0]:
-                    best = (start, end, crossings)
+                    best = (start, end, loud)
                 start = None
-        if start is not None:
-            if last < 0 <= v:
-                crossings += 1
-            last = v
 
     seconds = (best[1] - best[0]) / 48000.0
     return seconds, (best[2] / seconds if seconds > 0 else 0)

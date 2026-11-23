@@ -112,6 +112,274 @@ static void fill(unsigned seed)
     }
 }
 
+/* ---- pcm_convert_wide (docs/usbaudio.md U10a) ---- */
+
+static void put_sample(unsigned char *at, long bits, int32_t full)
+{
+    /* `full` is at 2^31; written at `bits`, the low bits dropped. */
+    uint32_t v = (uint32_t)full;
+
+    if (bits == 16) { v >>= 16; at[0] = (unsigned char)v; at[1] = (unsigned char)(v >> 8); }
+    else if (bits == 24) { v >>= 8; at[0] = (unsigned char)v; at[1] = (unsigned char)(v >> 8);
+                           at[2] = (unsigned char)(v >> 16); }
+    else { at[0] = (unsigned char)v; at[1] = (unsigned char)(v >> 8);
+           at[2] = (unsigned char)(v >> 16); at[3] = (unsigned char)(v >> 24); }
+}
+
+/* The error of a resampled sine against the true one, in dB of full scale,
+ * over the middle of the output (the filter's edges are silence). */
+static double sine_error_db(const int32_t *out, long n, double hz, long out_rate,
+                            double amplitude, double delay)
+{
+    double err = 0, sig = 0;
+    long i, from = n / 4, to = 3 * n / 4;
+
+    for (i = from; i < to; i++) {
+        double want = amplitude * sin(2 * M_PI * hz * ((double)i - delay) / (double)out_rate);
+        double d = (double)out[2 * i] / 2147483648.0 - want;
+
+        err += d * d;
+        sig += want * want;
+    }
+
+    return 10 * log10(err / sig);
+}
+
+static struct pcm_sinc sinc_table;
+static unsigned char wide_in[96000 * 8];
+static int32_t wide_out[2 * 200000];
+static int32_t wide_pieces[2 * 200000];
+
+static void wide_checks(void)
+{
+    static const long sizes[] = { 16, 24, 32 };
+    unsigned k;
+
+    /* The same rate: a copy, each sample itself, widened. */
+    for (k = 0; k < 3; k++) {
+        long bits = sizes[k], ch, i, n;
+
+        for (ch = 1; ch <= 2; ch++) {
+            long fb = ch * bits / 8, frames = 1000, bad = 0;
+            double phase = 0;
+            size_t used;
+
+            for (i = 0; i < frames * ch; i++) {
+                int32_t v = (int32_t)((uint32_t)rand() * 2654435761u);
+
+                put_sample(wide_in + i * (bits / 8), bits, v);
+            }
+
+            n = pcm_convert_wide(wide_in, (size_t)(frames * fb), 96000, ch, bits, 0, &phase,
+                                 wide_out, 200000, &used, 96000, NULL);
+
+            for (i = 0; i < n; i++) {
+                int32_t l = pcm_wide_sample(wide_in + i * fb, bits);
+                int32_t r = ch == 2 ? pcm_wide_sample(wide_in + i * fb + bits / 8, bits) : l;
+
+                bad += wide_out[2 * i] != l || wide_out[2 * i + 1] != r;
+            }
+
+            CHECK(n == frames && bad == 0 && used == (size_t)(frames * fb),
+                  "at the same rate, %ld-bit %s was not copied: %ld frames, %ld differ",
+                  bits, ch == 2 ? "stereo" : "mono", n, bad);
+        }
+    }
+
+    /* 24-bit samples arrive shifted by eight, 16 by sixteen. */
+    {
+        unsigned char a[4] = { 0x01, 0x02, 0x83, 0 };
+        unsigned char b[2] = { 0x34, 0x92 };
+
+        CHECK(pcm_wide_sample(a, 24) == (int32_t)0x83020100u
+              && pcm_wide_sample(b, 16) == (int32_t)0x92340000u,
+              "24 or 16 bits were not placed at the top of 32: %08x %08x",
+              (unsigned)pcm_wide_sample(a, 24), (unsigned)pcm_wide_sample(b, 16));
+    }
+
+    /* A 1 kHz sine, 24-bit: through the sinc, and through the linear
+     * converter for comparison, 44.1 to 48 and 48 to 96. */
+    {
+        static const long pairs[][2] = { { 44100, 48000 }, { 48000, 96000 }, { 96000, 48000 } };
+        unsigned p;
+
+        for (p = 0; p < 3; p++) {
+            long in_rate = pairs[p][0], out_rate = pairs[p][1];
+            long frames = in_rate / 2, i, n, ln;
+            double phase = 0, amp = 0.5;
+            double delay = 0;
+            size_t used;
+            static int16_t lin[2 * 200000];
+            static unsigned char in16[96000 * 4];
+            double sinc_db, lin_db;
+
+            for (i = 0; i < frames; i++) {
+                double v = amp * sin(2 * M_PI * 1000.0 * (double)i / (double)in_rate);
+                int32_t full = (int32_t)(v * 2147483648.0);
+
+                put_sample(wide_in + i * 6, 24, full);
+                put_sample(wide_in + i * 6 + 3, 24, full);
+                put_sample(in16 + i * 4, 16, full);
+                put_sample(in16 + i * 4 + 2, 16, full);
+            }
+
+            pcm_sinc_prepare(&sinc_table, in_rate, out_rate);
+            n = pcm_convert_wide(wide_in, (size_t)(frames * 6), in_rate, 2, 24, 1, &phase,
+                                 wide_out, 200000, &used, out_rate, &sinc_table);
+            sinc_db = sine_error_db(wide_out, n, 1000.0, out_rate, amp, delay);
+
+            phase = 0;
+            ln = pcm_convert_to(in16, (size_t)(frames * 4), in_rate, 2, 16, 1, &phase, lin,
+                                (long)sizeof(lin), &used, out_rate);
+
+            for (i = 0; i < ln; i++) {
+                wide_pieces[2 * i] = (int32_t)lin[2 * i] << 16;
+            }
+
+            lin_db = sine_error_db(wide_pieces, ln, 1000.0, out_rate, amp, 0);
+
+            /* Under -100 dB, about seventeen bits, and better than the
+             * line: by 60 dB going up, and by less coming down, where a
+             * 1 kHz tone at 96 kHz is so oversampled a line is nearly right. */
+            CHECK(sinc_db < -100.0 && sinc_db < lin_db,
+                  "%ld to %ld Hz: the sinc's error is %.1f dB, the linear one's %.1f",
+                  in_rate, out_rate, sinc_db, lin_db);
+            printf("  1 kHz, %ld to %ld Hz: sinc %.1f dB, linear %.1f dB\n",
+                   in_rate, out_rate, sinc_db, lin_db);
+        }
+    }
+
+    /* In pieces, the phase and the history carried, is the same as whole. */
+    {
+        long in_rate = 44100, out_rate = 96000, frames = 20000, i, n, whole;
+        double phase = 0;
+        size_t used, have, taken = 0;
+        static unsigned char carry[96000 * 8];
+        long got = 0, bad = 0;
+
+        for (i = 0; i < frames * 2; i++) {
+            put_sample(wide_in + i * 3, 24, (int32_t)((uint32_t)rand() * 2246822519u));
+        }
+
+        pcm_sinc_prepare(&sinc_table, in_rate, out_rate);
+        whole = pcm_convert_wide(wide_in, (size_t)(frames * 6), in_rate, 2, 24, 1, &phase,
+                                 wide_out, 200000, &used, out_rate, &sinc_table);
+
+        phase = 0;
+        have = 0;
+
+        while (taken < (size_t)(frames * 6) || have > 0) {
+            size_t piece = (size_t)(1 + rand() % 3000) * 6;
+            int last;
+
+            if (piece > (size_t)(frames * 6) - taken) {
+                piece = (size_t)(frames * 6) - taken;
+            }
+
+            memcpy(carry + have, wide_in + taken, piece);
+            have += piece;
+            taken += piece;
+            last = taken == (size_t)(frames * 6);
+
+            n = pcm_convert_wide(carry, have, in_rate, 2, 24, last, &phase,
+                                 wide_pieces + 2 * got, 200000 - got, &used, out_rate, &sinc_table);
+            memmove(carry, carry + used, have - used);
+            have -= used;
+            got += n;
+
+            if (last && n == 0) {
+                break;
+            }
+        }
+
+        /* **Within a 24-bit step, not to the bit.** The phase is a double,
+         * carried small in pieces and growing whole, so the fraction between
+         * two frames differs in its last places, and so does a tap's weight -
+         * as `pcm_convert_to`'s "within one step" above. Below 2^8 at 2^31
+         * is below the smallest step a 24-bit device has. */
+        {
+            long worst = 0;
+
+            for (i = 0; i < whole && i < got; i++) {
+                long d0 = labs((long)wide_pieces[2 * i] - (long)wide_out[2 * i]);
+                long d1 = labs((long)wide_pieces[2 * i + 1] - (long)wide_out[2 * i + 1]);
+
+                worst = d0 > worst ? d0 : worst;
+                worst = d1 > worst ? d1 : worst;
+                bad += d0 >= 256 || d1 >= 256;
+            }
+
+            CHECK(got == whole && bad == 0,
+                  "in pieces it made %ld frames, whole %ld, and %ld differ by a 24-bit step "
+                  "or more (the worst by %ld at 2^31)", got, whole, bad, worst);
+        }
+    }
+
+    /* Narrowing: exact when the low bits are nought, at every size; and
+     * when they are not, the right value on average, within a step each
+     * time, and with no step taken for a sample already on one. */
+    {
+        uint32_t seed = 1;
+        long bad = 0, i;
+        double sum = 0;
+        int32_t worst = 0;
+
+        for (i = 0; i < 20000; i++) {
+            int32_t v16 = (int32_t)(((uint32_t)rand() & 0xffffu) << 16);
+            int32_t v24 = (int32_t)(((uint32_t)rand() & 0xffffffu) << 8);
+
+            bad += pcm_narrow(v16, 16, &seed) != (v16 >> 16);
+            bad += pcm_narrow(v24, 24, &seed) != (v24 >> 8);
+            bad += pcm_narrow(v24, 32, &seed) != v24;
+        }
+
+        CHECK(bad == 0, "a sample with nought below the device's bits was changed: %ld", bad);
+
+        /* 0.3 of a step above 1000: rounds to 1000 or 1001, 1000.3 on
+         * average. */
+        for (i = 0; i < 100000; i++) {
+            int32_t got = pcm_narrow((int32_t)((1000 << 16) + 19661), 16, &seed);
+            int32_t d = got - 1000;
+
+            sum += got;
+            worst = d > worst ? d : (-d > worst ? -d : worst);
+        }
+
+        CHECK(fabs(sum / 100000 - 1000.3) < 0.01 && worst <= 2,
+              "dithered to 16 bits, 1000.3 came out as %.4f on average, a step of %d at worst",
+              sum / 100000, (int)worst);
+        CHECK(pcm_narrow(INT32_MAX, 16, &seed) == 32767 && pcm_narrow(INT32_MIN, 16, &seed) == -32768,
+              "narrowing full scale did not stay at the ends");
+    }
+
+    /* A constant stays the constant, away from the edges. */
+    {
+        long frames = 4000, i, n, bad = 0;
+        double phase = 0;
+        size_t used;
+        int32_t dc = 0x30000000;
+
+        for (i = 0; i < frames; i++) {
+            put_sample(wide_in + i * 4, 32, dc);
+        }
+
+        pcm_sinc_prepare(&sinc_table, 48000, 44100);
+        n = pcm_convert_wide(wide_in, (size_t)(frames * 4), 48000, 1, 32, 0, &phase,
+                             wide_out, 200000, &used, 44100, &sinc_table);
+
+        for (i = PCM_SINC_HALF; i < n - PCM_SINC_HALF; i++) {
+            long d = (long)wide_out[2 * i] - dc;
+
+            /* Each row sums to one in doubles and is kept in floats, whose
+             * 24 bits leave it a few parts in 10^8 off: under a 24-bit step. */
+            bad += d >= 256 || d <= -256;
+        }
+
+        CHECK(n > 3000 && bad == 0, "a constant through the sinc moved by a 24-bit step: "
+              "%ld of %ld frames", bad, n);
+    }
+}
+
 int main(void)
 {
     static const long rates[] = { 8000, 11025, 22050, 32000, 44100, 48000, 96000 };
@@ -310,6 +578,8 @@ int main(void)
         CHECK(crossings == 999 || crossings == 1000,
               "1 kHz at 48 kHz crossed %ld times in a second, not 1000", crossings);
     }
+
+    wide_checks();
 
     if (failed) {
         printf("FAIL: %d of %d checks on pcmconvert.h\n", failed, checks);
