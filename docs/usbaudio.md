@@ -455,11 +455,38 @@ adaptive; U6 and U7 if they are not. U1 says which.
     at 44.1 kHz. QEMU's speaker calls 240 of 255 nought decibels and scales
     by it, so `opt/kosmos/usbaudio=full` sets its own volume at its top
     (GET_MAX, SET_CUR on the feature unit), the one level that passes
-    samples untouched. A real speaker's own volume is left alone. **For
-    Diego**: whether Kosmos should set the M60's own volume to 0 dB, its
-    unity, when it opens it - bit for bit at the speaker needs it, and it
-    would make it as loud as the server's master allows. The M60 at 96/24
-    is the other half, read over Telnet.
+    samples untouched. A real speaker's own volume is left alone. The M60
+    at 96/24 is the other half, read over Telnet.
+  - **U10g, the master volume on the speaker's own control** - Diego, 23
+    November 2026, choosing (C) of the three below: "go with C". Where a
+    USB speaker has a volume of its own (a feature unit with a volume
+    control), **Kosmos's master volume drives that control**, and the mix
+    goes out at unity, so a stream alone at its own full gain is exact at
+    any volume. The keys and Sound's slider move the speaker's control:
+    the master's level mapped onto the control's own range in decibels,
+    read with GET_MIN, GET_MAX and GET_RES, and the lowest step as mute
+    (the control's mute where it has one). Where a speaker has no volume
+    of its own, or will not take one, the master stays in the mix as now,
+    and `volume` is said. The level is set when the speaker is opened, so
+    it starts at the master's level rather than at whatever it held, and
+    again on every change. The master is not counted as `volume` for a
+    stream whose master is the speaker's (`AUDIO_INEXACT_VOLUME`), and its
+    own gain still is. `usbaudio=full`, the proof's setting, becomes the
+    master at its top. **Tests**: under QEMU, whose speaker has a volume
+    control, the noise found bit for bit at a master of 50% with the
+    speaker's control said to have moved, and a master change heard as a
+    new SET_CUR; the M60 says over Telnet whether it has one.
+
+    **The question as it was asked.** A speaker's own volume can change the
+    samples after Kosmos has sent them, which makes `exact` untrue at the
+    speaker. (A) leave the speaker's volume alone: nothing to build, and
+    `exact` can be false where Kosmos cannot see it. (B) set it to 0 dB on
+    every open: `exact` true, and a speaker turned down comes back loud.
+    (C) as macOS does - and Windows and PipeWire where a device has a
+    control - the system's volume drives the speaker's control and the
+    samples go out untouched: exact at any volume, and a little more to
+    build, with a fallback to Kosmos's own volume where a speaker has no
+    control. None of them sets a device to 0 dB on open.
 
 ---
 

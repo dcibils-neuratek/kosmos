@@ -425,8 +425,48 @@ as the decoder.
   `sound` return false when the decoder wants another packet, nil when
   everything has come out, and nil with a reason on a fault.
 
-Next: M6c, `video.lua` on the door, with Video and `listen` in
-`media.elf`.
+### M6c built: Video on the door, in `media.elf`
+
+**0.12.96** (`testing.md` 18.1017). `video.lua` is the same kit with the
+same calls, written again on the door. One source reads the file; a packet
+read for the picture that belongs to the sound waits in the sound's queue,
+and the other way round. The picture decodes into a spare surface and is
+swapped in when its time comes, as H.264 was. A seek goes back to the key
+picture before the moment asked for. The sound is decoded to PCM and
+handed to the Playback Kit as its `wav` kind, in pieces of 16 KB at most;
+frames that end before the moment are passed over. Motion JPEG stays
+`gfx.jpeg`'s, fed from a packet's address (`packet.at`), since the Media
+Kit's FFmpeg has no JPEG decoder and needs none. Codec names come from the
+kit, AAC with its profile (`media_stream.profile`, new): "AAC-LC" as before.
+Asked from an image without the kit, `video.open` refuses with a sentence
+naming `media.elf` and the header it wants.
+
+Video is a system application now, in `/Home/System/Apps/Video`, seen as
+`/Kosmos/Apps/Video`, naming `-- kosmos: image media`. It opens WebM and
+Matroska as well (`.webm`, `.mkv`). `listen` and `play` name the image.
+
+**Two changes to what the system decides**, both made so that Video
+behaves as it did in the image:
+
+* **A system application's `needs audio` is granted** (`init.lua`,
+  `spawn_grants`): only the audio band, only for a program read through the
+  read-only `/Kosmos/Apps/<name>` mount of a folder in `ns.SYSTEM_APPS`.
+  A program on the disk had never been given the band; Video's sound
+  thread lost it, and `x86-film-load` failed with "the kit not in the
+  audio band". The band is bounded by its budget, and the processes, the
+  network and the keyring stay the image's to give. **For Diego**: this
+  widens who can take the band, from the image to Kosmos's own
+  applications on the disk.
+* **Kosmos's own applications on the disk open files before the image's
+  programs** (`filetypes.table`), so a film is Video's before Play's, as it
+  was.
+
+**What it costs: Tracker's preview of a film** (`preview.lua`, Q4) runs
+in Tracker's process, which is not in `media.elf`. It now shows the
+refusal where the film was. Bringing it back means a preview drawn inside
+`media.elf` and lent to Tracker, which is in the roadmap.
+
+Next: M6d, the closure and `mp4.lua` out.
 
 ### Decided (M6)
 

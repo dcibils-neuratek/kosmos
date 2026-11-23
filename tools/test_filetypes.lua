@@ -37,9 +37,10 @@ local INSTALLED = {}
 for _, file in ipairs(arg) do
   local folder, main = file:match("^user/installed/([^/]+)/([^/]+)%.lua$")
 
-  -- JetSki is Kosmos's own, on the disk and seen in /Kosmos/Apps as a
-  -- folder (`installed.py`'s SYSTEM, the namespace's `SYSTEM_APPS`).
-  local where = (folder == "JetSki") and "/Kosmos/Apps" or "/Home/Apps"
+  -- JetSki and Video are Kosmos's own, on the disk and seen in
+  -- /Kosmos/Apps as folders (`installed.py`'s SYSTEM, the namespace's
+  -- `SYSTEM_APPS`; Video since `docs/media.md` M6c).
+  local where = (folder == "JetSki" or folder == "Video") and "/Kosmos/Apps" or "/Home/Apps"
 
   if folder and main == folder:lower() then
     STORE[where][folder] = true
@@ -310,6 +311,10 @@ check(types.opener("/Home/boot.log") == "texteditor",
 -- the extension is written in.
 check(types.opener("/Home/magicword-clip.mp4") == "video",
       "an .mp4 is not opened by Video")
+check(types.opener("/Home/Movies/trailer.webm") == "video"
+      and types.opener("/Home/Movies/concert.mkv") == "video",
+      "a WebM and a Matroska film are not opened by Video, which plays them "
+      .. "since the Media Kit (M6c)")
 check(types.opener("/Home/think.JPG") == "photo" and types.opener("/Home/a.jpeg") == "photo",
       "a .jpg or .jpeg is not opened by Photo")
 

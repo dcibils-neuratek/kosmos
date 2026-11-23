@@ -86,6 +86,19 @@ function filetypes.table(store)
 
   local from = store or fs
   local out = {}
+  local apps = filetypes.installed(from)
+
+  local function declared_by(system)
+    for _, app in ipairs(apps) do
+      if (app.system and true or false) == system then
+        for ext in tostring(filetypes.declared(app.source, "opens") or "")
+                     :lower():gmatch("[%w_]+") do
+          out[ext] = out[ext] or {}
+          out[ext][#out[ext] + 1] = app.name
+        end
+      end
+    end
+  end
 
   for _, dir in ipairs(filetypes.STORES) do
     local names = from.list(dir) or {}
@@ -108,17 +121,17 @@ function filetypes.table(store)
 
       ::next_file::
     end
+
+    -- **Kosmos's own applications on the disk** (`filetypes.SYSTEM`) are
+    -- the image's applications' peers - Video moved there from the image at
+    -- M6 (`docs/media.md`) and is still what opens a film before Play - so
+    -- they come with `/Kosmos/Apps`, before the programs.
+    if dir == filetypes.SYSTEM then declared_by(true) end
   end
 
   -- And what the installed applications open, after the shipped ones:
   -- read from each one's header, since a disk keeps no `opens` of its own.
-  for _, app in ipairs(filetypes.installed(from)) do
-    for ext in tostring(filetypes.declared(app.source, "opens") or "")
-                 :lower():gmatch("[%w_]+") do
-      out[ext] = out[ext] or {}
-      out[ext][#out[ext] + 1] = app.name
-    end
-  end
+  declared_by(false)
 
   for ext, program in pairs(filetypes.PREFERRED) do
     for i, one in ipairs(out[ext] or {}) do
@@ -279,7 +292,7 @@ end
 filetypes.GROUPS = {
   { "Documents", { "txt", "md", "write", "pdf", "html", "htm", "mhtml", "mht", "lua", "conf", "log" } },
   { "Pictures", { "png", "jpg", "jpeg" } },
-  { "Sound and film", { "mp3", "wav", "mp4", "m4v", "mov" } },
+  { "Sound and film", { "mp3", "wav", "mp4", "m4v", "mov", "webm", "mkv" } },
   { "Games", { "wad", "sfc", "smc" } },
   { "Kosmos", { "zip", "launcher", "favorite", "automation" } },
 }

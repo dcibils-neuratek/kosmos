@@ -68,6 +68,9 @@ struct media_stream {
     int fps_num, fps_den;       /* 0 when the file does not say */
     /* a sound */
     int rate, channels;
+    /* FFmpeg's name for the codec's profile - "LC", "HE-AAC", "High" - or
+     * "" when it has none to say */
+    char profile[24];
 };
 
 struct media_packet {

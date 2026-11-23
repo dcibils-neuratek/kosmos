@@ -220,7 +220,7 @@ def main():
             # - in the attributes the store reports, and nothing for an
             # application that says nothing.
             'local function o(p) return table.concat((fs.getattr(p) or {}).opens or {}, " ") end '
-            'print("K-OPENS", o("/Kosmos/Apps/photo.lua"), o("/Kosmos/Apps/video.lua"), '
+            'print("K-OPENS", o("/Kosmos/Apps/photo.lua"), '
             'o("/Kosmos/Programs/play.lua"), '
             '(fs.getattr("/Kosmos/Apps/calc.lua") or {}).opens == nil)',
 
@@ -376,10 +376,10 @@ def main():
             # The Super Nintendo's cartridges were here until it became an
             # installed application (28 September); `test_filetypes.lua` holds
             # what an installed one opens.
-            ("K-OPENS", "png jpg jpeg mp4 m4v mov mp4 true",
+            ("K-OPENS", "png jpg jpeg mp4 true",
              "an application's `kosmos: opens` did not reach its attributes - "
-             "Photo's three, Video's three (`.m4v` and `.mov` since 0.11.508) "
-             "and Play's film - or one that declares "
+             "Photo's three and Play's film (Video's, on the disk "
+             "since M6c, are `test_filetypes.lua`'s) - or one that declares "
              "nothing had some"),
             ("K-DOCS", "cafesa3d,cheatsheet.html,ide directory true true true PNG true",
              "/Kosmos/Documentation did not hold the cheat sheet and both "

@@ -16,8 +16,9 @@ file, Tracker opened on it, the picture chosen, and the keys:
   - Down once more: a WAV made here, shown as a song of 0:03 and playing as
     soon as it is shown - heard, in what QEMU's sound card wrote - and Up
     the arrows stopping it (Q3);
-  - Down once more: an MP4 made here, shown as a film of 64 x 48 and 0:03,
-    its picture playing in the panel - dark, then light (Q4);
+  - Down once more: an MP4 made here, named as a film with the reason it
+    does not play here - Tracker is not in media.elf since 0.12.96 (Q4's
+    picture waits for its preview from there);
   - Escape: closed, and the red gone from the screen;
   - Space and Return: closed, and the picture opened in Photo.
 
@@ -312,9 +313,14 @@ def main():
         guest.sendkey("down")
         shown = line(r"tracker: quick look e-film.mp4 - (\w+), ([^;]*);", mark)
         said["film"] = shown and shown.group(0)
-        check(shown and shown.group(1) == "film" and "64 x 48" in shown.group(2)
-              and "0:03" in shown.group(2),
-              "Down to the MP4 did not show it as a film of 64 x 48, 0:03: %r" % said["film"])
+        # **Since 0.12.96 Tracker cannot open a film** (`docs/media.md` M6c):
+        # films are read by the Media Kit, which lives in media.elf, and
+        # Tracker is not in it. Until its preview is drawn from there
+        # (`roadmap.md`, Quick Look's films from media.elf), the panel names
+        # the film and says why it does not play - which is what is held.
+        check(shown and shown.group(2).startswith("Film") and "media.elf" in shown.group(2),
+              "Down to the MP4 did not name it as a film and say why it does not "
+              "play here: %r" % said["film"])
 
         # Its picture, at the panel's middle, dark and then light as it
         # plays: watched for four seconds.
@@ -334,8 +340,9 @@ def main():
         said["levels"] = sorted(seen_levels)
         if os.environ.get("QL_SHOT"):         # a picture of the film's view, to look at
             open(os.environ["QL_SHOT"] + "-film.ppm", "wb").write(guest.screendump())
-        check("dark" in seen_levels and "light" in seen_levels,
-              "the film's picture did not play in the panel: %r" % said["levels"])
+        check("dark" not in seen_levels or "light" not in seen_levels,
+              "the film's picture played in the panel, which this image cannot "
+              "decode - the check above is out of date: %r" % said["levels"])
         guest._read_available()
         said["stopped"] = guest.seen[mark:].count("sounding d-tone.wav")
         check(said["stopped"] == 0, "the song went on playing after the arrows moved on: "

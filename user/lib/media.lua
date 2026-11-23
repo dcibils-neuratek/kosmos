@@ -132,7 +132,7 @@ end
 -- MP4 reader or a JPEG decoder it will not use. One door to learn, and no
 -- cost to what comes through the other side of it.
 --
-local FILMS = { mp4 = true, m4v = true, mov = true }
+local FILMS = { mp4 = true, m4v = true, mov = true, webm = true, mkv = true }
 
 function media.open(path, options)
   local kind = tostring(path):lower():match("%.(%w+)$")

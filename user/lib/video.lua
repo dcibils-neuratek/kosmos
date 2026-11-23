@@ -15,10 +15,18 @@
 --
 -- **Which decoder is behind it is not a fact its user should have to
 -- know** (`CLAUDE.md`, on kits). It decoded Motion JPEG first, because
--- `gfx.jpeg` was already in the image; it decodes H.264 now, through
--- FFmpeg's decoder in `/Kosmos/Kits/h264` (`roadmap.md` 4e), and nothing written
--- against this file changed - not one call site. That is the same promise
--- `use("/Kosmos/Kits/pdf")` makes about a scanner that moved from Lua to C.
+-- `gfx.jpeg` was already in the image, then H.264 through a closure of
+-- FFmpeg's decoder vendored for it. Since M6 (`docs/media.md`) the film is
+-- the Media Kit's: its container read and its streams decoded by the whole
+-- FFmpeg in `media.elf`, through the kit's Lua door (`/Kosmos/Kits/media`)
+-- - MP4, WebM and Matroska; H.264, VP9, VP8 and AV1; AAC, Opus, Vorbis,
+-- FLAC and MP3 - and nothing written against this file changed: not one
+-- call site.
+--
+-- **So it plays only in `media.elf`**, the image the kit is in. A program
+-- that plays a film says `-- kosmos: image media` in its header, as Video
+-- and `listen` do; asked from any other image, `video.open` refuses and
+-- says so.
 --
 -- **It owns the clock and not the loop.** An application has a loop
 -- already - it is answering the pointer and the keyboard in it - and a kit
@@ -27,190 +35,119 @@
 -- on each pass, asks `film:position()` what moment it is, and draws the
 -- frame for that moment, which is also exactly what a seek is.
 --
--- This paragraph said it did not own the clock either, and that stopped
--- being true the day a film had sound: **time is the sound's** - frames
--- that came out of the speaker, as `media.lua` has it for Music - and a
--- picture timed by anything else drifts away from it. Only the kit hears
--- the sound, so only the kit can keep the time. A film without sound, or
--- on a machine without a device, keeps it by the counter instead, and the
--- caller cannot tell which.
+-- **Time is the sound's**: frames that came out of the speaker, as
+-- `media.lua` has it for Music, because a picture timed by anything else
+-- drifts away from it. Only the kit hears the sound, so only the kit can
+-- keep the time. A film without sound, or on a machine without a device,
+-- keeps it by the counter instead, and the caller cannot tell which.
 --
-local mp4 = use("/Kosmos/Libraries/mp4.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
-local regions = use("/Kosmos/Libraries/regions.lua")
 
 local video = {}
 
 local film = {}
 film.__index = film
 
--- Four megabytes: enough for any `moov` this will meet, and for a single
--- frame of anything it will be asked to decode - a 4K Motion JPEG frame is
--- about a megabyte and a half at a decent quality. Reads go through a
--- region because that is what `fs.read_into` fills, and because the
--- decoder reads the region directly (`jpeg_frame`).
-local READ = 4 * 1024 * 1024
+--
+-- **The Media Kit's door**, on first use, and only where the image has it.
+--
+local kit
+
+local function door()
+  if kit == nil then
+    local ok, k = pcall(use, "/Kosmos/Kits/media")
+
+    kit = (ok and type(k) == "table") and k or false
+  end
+
+  return kit or nil
+end
+
+local NO_KIT = "a film plays in media.elf, the image with the Media Kit; "
+               .. "this program is not in it (its header wants "
+               .. "`-- kosmos: image media`)"
 
 --
--- **A frame is an address and a length, never a Lua string.**
+-- **What a codec is called, in the words a person reads**, from the name
+-- the Media Kit gives it - FFmpeg's.
 --
--- `gfx.jpeg` has taken `(at, length)` since the window manager needed it
--- for wallpapers, and its comment says why: bytes about to be thrown away
--- should not be bytes the collector has to walk. This kit read each frame
--- into a Lua string anyway - ten kilobytes of garbage thirty times a
--- second, 300 KB a second, which is the audio server's mistake wearing
--- different clothes and exactly what `mp4.lua`'s own header claims does
--- not happen here.
---
--- Diego asked why an MP4 is read in Lua at all, which is what found it.
--- The *index* is Lua and should be: a few hundred boxes, read once, and it
--- runs on the host so the format is tested without booting. The *frames*
--- were never supposed to be.
---
-local function jpeg_frame(at, length) return gfx.jpeg(at, length) end
-
-local MOTION_JPEG = { name = "Motion JPEG", frame = jpeg_frame }
-
---
--- **H.264 is a conversation rather than a function**, which is why it has
--- no `frame` here and a path of its own below (`film:h264_to`). A picture
--- may be built from pictures before *and after* it, so samples go into the
--- decoder in the order they are decoded and pictures come out in the order
--- they are shown, a few behind; only the kit's decoder object can hold
--- that. `avc3` is the same stream with its parameter sets allowed in the
--- samples as well as in `avcC`.
---
-local H264 = { name = "H.264", stateful = true }
-
---
--- **The decoders, by the sample entry that names them.**
---
--- A table rather than a chain of ifs, because this is the list that grows:
--- whoever adds a codec should have to write one line here and one decoder,
--- not find every place a codec is named. `avc1` and `avc3` joined it that
--- way, with FFmpeg's decoder.
---
--- `jpeg` and `mjpa` are what QuickTime writes for Motion JPEG: a sequence
--- of ordinary JPEG images, one to a sample, which is why this kit could
--- exist before a video decoder did. `mp4v` is not here, because it names
--- no codec of its own - `decoder_for` below reads the one it carries.
---
-local decoders = {
-  -- QuickTime's two names for a track of JPEGs, which say so themselves.
-  jpeg = MOTION_JPEG,
-  mjpa = MOTION_JPEG,
-  avc1 = H264,
-  avc3 = H264,
+local NAMES = {
+  h264 = "H.264", hevc = "H.265", vp9 = "VP9", vp8 = "VP8", av1 = "AV1",
+  mjpeg = "Motion JPEG", mpeg4 = "MPEG-4 Visual",
+  aac = "AAC", opus = "Opus", vorbis = "Vorbis", flac = "FLAC", mp3 = "MP3",
 }
 
 --
--- The kit, on first use and only where the image has it: `FULL=0` builds
--- without FFmpeg, and there a film of H.264 is one this system cannot
--- decode rather than an error in this file.
+-- AAC says its profile, which is the difference a person can hear between
+-- one and another: "AAC-LC", "HE-AAC", as this kit said before M6.
 --
-local h264_kit
+local function named(codec, profile)
+  codec = tostring(codec)
 
-local function h264()
-  if h264_kit == nil then
-    local ok, kit = pcall(use, "/Kosmos/Kits/h264")
+  if codec == "aac" and profile == "LC" then return "AAC-LC" end
+  if codec == "aac" and profile and profile:match("^HE%-AAC") then return profile end
+  if NAMES[codec] then return NAMES[codec] end
+  if codec:match("^pcm_") then return "PCM" end
 
-    h264_kit = (ok and type(kit) == "table") and kit or false
-  end
-
-  return h264_kit or nil
+  return codec
 end
 
 --
--- **`mp4v` is not a codec**, and reading it as one was a guess that
--- happened to be right about the file in front of me. It means "MPEG-4
--- systems describes this", and which codec is the object type in the
--- sample entry's `esds`: **0x6c is JPEG** and 0x20 is MPEG-4 Visual, which
--- is a different thing entirely and would be handed to `gfx.jpeg` to fail
--- as "would not decode". `mp4.lua` reads that byte for video now - it used
--- to read `esds` only for audio - so this can tell them apart.
+-- **Motion JPEG is decoded by `gfx.jpeg`**, as it always was: one JPEG to
+-- a packet, from the packet's own bytes - its address, never a Lua string.
+-- The Media Kit's FFmpeg has no JPEG decoder of its own, and needs none:
+-- something already supplies one (`CLAUDE.md`, *What this is aiming at*).
 --
-local OBJECT = {
-  [0x6c] = MOTION_JPEG,
-}
+local MOTION_JPEG = "mjpeg"
 
-local NAMED = {
-  [0x20] = "MPEG-4 Visual",
-  [0x21] = "H.264",
-  [0x23] = "H.265",
-}
+--
+-- **How many packets wait for the other stream**, at most. One demuxer
+-- serves both halves: a packet read for the picture that is the sound's
+-- waits in the sound's queue, and the other way round. A film interleaves
+-- its streams a second or so apart, so this is far past what one holds;
+-- past it, the oldest is let go and counted (`film.overflow`) rather than
+-- a queue growing without end behind a stream nobody is taking.
+--
+local QUEUE = 4096
 
-local function decoder_for(track)
-  if track.codec == "mp4v" then
-    return OBJECT[track.object or 0], NAMED[track.object or 0]
-  end
+local function queue() return { first = 1, last = 0 } end
 
-  return decoders[track.codec], nil
+local function push(q, p)
+  q.last = q.last + 1
+  q[q.last] = p
 end
 
---
--- **What the sound is, in the words a person reads.**
---
--- A film's audio track is described here even though this kit does not
--- play it yet, because describing it costs nothing and an application that
--- wants to say what it is playing should not have to read an `esds` to find
--- out. Diego asked for the audio codec in the player's overlay on 20
--- September, and the answer was three lines away from being free.
---
--- The numbers are 14496-1's object type indications: 0x40 is MPEG-4 audio,
--- whose flavour is in the AudioSpecificConfig beside it, and 0x6b is plain
--- MPEG-1 Layer III.
---
-local function sound_name(track)
-  local object, aot = track.object, track.aot
+local function pop(q)
+  if q.first > q.last then return nil end
 
-  if object == 0x6b then return "MP3" end
+  local p = q[q.first]
 
-  if object == 0x40 then
-    if aot == 2 then return "AAC-LC" end
-    if aot == 5 then return "HE-AAC" end
-
-    return "MPEG-4 audio"
-  end
-
-  return tostring(track.codec)
+  q[q.first] = nil
+  q.first = q.first + 1
+  return p
 end
 
--- What a film says when it cannot be played, in the words a person reads.
-local function no_decoder(codec, named)
-  if named == "H.264" then
-    return "this film is H.264 in an MPEG-4 systems track, which this "
-           .. "system cannot read yet"
-  end
+local function drop_all(q)
+  while true do
+    local p = pop(q)
 
-  if named then
-    return "this film is " .. named .. ", which this system cannot decode"
-  end
+    if not p then break end
 
-  return "this film is " .. tostring(codec) .. ", which this system cannot decode"
+    p:free()
+  end
 end
 
 --------------------------------------------------------------------------
--- **The sound**: a film's audio track, played by the Playback Kit on a
--- thread of its own in the audio band (`docs/playback.md`), and the clock
--- the picture follows.
+-- **The sound**: a film's audio stream, decoded by the Media Kit into
+-- 16-bit PCM and played by the Playback Kit on a thread of its own in the
+-- audio band (`docs/playback.md`), and the clock the picture follows.
 --
--- This window's part is the file: it finds the track's frames - where each
--- is and how long, from the MP4's tables - reads them a run at a time, and
--- hands them to the kit, seconds ahead. Decoding them, converting them to
--- what the device takes and writing them into the stream's ring is the
--- kit's thread's, so a picture's decode, a collection or a busy desktop
--- holding this loop away is no longer a gap in the sound (`roadmap.md`
--- 6zw). It was `media.feed`, in Lua, from this loop, a period at a time.
+-- The window's part is the decoding, on every pass of its loop, as far
+-- ahead as the kit's input ring takes - seconds - so a picture's decode, a
+-- collection or a busy desktop holding the loop away is no gap in the
+-- sound. Converting to what the device takes and writing the stream's
+-- ring is the kit's thread's.
 --------------------------------------------------------------------------
-
---
--- How much of the file to read at a time for the sound: a run of samples
--- that sit next to each other, up to this. An MP4 keeps a film's sound in
--- chunks between the picture's, a second or so each, so one read is a
--- second of sound rather than one frame of it - a round trip to the disk
--- server costs more than decoding the frame (`roadmap.md` 6k).
---
-local SOUND_READ = 256 * 1024
 
 --
 -- **How deep a film's ring is: 32 periods, 186 ms** - where Music's is the
@@ -221,94 +158,69 @@ local SOUND_READ = 256 * 1024
 --
 local SOUND_PERIODS = 32
 
+--
+-- **A WAV's piece is 16 KB at most** (`playback_player.c`, `PB_PIECE`): a
+-- decoded frame larger than that - FLAC's are 16 KB in stereo, more in
+-- six channels - goes in pieces, each a whole number of sample frames.
+--
+local PIECE = 16 * 1024
+
 local voice = {}
 voice.__index = voice
 
 --
--- What the kit is to play a track as: AAC, with its configuration, or MP3.
--- The one place that knows which object types mean which.
+-- A film's sound, ready to start: a decoder and a player, and nothing
+-- playing yet. Nil and why when it cannot be heard.
 --
-local function sound_kind(track)
-  local object = track.object or 0
-
-  if track.codec == "mp4a" and object == 0x40 then
-    if not track.config then
-      return nil, "this film's sound does not describe itself (no config)"
-    end
-
-    return "aac"
-  end
-
-  if track.codec == "mp4a" and (object == 0x6b or object == 0x69) then
-    return "mp3"
-  end
-
-  return nil, "this film's sound is " .. tostring(track.codec)
-              .. (object ~= 0 and (" (object 0x%02x)"):format(object) or "")
-              .. ", which this system cannot play"
-end
-
---
--- A film's sound, ready to start: a player, a read buffer of its own, and
--- nothing playing yet. Nil and why when it cannot be heard - a machine
--- built `FULL=0` has no AAC, and the kit says so.
---
-local function open_voice(path, track, name)
+local function open_voice(f)
   local fmt = audio.format()
 
   if not fmt or (fmt.period or 0) == 0 then
     return nil, "this machine has no sound device"
   end
 
-  local kind, why = sound_kind(track)
+  local st = f.sound
+  local dec, why = f.src:decoder(f.ai)
 
-  if not kind then return nil, why end
+  if not dec then return nil, tostring(why) end
 
   local playback = use("/Kosmos/Kits/playback")
-  local player, perr = playback.open{ kind = kind, config = track.config,
-                                      rate = track.rate or 0,
-                                      channels = track.channels or 0 }
+  local player, perr = playback.open{ kind = "wav", rate = st.rate,
+                                      channels = st.channels, bits = 16 }
 
-  if not player then return nil, tostring(perr) end
-
-  local page = regions.make(SOUND_READ)
-
-  if not page then
-    player:close()
-    return nil, "no memory for the sound's read buffer"
+  if not player then
+    dec:close()
+    return nil, tostring(perr)
   end
 
+  local frame_bytes = st.channels * 2
+
   return setmetatable({
-    path = path, track = track, name = name, fmt = fmt, page = page,
-    mapped = page.at, player = player, heard = {},
-    samples = track.samples or {}, scale = track.timescale or 1,
-    next = 1, run_first = 0, run_last = -1, run_at = 0,
+    film = f, dec = dec, player = player, fmt = fmt, heard = {},
+    name = f.name, rate = st.rate, channels = st.channels,
+    piece = PIECE - PIECE % frame_bytes,
     base = 0, gain = nil, frames_out = 0, frames_in = 0,
     out0 = 0, in0 = 0, ended = false,
   }, voice)
 end
 
 --
--- Start hearing it at `at` seconds: a stream of its own, and the sample
--- that holds that moment. **A new stream for every start**, as Music
--- seeks: nothing can drop what a stream has queued - `audioproto.h` has no
--- flush - and the ring and the device hold about 200 ms of the old place.
--- The kit is told first and has let go of the old ring before it is
--- closed; then the input ring is filled, so the thread has the new place
--- before it is asked to play it.
+-- Start hearing it at `at` seconds: a stream of its own, the decoder let go
+-- of what it held, and the sound from the frame that holds that moment. The
+-- caller has put the film's reading there first (`film:reposition`).
+--
+-- **A new stream for every start**, as Music seeks: nothing can drop what a
+-- stream has queued - `audioproto.h` has no flush - and the ring and the
+-- device hold about 200 ms of the old place. The kit is told first and has
+-- let go of the old ring before it is closed; then the input ring is
+-- filled, so the thread has the new place before it is asked to play it.
+--
+-- **A seek lands on a key picture**, which is before `at` by as much as a
+-- second of film, and the sound read from there is too: frames that end
+-- before `at` are decoded and passed over, so what is heard begins at the
+-- frame that holds `at` - a few milliseconds before it.
 --
 function voice:start(at)
-  local samples, ticks = self.samples, at * self.scale
-  local lo, hi = 1, #samples
-
-  -- The last sample that starts at or before `at`: the frames' times only
-  -- rise, so halving finds it.
-  while lo < hi do
-    local mid = (lo + hi + 1) // 2
-
-    if (samples[mid].pts or 0) <= ticks then lo = mid else hi = mid - 1 end
-  end
-
   local stream, why = audio.open(self.name, SOUND_PERIODS)
 
   if not stream then return false, tostring(why) end
@@ -324,10 +236,13 @@ function voice:start(at)
 
   if self.stream then self.stream:close() end
 
+  if self.held then self.held:free() self.held = nil end
+
+  self.dec:flush()
   self.stream = stream
-  self.next = (#samples > 0) and lo or 1
-  self.base = (#samples > 0) and ((samples[lo].pts or 0) / self.scale) or 0
-  self.run_first, self.run_last = 0, -1
+  self.from_us = math.floor(at * 1e6 + 0.5)
+  self.base, self.based = at, false
+  self.pending, self.sent_end, self.drained = nil, false, false
   self.ended = false
 
   local h = self.player:state(self.heard)
@@ -339,66 +254,78 @@ function voice:start(at)
 end
 
 --
--- Sample `i` of the track, where the kit can take it from: the address
--- inside the read buffer and its length, reading the run of samples that
--- sit next to it in the file when it is not there already.
---
-function voice:sample_at(i)
-  local samples = self.samples
-
-  if i < self.run_first or i > self.run_last then
-    local first = samples[i]
-    local last, bytes = i, first.size
-
-    while samples[last + 1]
-          and samples[last + 1].at == samples[last].at + samples[last].size
-          and bytes + samples[last + 1].size <= SOUND_READ do
-      last = last + 1
-      bytes = bytes + samples[last].size
-    end
-
-    if bytes > SOUND_READ then return nil, "a sound frame larger than the read buffer" end
-
-    local got = fs.read_into(self.path, self.page.cap, first.at, bytes)
-
-    if not got or got < bytes then return nil, "the film stopped being readable" end
-
-    self.run_first, self.run_last, self.run_at = i, last, first.at
-  end
-
-  local s = samples[i]
-
-  return self.mapped + (s.at - self.run_at), s.size
-end
-
---
 -- **The input ring kept full**, on every pass of the caller's loop: the
--- track's next frames handed to the kit while it has room, and the end said
--- once the last has gone. A frame that will not go waits for the next pass;
--- the kit holds seconds, so a pass that comes late costs nothing heard.
--- Returns how many frames went.
+-- stream's next frames decoded and handed to the kit while it has room, and
+-- the end said once the last has gone. A frame that will not go waits for
+-- the next pass - in the decoder's own memory, which stays its until the
+-- next call - and the kit holds seconds, so a pass that comes late costs
+-- nothing heard. Returns how many pieces went.
 --
 function voice:feed()
   if not self.stream then return 0 end
 
   local p, put = self.player, 0
 
-  while self.next <= #self.samples do
-    local at, n = self:sample_at(self.next)
+  for _ = 1, 4096 do
+    local pending = self.pending
 
-    if not at then
-      self.error = tostring(n)
-      self.next = #self.samples + 1
+    if pending then
+      local n = math.min(pending.len - pending.off, self.piece)
+
+      if not p:frame(pending.at + pending.off, n) then break end
+
+      pending.off = pending.off + n
+      put = put + 1
+
+      if pending.off >= pending.len then self.pending = nil end
+    elseif self.drained then
       break
+    else
+      local at, len, pts, frames = self.dec:sound()
+
+      if at == false then
+        local packet = self.held or self.film:pull(self.film.ai)
+
+        self.held = nil
+
+        if packet then
+          local ok, why = self.dec:send(packet)
+
+          if ok == false then
+            self.held = packet
+          else
+            packet:free()
+
+            -- A packet that will not decode is passed over: the decoder
+            -- conceals what it can, and a blemish is not the end.
+            if ok == nil then self.error = tostring(why) end
+          end
+        elseif not self.sent_end then
+          self.dec:send()
+          self.sent_end = true
+        else
+          self.drained = true
+        end
+      elseif at == nil then
+        if len then self.error = tostring(len) end
+
+        self.drained = true
+      elseif len > 0 then
+        local known = pts ~= math.mininteger
+
+        if not known or pts + frames * 1000000 // self.rate > self.from_us then
+          if not self.based then
+            self.base = known and pts / 1e6 or self.from_us / 1e6
+            self.based = true
+          end
+
+          self.pending = { at = at, len = len, off = 0 }
+        end
+      end
     end
-
-    if not p:frame(at, n) then break end
-
-    self.next = self.next + 1
-    put = put + 1
   end
 
-  if self.next > #self.samples and not self.ended then
+  if self.drained and not self.pending and not self.ended then
     self.ended = p:ended()
   end
 
@@ -406,8 +333,8 @@ function voice:feed()
   return put
 end
 
--- What the kit has heard, since this start: frames decoded and converted,
--- which `run_film.py` reads, and why a frame would not decode.
+-- What the kit has heard, since this start: frames converted and written,
+-- which `run_film.py` reads, and why a frame would not go.
 function voice:hear()
   local h = self.player:state(self.heard)
 
@@ -427,7 +354,7 @@ function voice:position()
   return self.base + self.stream:position() / self.fmt.rate
 end
 
--- All of it handed over, written and played.
+-- All of it decoded, handed over, written and played.
 function voice:done()
   return self.ended and self:hear().finished
          and (not self.stream or self.stream:queued() == 0)
@@ -451,12 +378,12 @@ end
 function voice:close()
   if self.player then self.player:close() self.player = nil end
   if self.stream then self.stream:close() self.stream = nil end
-  if self.page then regions.free(self.page) self.page = nil end
+  if self.held then self.held:free() self.held = nil end
+  if self.dec then self.dec:close() self.dec = nil end
 end
 
 --
 -- A film, or nil and why.
---
 --
 -- **`options.debuginfo` puts the overlay in the kit, not in the app.**
 --
@@ -475,86 +402,52 @@ end
 function video.open(path, options)
   options = options or {}
 
-  local page = regions.make(READ)
+  local media = door()
 
-  if not page then return nil, "no memory for a read buffer" end
-
-  --
-  -- Every refusal from here gives the buffer back: four megabytes held
-  -- for a film that was never opened is four megabytes an application
-  -- that tries a folder of files never sees again.
-  --
-  local function refuse(why)
-    regions.free(page)
-    return nil, why
-  end
+  if not media then return nil, NO_KIT end
 
   local size = (fs.getattr(path) or {}).size
 
   if not size or size == 0 then
-    return refuse("there is no film at " .. tostring(path))
+    return nil, "there is no film at " .. tostring(path)
   end
 
-  --
-  -- Two ways to read, and the difference is who the bytes are for.
-  --
-  -- `read_at` gives a string, for `mp4.open`: it is parsing a box tree in
-  -- Lua, once, and Lua is what it parses with. `frame_at` gives the
-  -- *address* the bytes landed at, for a decoder that is C.
-  --
-  local mapped = page.at
+  local src, why = media.open(path)
 
-  local function read_at(off, n)
-    local got = fs.read_into(path, page.cap, off, n)
+  if not src then return nil, tostring(why) end
 
-    if not got or got == 0 then return nil end
+  local picture, sound
 
-    return sys.region_read(page.cap, 0, got)
+  for i, st in ipairs(src:streams()) do
+    if st.kind == "video" and not picture then picture = st picture.index = i - 1 end
+    if st.kind == "audio" and not sound then sound = st sound.index = i - 1 end
   end
 
-  local function frame_at(off, n)
-    if n > READ then return nil, "a frame larger than the read buffer" end
-
-    local got = fs.read_into(path, page.cap, off, n)
-
-    if not got or got == 0 then return nil, "the film stopped being readable" end
-
-    return mapped, got
+  if not picture and not sound then
+    src:close()
+    return nil, "this film has neither a picture nor a sound in it"
   end
 
-  local movie, why = mp4.open(read_at, size)
+  local longest = 0
 
-  if not movie then return refuse(tostring(why)) end
-
-  local track, sound
-
-  for _, t in ipairs(movie.tracks) do
-    if t.kind == "video" and not track then track = t end
-    if t.kind == "audio" and not sound then sound = t end
+  for _, st in ipairs({ picture or {}, sound or {} }) do
+    if (st.duration_us or 0) > longest then longest = st.duration_us end
   end
-
-  if not track then return refuse("this film has no picture in it") end
-
-  local decoder, named = decoder_for(track)
-
-  if not decoder then return refuse(no_decoder(track.codec, named)) end
 
   local f = setmetatable({
-    path = path, page = page, read_at = read_at, frame_at = frame_at,
-    movie = movie, track = track, decoder = decoder,
-    width = track.width or 0, height = track.height or 0,
-    codec = decoder.name,
-    frames = #(track.samples or {}),
-    -- Seconds, from the track's own clock. A timescale is ticks a second
-    -- and every time in the track is in them, so this is the one place the
-    -- division happens - the same rule the system has about ticks.
-    duration = (track.duration or 0) / (track.timescale or 1),
-    shown = nil,
+    path = path, src = src,
+    vi = picture and picture.index, ai = sound and sound.index,
+    width = picture and picture.width or 0, height = picture and picture.height or 0,
+    codec = picture and named(picture.codec) or "none",
+    duration = longest / 1e6,
+    fps = (picture and (picture.fps_den or 0) > 0)
+          and picture.fps_num / picture.fps_den or 0,
+    vq = queue(), aq = queue(), overflow = 0,
 
     --
     -- **What a frame costs, in counter ticks, kept by the kit** because it
-    -- is the only place that can see the three parts apart: reading the
-    -- sample off the disk, decoding it, and putting it on the screen.
+    -- is the only place that can see the parts apart: taking the packet off
+    -- the file, decoding it onto a surface, and putting it on the screen.
     --
     -- Ticks rather than milliseconds, and `_ticks` in the name, because a
     -- number that leaves here arrives somewhere that has to divide by a
@@ -563,12 +456,6 @@ function video.open(path, options)
     --
     read_ticks = 0, decode_ticks = 0, blit_ticks = 0, decoded = 0,
 
-    --
-    -- The overlay's own bookkeeping, and the counter's rate beside it: this
-    -- is the one place in the kit that turns ticks into milliseconds, and
-    -- it reads `counter_hz` rather than assuming one (`CLAUDE.md`, two
-    -- clocks).
-    --
     debuginfo = options.debuginfo and true or false,
     info_open = options.debuginfo and options.open_now and true or false,
     hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1,
@@ -577,98 +464,35 @@ function video.open(path, options)
     ms_read = 0, ms_decode = 0, ms_screen = 0,
   }, film)
 
-  f.fps = (f.frames > 0 and f.duration > 0) and (f.frames / f.duration) or 0
+  f.frames = math.floor(f.duration * f.fps + 0.5)
 
   --
-  -- **The frames in the order they are shown**, which is not the order
-  -- they are stored in once a film has B-frames: a picture that depends on
-  -- one after it is stored after it. Positions from `index_at`, and the
-  -- frame numbers a caller sees, count in this order; `order[n]` is where
-  -- the n-th shown frame sits among the samples. A film without B-frames -
-  -- every Motion JPEG, every camera recording - is already in order, and
-  -- is only checked.
+  -- **Bits a second, from the file's size over its length**: an MP4 or a
+  -- WebM has no field that must hold it, and an average over the whole is
+  -- what the overlay means by it. Diego asked for it on 20 September.
   --
-  local samples = track.samples or {}
-  local order, sorted = {}, true
+  f.bytes = size
+  f.bitrate = (f.duration > 0) and (size * 8 / f.duration) or 0
 
-  for i = 1, #samples do
-    order[i] = i
+  if picture and picture.codec ~= MOTION_JPEG then
+    local dec, derr = src:decoder(f.vi)
 
-    if i > 1 and (samples[i].pts or 0) < (samples[i - 1].pts or 0) then
-      sorted = false
-    end
-  end
-
-  if not sorted then
-    table.sort(order, function(a, b)
-      local pa, pb = samples[a].pts or 0, samples[b].pts or 0
-
-      if pa ~= pb then return pa < pb end
-
-      return a < b
-    end)
-  end
-
-  f.order = order
-
-  --
-  -- **When the first frame is shown**, which is the film's zero. An MP4
-  -- with B-frames usually shows its first picture a frame or two after its
-  -- clock starts - the encoder had to decode ahead - and an edit list says
-  -- to skip that. `mp4.lua` does not read edit lists, so this does the one
-  -- thing they are almost always used for: it starts the film at its first
-  -- picture rather than at a moment of black.
-  --
-  f.base = (#order > 0) and (samples[order[1]].pts or 0) or 0
-
-  if decoder.stateful then
-    local kit = h264()
-
-    if not kit then
-      return refuse("this film is H.264, and this system was built without "
-                    .. "its H.264 decoder (FULL=0)")
+    if not dec then
+      src:close()
+      return nil, "this film is " .. f.codec .. ", which will not decode: " .. tostring(derr)
     end
 
-    if not track.avcc then
-      return refuse("this film does not describe its H.264 stream (no avcC)")
-    end
-
-    local stream, serr = kit.decoder(track.avcc)
-
-    if not stream then return refuse(tostring(serr)) end
-
-    f.stream, f.next = stream, 1
+    f.vdec = dec
   end
 
   --
-  -- **Bits a second, from the samples themselves** rather than from
-  -- anything the file claims. An MP4 has no field that must hold it, and a
-  -- sum over a few hundred sizes costs nothing once, at open - so this is
-  -- a fact the kit answers rather than one every application works out for
-  -- itself, which is the whole argument for a kit. Diego asked for it on
-  -- 20 September, for the player's debug overlay.
-  --
-  local bytes = 0
-
-  for _, sample in ipairs(track.samples or {}) do
-    bytes = bytes + (sample.size or 0)
-  end
-
-  f.bytes = bytes
-  f.bitrate = (f.duration > 0) and (bytes * 8 / f.duration) or 0
-
-  --
-  -- The sound, described and not yet played. `track` is kept so that the
-  -- half of this kit that plays it has what it needs without opening the
-  -- film twice.
+  -- The sound, described and not yet played.
   --
   if sound then
     f.sound = {
-      codec = sound_name(sound),
+      codec = named(sound.codec, sound.profile),
       rate = sound.rate or 0,
       channels = sound.channels or 0,
-      frames = #(sound.samples or {}),
-      track = sound,
     }
   end
 
@@ -683,111 +507,186 @@ function video.open(path, options)
 end
 
 --
--- Which frame is on screen at `when` seconds.
+-- **The next packet of stream `index`**, from its queue or read from the
+-- file: what is read for the other stream waits in that stream's queue -
+-- the sound's only while it is being heard. Nil at the end.
 --
--- A search rather than `when * fps`, because a film's frames are not evenly
--- spaced in general - a camera drops them, an editor cuts on them - and the
--- sample table says exactly when each one is shown. Linear from where we
--- are, which is one step for playing and a handful for a nudge; a seek to
--- the far end of a film walks it, and that is a thing to make cleverer when
--- something asks for it rather than now.
---
-function film:index_at(when)
-  local samples, order = self.track.samples, self.order
-  local scale = self.track.timescale or 1
-  local ticks = when * scale + self.base
+function film:pull(index)
+  local mine = (index == self.vi) and self.vq or self.aq
+  local p = pop(mine)
 
-  if #order == 0 then return nil end
+  if p then return p end
 
-  local at = self.shown or 1
+  if self.eof then return nil end
 
-  -- Backwards first: a seek to the beginning is common and cheap.
-  while at > 1 and (samples[order[at]].pts or 0) > ticks do
-    at = at - 1
+  while true do
+    local packet, why = self.src:read()
+
+    if not packet then
+      self.eof = true
+      if why then self.error = tostring(why) end
+      return nil
+    end
+
+    local s = packet.stream
+
+    if s == index then return packet end
+
+    local other = (s == self.vi) and self.vq
+                  or (s == self.ai and self.voice_state) and self.aq
+                  or nil
+
+    if other then
+      push(other, packet)
+
+      if other.last - other.first >= QUEUE then
+        pop(other):free()
+        self.overflow = self.overflow + 1
+      end
+    else
+      packet:free()
+    end
   end
-
-  while at < #order and (samples[order[at + 1]].pts or 0) <= ticks do
-    at = at + 1
-  end
-
-  return at
 end
 
 --
--- Frame `n` as a surface, decoded now.
+-- **The film's reading put at `us` microseconds**: the file sought to the
+-- key picture at or before it, the decoders and both queues let go of what
+-- they held. The sound starts again from there itself (`voice:start`).
 --
--- The caller owns nothing: the surface belongs to the film and is replaced
--- when another frame is asked for, which is what keeps a film from making a
--- surface a frame and asking the collector to notice.
+function film:reposition(us)
+  self.src:seek(math.max(0, us))
+
+  drop_all(self.vq)
+  drop_all(self.aq)
+
+  if self.held then self.held:free() self.held = nil end
+  if self.vdec then self.vdec:flush() end
+
+  self.eof, self.finished = false, false
+  self.pending_pts, self.shown_pts = nil, nil
+end
+
 --
-function film:frame(n)
-  local samples = self.track.samples
-  local s = samples and self.order[n] and samples[self.order[n]]
+-- Which frame is on screen at `when` seconds, counted from one: what an
+-- application compares to decide that the picture has changed.
+--
+function film:index_at(when)
+  if self.frames == 0 then return nil end
 
-  if not s then return nil, "there is no frame " .. tostring(n) end
-
-  if self.stream then return self:h264_to(n) end
-
-  local before = sys.ticks()
-  local where, got = self.frame_at(s.at, s.size)
-
-  if not where then return nil, tostring(got) end
-
-  local read_done = sys.ticks()
-  local ok, picture = pcall(self.decoder.frame, where, got)
-
-  if not ok or not picture then
-    return nil, "frame " .. n .. " would not decode: " .. tostring(picture)
-  end
-
-  self.read_ticks = self.read_ticks + (read_done - before)
-  self.decode_ticks = self.decode_ticks + (sys.ticks() - read_done)
-  self.decoded = self.decoded + 1
-
-  if self.picture then self.picture:free() end
-
-  self.picture, self.shown = picture, n
-
-  return picture
+  return math.max(1, math.min(self.frames, math.floor((when or 0) * self.fps) + 1))
 end
 
 --
 -- **How long one call may spend decoding**, in seconds. A seek lands on the
--- frame before the one asked for that can be decoded alone - a key frame -
--- and decodes forward from there, which can be a second of film; and a
--- machine that decodes slower than the film plays falls behind. Neither is
--- allowed to take the window with it: a call decodes for this long and
--- shows the latest picture it has, and the next call goes on from there.
--- A machine that cannot keep up shows fewer frames, counted as dropped,
--- rather than stopping to answer the pointer.
+-- key picture before the moment asked for and decodes forward from there,
+-- which can be a second of film; and a machine that decodes slower than the
+-- film plays falls behind. Neither is allowed to take the window with it: a
+-- call decodes for this long and shows the latest picture it has, and the
+-- next call goes on from there. A machine that cannot keep up shows fewer
+-- frames, counted as dropped, rather than stopping to answer the pointer.
 --
 local DECODE_BUDGET = 0.040
 
 --
--- The last key frame at or before sample `i`, in storage order.
+-- **How far ahead of what is shown a moment may be** before the film is
+-- sought rather than decoded up to: decoding three seconds of pictures
+-- nobody will see costs more than starting again from a key picture.
 --
-local function key_before(samples, i)
-  while i > 1 and not samples[i].key do i = i - 1 end
+local FAR_US = 3000000
 
-  return i
+--
+-- **The next picture out of the film**, into the spare surface: its time,
+-- or false when there is none yet and nothing more to send, or nil and why.
+--
+function film:next_picture()
+  local before = sys.ticks()
+
+  if not self.vdec then
+    -- Motion JPEG: one packet, one picture, decoded by `gfx.jpeg`.
+    local packet = self:pull(self.vi)
+
+    if not packet then return false end
+
+    local read_done = sys.ticks()
+    local ok, pic = pcall(gfx.jpeg, packet.at, packet.size)
+    local pts = packet.pts_us or 0
+
+    packet:free()
+
+    if not ok or not pic then
+      self.error = "a picture would not decode: " .. tostring(pic)
+      return nil, self.error
+    end
+
+    if self.spare then self.spare:free() end
+
+    self.spare = pic
+    self.read_ticks = self.read_ticks + (read_done - before)
+    self.decode_ticks = self.decode_ticks + (sys.ticks() - read_done)
+    self.decoded = self.decoded + 1
+    return pts
+  end
+
+  for _ = 1, 64 do
+    local pts, why = self.vdec:picture(self.spare)
+
+    if pts then
+      self.decoded = self.decoded + 1
+      self.decode_ticks = self.decode_ticks + (sys.ticks() - before)
+      return pts ~= math.mininteger and pts or 0
+    end
+
+    if pts == nil then
+      if why then self.error = tostring(why) end
+      return false
+    end
+
+    -- It wants another packet.
+    local packet = self.held or self:pull(self.vi)
+
+    self.held = nil
+
+    if packet then
+      local ok, serr = self.vdec:send(packet)
+
+      if ok == false then
+        self.held = packet
+      else
+        packet:free()
+
+        -- A packet that will not decode is passed over rather than
+        -- stopping the film: the decoder conceals what it can, and a
+        -- damaged frame in the middle of a film is a blemish, not an end.
+        -- What it said is kept for whoever asks (`film.error`).
+        if ok == nil then self.error = tostring(serr) end
+      end
+    elseif not self.finished then
+      self.vdec:send()
+      self.finished = true
+    else
+      return false
+    end
+  end
+
+  return false
 end
 
 --
--- **Shown frame `n` of an H.264 film, as a surface.**
+-- **The picture for `when` seconds, as a surface.**
 --
--- Two surfaces: the one on screen, and the one the next picture is
--- converted into as it comes out of the decoder - which is often a picture
--- for later, since pictures come out in the order they are shown and a
--- sample may be sent well before its picture is due. It waits in the
--- second surface until its moment and the two are swapped; no picture is
--- converted twice.
+-- Two surfaces: the one on screen, and the spare the next picture is
+-- decoded into as it comes out - often a picture for later, since pictures
+-- come out in the order they are shown and the decoder works a few ahead.
+-- It waits in the spare until its moment and the two are swapped; no
+-- picture is decoded twice.
 --
-function film:h264_to(n)
-  local samples, stream = self.track.samples, self.stream
-  local target = self.order[n]
-  local want = samples[target].pts or 0
+function film:picture_at(when)
+  if not self.vi then return nil, "this film has no picture" end
 
-  if not self.picture then
+  local want = math.floor(when * 1e6 + 0.5)
+
+  if self.vdec and not self.picture then
     self.picture = gfx.surface{ w = self.width, h = self.height }
     self.spare = gfx.surface{ w = self.width, h = self.height }
 
@@ -798,16 +697,15 @@ function film:h264_to(n)
   end
 
   --
-  -- Start again from a key frame when going backwards, or when the key
-  -- frame this picture needs has not been reached yet - decoding up to it
-  -- would be decoding pictures nobody will see.
+  -- Start again from a key picture when going backwards, or when the
+  -- moment is far past what has come out.
   --
-  local key = key_before(samples, target)
+  if self.shown_pts and (want < self.shown_pts or want > self.shown_pts + FAR_US) then
+    self:reposition(want)
 
-  if (self.shown_pts and want < self.shown_pts) or key > self.next then
-    stream:flush()
-    self.next, self.pending_pts, self.shown_pts = key, nil, nil
-    self.finished = false
+    if self.voice_state and self.voice_state.stream then
+      self.voice_state:start(when)
+    end
   end
 
   local limit = sys.ticks() + DECODE_BUDGET * self.hz
@@ -831,46 +729,11 @@ function film:h264_to(n)
       break
     end
 
-    local before = sys.ticks()
-    local pts, said = stream:picture(self.spare)
+    local pts = self:next_picture()
 
-    if pts then
-      self.pending_pts = pts
-      self.decoded = self.decoded + 1
-      self.decode_ticks = self.decode_ticks + (sys.ticks() - before)
-    elseif said == "none" then
-      if self.next <= #samples then
-        local s = samples[self.next]
-        local where, got = self.frame_at(s.at, s.size)
+    if not pts then break end
 
-        if not where then return nil, tostring(got) end
-
-        local read_done = sys.ticks()
-        local ok, why = stream:send(where, got, s.pts or 0)
-
-        self.read_ticks = self.read_ticks + (read_done - before)
-        self.decode_ticks = self.decode_ticks + (sys.ticks() - read_done)
-
-        --
-        -- A sample that will not decode is passed over rather than
-        -- stopping the film: the decoder conceals what it can, and a
-        -- damaged frame in the middle of a film is a blemish, not an end.
-        -- What it said is kept for whoever asks (`film.error`).
-        --
-        if ok or why ~= "full" then self.next = self.next + 1 end
-        if not ok and why ~= "full" then self.error = tostring(why) end
-      elseif not self.finished then
-        stream:finish()
-        self.finished = true
-      else
-        break
-      end
-    elseif said == "end" then
-      break
-    else
-      self.error = tostring(said)
-      break
-    end
+    self.pending_pts = pts
   end
 
   if not self.shown_pts then
@@ -893,8 +756,7 @@ end
 -- question about the buffer in hand rather than about the film. Getting
 -- that wrong shows one frame of the one before it, which is a flicker
 -- nobody can find later. A blit of a decoded frame is cheap next to
--- decoding it; when something measures this and wants it back, the answer
--- is a frame number kept per buffer, not a cleverer guess here.
+-- decoding it.
 --
 function film:draw(dest, when, x, y, w, h)
   local n = self:index_at(when or 0)
@@ -908,14 +770,9 @@ function film:draw(dest, when, x, y, w, h)
     self.dropped = self.dropped + (n - self.drew_frame - 1)
   end
 
-  local picture
+  local picture = self:picture_at(when or 0)
 
-  if self.stream then
-    picture = self:h264_to(n)
-    self.shown = n
-  else
-    picture = (n == self.shown) and self.picture or self:frame(n)
-  end
+  self.shown = n
 
   if not picture then return false end
 
@@ -1140,7 +997,7 @@ function film:voice()
       self.voice_state = false
       self.silent = "this film has no sound"
     else
-      local v, why = open_voice(self.path, self.sound.track, self.name)
+      local v, why = open_voice(self)
 
       self.voice_state = v or false
       self.silent = not v and tostring(why) or nil
@@ -1214,8 +1071,9 @@ function film:pause()
 end
 
 --
--- Somewhere else in the film. The sound starts again from the frame that
--- holds that moment, and the picture follows it.
+-- Somewhere else in the film. The reading goes back to the key picture
+-- before it, the sound starts again from the frame that holds that moment,
+-- and the picture follows it.
 --
 function film:seek(at)
   local c = self.clock
@@ -1223,6 +1081,7 @@ function film:seek(at)
   at = math.max(0, math.min(at or 0, self.duration))
   c.at, c.since, c.by_counter = at, sys.ticks(), false
   self.started = true
+  self:reposition(math.floor(at * 1e6 + 0.5))
 
   local v = self:voice()
 
@@ -1291,10 +1150,15 @@ function film:close()
 
   if self.picture then self.picture:free() self.picture = nil end
   if self.spare then self.spare:free() self.spare = nil end
-  if self.stream then self.stream:close() self.stream = nil end
-  if self.page then regions.free(self.page) self.page = nil end
+  if self.held then self.held:free() self.held = nil end
 
-  self.track, self.movie, self.shown = nil, nil, nil
+  if self.vq then drop_all(self.vq) end
+  if self.aq then drop_all(self.aq) end
+
+  if self.vdec then self.vdec:close() self.vdec = nil end
+  if self.src then self.src:close() self.src = nil end
+
+  self.shown = nil
 end
 
 return video

@@ -44,7 +44,7 @@ APPS = "/Home/Apps"
 # carries its `package.txt` - this build's, from `packages.py` - so a
 # netboot can tell a copy from another build and bring this one
 # (`systemapps.lua`).
-SYSTEM = {"JetSki"}
+SYSTEM = {"JetSki", "Video"}
 SYSTEM_APPS = "/Home/System/Apps"
 
 # **Kosmos's WebKit, on the disk** (Diego, 15 November 2026: "One WebKit
@@ -179,6 +179,18 @@ def media(arch, apps, staged, objcopy):
 
     mine.append((manifest, "package.txt"))
     return ["%s:%s/%s" % (here, MEDIA, inside) for here, inside in mine]
+
+
+def film_pairs(arch, apps):
+    """What a suite that plays a film puts on its disk (`docs/media.md` M6c):
+    the Video app's folder and `media.elf`, the image it and `listen` play
+    in, as the install would. Empty of the image where `make apps` did not
+    link it, which the suite names."""
+    staged = os.path.join(ROOT, "build", "installed", arch)
+    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-elf-") + "objcopy"
+    guest = SYSTEM_APPS + "/Video"
+    mine = ["%s:%s/%s" % (here, guest, inside) for here, inside in programs("Video")]
+    return mine + media(arch, apps, staged, objcopy)
 
 
 def llm(arch, apps, staged, objcopy):

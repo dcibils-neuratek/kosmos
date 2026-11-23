@@ -707,7 +707,7 @@ local function new_namespace()
   -- (`docs/mailweb.md`). A program names it `-- kosmos: image webkit`
   -- (`IMAGES.SYSTEM`).
   --
-  ns.SYSTEM_APPS = { "JetSki" }
+  ns.SYSTEM_APPS = { "JetSki", "Video" }
 
   function ns.mount_system_apps(disk)
     for _, name in ipairs(ns.SYSTEM_APPS) do
@@ -4698,8 +4698,28 @@ local function spawn_grants(ns, path, caps, held)
   -- Bluetooth and the tiles. Nothing a declaration alone may not have:
   -- the processes, audio's band, the network and the keyring stay the
   -- image's to say. Flight, installed, asks the tiles this way.
+  --
+  -- **But a system application's `needs audio` is heard** (`docs/media.md`
+  -- M6c): a program read through `/Kosmos/Apps/<name>`, the read-only
+  -- mount of a folder in `ns.SYSTEM_APPS`, is Kosmos's own, installed by
+  -- the build as the image is, and Video moved there from the image at M6
+  -- with its sound thread in the band. Only the band, which its budget
+  -- bounds (`kernel/sched.h`): a thread there that runs longer than a ring
+  -- drops back. The processes, the network and the keyring stay the
+  -- image's.
+  local function system_app()
+    for _, folder in ipairs(ns.SYSTEM_APPS or {}) do
+      if tostring(path):sub(1, #folder + 14) == "/Kosmos/Apps/" .. folder .. "/" then
+        return true
+      end
+    end
+
+    return false
+  end
+
   if attrs and attrs.needs == nil and attrs.kind ~= "program" then
     local source = ns.read(path)
+    local own = system_app()
 
     for line in (type(source) == "string" and source .. "\n" or ""):gmatch("(.-)\n") do
       if line ~= "" and not line:match("^%-%-") then break end
@@ -4708,6 +4728,7 @@ local function spawn_grants(ns, path, caps, held)
 
       for want in (words or ""):gmatch("%S+") do
         if SPAWN_DECLARED[want] then give(SPAWN_DECLARED[want]) end
+        if want == "audio" and own then flags = flags | SPAWN_AUDIO_BAND end
       end
     end
   end

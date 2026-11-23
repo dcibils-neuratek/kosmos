@@ -21,7 +21,10 @@ lasts, by the sound's clock.
 
 Then it is paused and sought: the clock stands still while paused and at
 2.0 after the seek, and about two seconds of sound come out rather than
-three. Then the Video app opens it and says it can be heard.
+three. Then the Video app opens it and says it can be heard; opens a WebM
+too, VP9 and Opus, made here by Homebrew's ffmpeg, which the Media Kit
+reads since M6; and a program outside `media.elf` asks `video.open` for the
+film and is refused with a sentence that names the image.
 
 **And under heavy load**, with `--load` (`docs/playback.md`, step 3): a
 boot of its own in which the Video app plays the film while four `spin
@@ -35,11 +38,17 @@ recorded is the reference again, every sample within two steps: a gap is a
 shift, which the comparison sees. **Control**: the thread started outside
 the band, where the spinners outrank it.
 
-Usage: run_film.py IMAGE [--load]
+Since M6 (`docs/media.md`) a film plays in `media.elf`, the image with
+the Media Kit: the disk carries it in /Home/System/Media, and the Video app
+in /Home/System/Apps/Video, as the install puts them (`installed.film_pairs`),
+from the test userland's APPS.
+
+Usage: run_film.py IMAGE APPS [--load]
 """
 
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -53,6 +62,48 @@ import scratch                                              # noqa: E402
 from run_media import jpeg_grey                              # noqa: E402
 
 LUA = os.path.join(ROOT, "build", "host", "lua")
+
+
+FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+
+# A program outside `media.elf` - no `kosmos: image` - asking for the film:
+# refused, and the sentence names the image it would need.
+NO_KIT = ('fs.write("/Temporary/nokit.lua", [=[local video = use("/Kosmos/Libraries/video.lua") '
+          'local f, why = video.open("/Home/sound.mp4") '
+          'print("NOKIT " .. tostring(f) .. " " .. tostring(why))]=])')
+
+
+def make_webm(work):
+    """Two seconds of VP9 and Opus in WebM, as YouTube serves a film."""
+    out = os.path.join(work, "film.webm")
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24:duration=2",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2",
+                    "-c:v", "libvpx-vp9", "-deadline", "realtime", "-g", "24",
+                    "-c:a", "libopus", out], check=True)
+    return out
+
+
+def make_disk(image, disk, path, more=()):
+    """The suite's /Home: the film, the Video app and `media.elf`. False,
+    said, when `make apps` has not linked the image."""
+    import installed
+
+    arch = "x86_64" if "x86_64" in image else "aarch64"
+    words = [w for w in sys.argv[2:] if not w.startswith("--")]
+    apps = words[0] if words else os.path.join(
+        ROOT, "build", "user-x86_64-test" if arch == "x86_64" else "user-test", "apps")
+    pairs = installed.film_pairs(arch, apps)
+
+    if not any(p.endswith("/media.elf") for p in pairs):
+        print("FAIL: no media.elf in %s - `make apps` builds it" % apps)
+        return False
+
+    size = sum(os.path.getsize(p.split(":", 1)[0]) for p in pairs) // (1024 * 1024)
+    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, str(size + 64),
+                    path + ":/Home/sound.mp4"] + list(more) + pairs, check=True,
+                   capture_output=True, cwd=ROOT)
+    return True
 AAC = os.path.join(ROOT, "build", "downloads", "aac-conformance")
 RATE = 44100
 FRAMES = 130                    # AAC frames: 130 x 1024 samples, 3.02 s
@@ -234,9 +285,14 @@ def main():
 
     config, sound, ref = aac_frames()
     film(path, config, sound)
-    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
-                    path + ":/Home/sound.mp4"], check=True,
-                   capture_output=True, cwd=ROOT)
+    if not os.path.exists(FFMPEG):
+        print("FAIL: no ffmpeg on this Mac to make the WebM with (brew install ffmpeg)")
+        return 1
+
+    webm = make_webm(work)
+
+    if not make_disk(image, disk, path, [webm + ":/Home/film.webm"]):
+        return 1
 
     os.environ["KOSMOS_DISK"] = disk
     os.environ["KOSMOS_AUDIO_WAV"] = wav
@@ -341,7 +397,8 @@ def main():
                      first[4] if first else "", first[5] if first else "", how))
 
         # Paused, and sought.
-        guest.type('fs.write("/Temporary/seek.lua", [=[' + SEEKS + ']=])')
+        guest.type('fs.write("/Temporary/seek.lua", "-- kosmos: image media\\n" .. [=['
+                   + SEEKS + ']=])')
         time.sleep(1.0)
         mark = os.path.getsize(wav)
         seen = len(guest.seen)
@@ -379,6 +436,28 @@ def main():
                                    seen)
         check("sound AAC-LC, heard" in line,
               "the Video app said %r, not that the sound is heard" % line)
+
+        # A WebM, VP9 and Opus: the Media Kit's, since M6. The desktop the
+        # first Video started has the keys, so it is stopped first, and the
+        # prompt has them again.
+        R.stop_desktop(guest)
+        seen = len(guest.seen)
+        guest.type("wm video:/Home/film.webm")
+        line = guest.wait_for_line("video: film.webm, ", "the Video app on a WebM", seen)
+        check(line.startswith("VP9, 320x240") and "sound Opus, heard" in line,
+              "the Video app said %r of a WebM, not VP9 at 320x240 with Opus heard" % line)
+
+        # And outside `media.elf`, refused with the image named.
+        R.stop_desktop(guest)
+        guest.type(NO_KIT)
+        time.sleep(0.5)
+        guest._read_available()
+        seen = len(guest.seen)
+        guest.type("/Temporary/nokit.lua")
+        line = guest.wait_for_line("NOKIT ", "a program outside media.elf", seen)
+        check(line.startswith("nil ") and "media.elf" in line
+              and "kosmos: image media" in line,
+              "video.open outside media.elf said %r, not a refusal naming it" % line)
     except R.Failure as e:
         fails.append(str(e))
     finally:
@@ -394,7 +473,8 @@ def main():
     offset, shared, far, worst, _ = fit
     print("PASS: %d checks on a film's sound (AAC-LC through /Kosmos/Libraries/video.lua, "
           "%.2f s of it heard within %d of FFmpeg's reference, a %.2f s film "
-          "in %.2f s by its own clock, and the Video app hearing it)"
+          "in %.2f s by its own clock, the Video app hearing it and a WebM's "
+          "Opus, and video.open refused outside media.elf)"
           % (checks, shared / RATE, worst, float(said.group(3)),
              float(said.group(4))))
     return 0
@@ -422,9 +502,8 @@ def main_loaded():
 
     config, sound, ref = aac_frames()
     film(path, config, sound)
-    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
-                    path + ":/Home/sound.mp4"], check=True,
-                   capture_output=True, cwd=ROOT)
+    if not make_disk(image, disk, path):
+        return 1
 
     os.environ["KOSMOS_DISK"] = disk
     os.environ["KOSMOS_AUDIO_WAV"] = wav

@@ -7,14 +7,16 @@
  *
  *   media.version()            FFmpeg's, as `media_version` says it
  *   media.open(path)           a source, or nil and why
- *   src:streams()              { { kind, codec, duration_us, width, height,
- *                                  bits, fps_num, fps_den, rate, channels } }
+ *   src:streams()              { { kind, codec, profile, duration_us, width,
+ *                                  height, bits, fps_num, fps_den, rate,
+ *                                  channels } }
  *   src:read()                 the next packet, or nil at the end, or nil
  *                              and why when the reading stopped
  *   src:seek(us)               to the key picture at or before `us`
  *   src:decoder(i [, threads]) a decoder for stream `i` (M6b, below)
  *   src:close()
- *   packet.stream, .pts_us, .dts_us, .duration_us, .key, .size
+ *   packet.stream, .pts_us, .dts_us, .duration_us, .key, .size, .at
+ *                              (.at its bytes' address, for a C decoder)
  *
  * **The bytes stay in C.** A packet is a userdata over the kit's own
  * packet, freed when it is collected or `free`d, and nothing of what it
@@ -188,6 +190,8 @@ static int l_streams(lua_State *L)
         lua_setfield(L, -2, "kind");
         lua_pushstring(L, m.codec);
         lua_setfield(L, -2, "codec");
+        lua_pushstring(L, m.profile);
+        lua_setfield(L, -2, "profile");
 
         if (m.duration_us != MEDIA_NO_TIME) {
             set_int(L, "duration_us", m.duration_us);
@@ -305,6 +309,10 @@ static int l_packet_index(lua_State *L)
         lua_pushboolean(L, p->p.key);
     } else if (strcmp(k, "size") == 0) {
         lua_pushinteger(L, (lua_Integer)p->p.size);
+    } else if (strcmp(k, "at") == 0) {
+        /* Where its bytes are, for a decoder in C that takes an address -
+         * `gfx.jpeg`, Motion JPEG's (`video.lua`) - never as a string. */
+        lua_pushinteger(L, (lua_Integer)(uintptr_t)p->p.data);
     } else {
         lua_pushnil(L);
     }

@@ -221,6 +221,11 @@ int media_stream(const struct media_source *s, int i, struct media_stream *out)
     out->kind = p->codec_type == AVMEDIA_TYPE_VIDEO ? MEDIA_VIDEO
               : p->codec_type == AVMEDIA_TYPE_AUDIO ? MEDIA_AUDIO : MEDIA_OTHER;
     snprintf(out->codec, sizeof out->codec, "%s", avcodec_get_name(p->codec_id));
+    {
+        const char *profile = avcodec_profile_name(p->codec_id, p->profile);
+
+        snprintf(out->profile, sizeof out->profile, "%s", profile ? profile : "");
+    }
     out->duration_us = to_us(st->duration, st->time_base);
     if (out->duration_us == MEDIA_NO_TIME && s->fmt->duration != AV_NOPTS_VALUE)
         out->duration_us = s->fmt->duration;

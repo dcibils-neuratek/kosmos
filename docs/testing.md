@@ -43103,3 +43103,54 @@ before), and `gfx_draw_i420` is the H.264 kit's conversion, held by
 `tools/test_yuv.c`. A wrong matrix would show only in M6c's picture of a
 film.
 
+## 18.1017 Video on the Media Kit, in `media.elf` (M6c)
+
+**What is checked.** `x86-film` and `x86-film-load` put the Video app's
+folder and `media.elf` on their disks, as the install does
+(`installed.film_pairs`). `listen`, `play`, Video and the suites' own
+programs name `-- kosmos: image media`. `x86-film` checks what it did
+before, now through the Media Kit: the Motion JPEG and AAC film heard
+sample for sample against FFmpeg's reference, paused, sought, and opened in
+Video with its sound heard. Two checks are new:
+
+* Video opens a two-second WebM (VP9 and Opus, made by Homebrew's ffmpeg)
+  and says "VP9, 320x240" and "sound Opus, heard";
+* a program outside `media.elf` asks `video.open` for the film, and is
+  refused with a sentence naming `media.elf` and `kosmos: image media`.
+
+`x86-record` decodes the Camera's recording through the new `video.lua`:
+the film's time is walked a quarter of a frame at a time, every distinct
+picture is counted against the frames recorded, and the eight bars are
+read off the last. `test_filetypes.lua` holds Video as a system
+application, opening `.webm` and `.mkv`, and before Play. `x86-queries`'
+K-OPENS no longer names Video, which is not on that machine's disk.
+
+**Result**: PASS. `x86-film` 18 checks, its sound within 1 step of the
+reference; `x86-film-load` 10; `x86-record`; `x86-queries` 38;
+`x86-mediakit`; `test_filetypes` 59.
+
+**Controls**:
+
+* the WebM left out of `media.lua`'s films: Video never opens it, and the
+  check fails. (Leaving it out of the Video app's own `FILM_TYPES` did not
+  fail, and should not: that list only filters a folder's films.)
+* before the audio band was granted to a system application's header,
+  `x86-film-load` failed on "the kit not in the audio band", and the
+  thread was away 69 ms.
+
+**Findings on the way.** After the first `wm video:`, the keys belong to
+the desktop, so a second `wm` typed at the prompt never arrived; the suite
+stops the desktop first (`R.stop_desktop`). And a check that waits for a
+marker must start after the echo of the line that prints it.
+
+
+**And two checks it moved, in the whole gate.** Video is on the disk now,
+and the display harness boots with none, so its File types check (`check_file_types`,
+`x86-display-1`) found one opener for a film - Play - and no choice: it is
+held on a Markdown note instead, Text Editor the default and Reader the
+other, the same steps. And Quick Look (`x86-quicklook`) can no longer play
+a film in Tracker, which is not in `media.elf`: it holds the panel naming
+the film and saying why, and that no picture plays, until its preview comes
+from `media.elf` (`roadmap.md`). The gate: 161 suites, those two failing and
+fixed, `x86-usb-3` and `x86-tcploss` failing under its load and passing
+alone (18.1012).

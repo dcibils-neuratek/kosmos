@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: needs audio
+-- kosmos: image media
 --
 -- `listen <file>` - a film's or a song's sound, at the prompt, to its end.
 --

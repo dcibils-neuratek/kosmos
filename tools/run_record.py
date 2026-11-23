@@ -4,8 +4,8 @@
 
 The display harness's machines have no disk - `/Home` is in memory there, and
 a recording is kept whole in a region and written with one `write_from`,
-which only kfs takes - so this boots its own, with a scratch disk the machine
-formats itself and the driver's test pattern for a camera.
+which only kfs takes - so this boots its own, with a scratch disk and the
+driver's test pattern for a camera.
 
 The Camera app opens on the pattern; R starts a recording and R stops it,
 four seconds later; the app says how many frames and bytes it kept and where.
@@ -16,16 +16,25 @@ size, as many samples as frames, the first a key frame. And played
 each coming out as the frame asked for, and the pattern's eight bars read
 back off the picture in their colours.
 
-Usage: run_record.py IMAGE
+Since M6 (`docs/media.md`) a film plays in `media.elf`: the scratch disk
+is made here, formatted, with `media.elf` on it as the install puts it
+(`installed.film_pairs`), from the test userland's APPS.
+
+Usage: run_record.py IMAGE APPS
 """
 
 import os
 import re
+import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scratch                                              # noqa: E402
+import installed                                            # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 
 DISK = scratch.disk("record.img", 64 * 1024 * 1024)
 os.environ["KOSMOS_DISK"] = DISK
@@ -46,28 +55,33 @@ READ_BACK = (
     'and t.samples[1].key) print("MP4" .. "-READ")')
 
 # And the recording played: every frame decoded through `/Kosmos/Libraries/video.lua`, as
-# the Video app decodes it - the MP4 reader, the H.264 Kit, FFmpeg and the
-# conversion onto a surface - counting the frames that came out as the one
-# asked for, and the eight bars' colours read off the last, a quarter of the
-# way down and in the middle of each bar. A program in /Temporary rather than a
-# line at the prompt, because a program has `use`; in a `[=[` string,
-# because the program says `samples[order[i]]` and `]]` would end a `[[`.
+# the Video app decodes it - the Media Kit's demuxer and FFmpeg's H.264
+# decoder in `media.elf` (`docs/media.md` M6c), and the picture onto a
+# surface - with the film's time walked from its start to past its end a
+# quarter of a frame at a time, every distinct picture shown counted, and
+# the eight bars' colours read off the last, a quarter of the way down and in
+# the middle of each bar. A program in /Temporary naming the image, in a
+# `[=[` string, its header line put in front with a `\n` the prompt does not
+# see as a line's end.
 DECODE = (
-    'fs.write("/Temporary/decode.lua", [=[local video = use("/Kosmos/Libraries/video.lua") '
+    'fs.write("/Temporary/decode.lua", "-- kosmos: image media\\n" .. '
+    '[=[local video = use("/Kosmos/Libraries/video.lua") '
     'local f, why = video.open(args) '
     'if not f then print("DECODE-ERR " .. tostring(why)) '
     'print("DECODE" .. "-DONE") return end '
-    'local samples, order = f.track.samples, f.order '
-    'local exact, began = 0, sys.ticks() '
-    'for i = 1, f.frames do local want = samples[order[i]].pts '
-    'for _ = 1, 50 do f:frame(i) '
-    'if f.shown_pts == want then exact = exact + 1 break end end end '
+    'local step = 1 / (4 * math.max(1, f.fps)) '
+    'local t, seen, last, began = 0, 0, nil, sys.ticks() '
+    'while t <= f.duration + 1 do '
+    'for _ = 1, 20 do f:picture_at(t) '
+    'if f.pending_pts or (f.shown_pts and f.shown_pts >= t * 1e6) then break end end '
+    'if f.shown_pts and f.shown_pts ~= last then seen = seen + 1 last = f.shown_pts end '
+    't = t + step end '
     'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1 '
     'local bars = {} for b = 0, 7 do bars[#bars + 1] = ("%06x"):format('
     'f.picture:get(((2 * b + 1) * f.width) // 16, f.height // 4) & 0xffffff) '
-    'end print(("DECODE %s %d %d %.1f %s"):format(f.codec:gsub(" ", ""), '
-    'exact, f.frames, (sys.ticks() - began) * 1000 / hz / '
-    'math.max(1, f.frames), table.concat(bars, ","))) '
+    'end print(("DECODE %s %d %.1f %s"):format(f.codec:gsub(" ", ""), '
+    'seen, (sys.ticks() - began) * 1000 / hz / '
+    'math.max(1, seen), table.concat(bars, ","))) '
     'print("DECODE" .. "-DONE") f:close()]=])')
 
 # The pattern's bars (`pattern_draw` in xhci.c) are 100% colours: white,
@@ -89,7 +103,20 @@ def near(got, want):
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+    arch = "x86_64" if "x86_64" in image else "aarch64"
+    apps = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
+        ROOT, "build", "user-x86_64-test" if arch == "x86_64" else "user-test", "apps")
+    pairs = installed.film_pairs(arch, apps)
     checks, fails = 0, []
+
+    if not any(p.endswith("/media.elf") for p in pairs):
+        print("FAIL: no media.elf in %s - `make apps` builds it" % apps)
+        return 1
+
+    size = sum(os.path.getsize(p.split(":", 1)[0]) for p in pairs) // (1024 * 1024)
+    subprocess.run([os.path.join(ROOT, "build", "host", "lua"),
+                    os.path.join(HERE, "kfs.lua"), "create", DISK, str(size + 64)] + pairs,
+                   check=True, capture_output=True, cwd=ROOT)
 
     def check(ok, complaint):
         nonlocal checks
@@ -161,22 +188,20 @@ def main():
         guest.type("/Temporary/decode.lua " + path)
         guest.wait_for("DECODE-DONE", "the recording decoded")
         said = guest.seen[mark:]
-        row = re.search(r"^DECODE (\S+) (\d+) (\d+) ([\d.]+) (\S+)", said,
-                        re.M)
+        row = re.search(r"^DECODE (\S+) (\d+) ([\d.]+) (\S+)", said, re.M)
         check(row is not None,
               "the recording did not decode: %r" % said[-400:])
 
         if row:
-            codec, exact, total = row.group(1), int(row.group(2)), \
-                int(row.group(3))
-            decode_ms = float(row.group(4))
-            bars = [int(b, 16) for b in row.group(5).split(",")]
+            codec, seen = row.group(1), int(row.group(2))
+            decode_ms = float(row.group(3))
+            bars = [int(b, 16) for b in row.group(4).split(",")]
             bars_seen = bars
 
             check(codec == "H.264", "Video decoded it as %r" % codec)
-            check(total == frames and exact == frames,
-                  "%d of %d frames came out as the frame asked for"
-                  % (exact, total))
+            check(seen == frames,
+                  "%d pictures came out of the %d frames recorded"
+                  % (seen, frames))
             check(len(bars) == 8 and all(near(g, w)
                                          for g, w in zip(bars, BARS)),
                   "the bars came back %s, and the pattern's are %s"

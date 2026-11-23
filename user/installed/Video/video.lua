@@ -3,8 +3,11 @@
 -- kosmos: icon App_MediaPlayer
 -- kosmos: name Video Player
 -- kosmos: section applications
--- kosmos: opens mp4 m4v mov
+-- kosmos: opens mp4 m4v mov webm mkv
 -- kosmos: needs audio
+-- kosmos: image media
+-- kosmos: depends media
+-- kosmos: about Films in every format the Media Kit reads
 --
 -- Video: a window that plays a film.
 --
@@ -73,7 +76,7 @@ while i <= #words do
   i = i + 1
 end
 
-local FILM_TYPES = { mp4 = true, m4v = true, mov = true }
+local FILM_TYPES = { mp4 = true, m4v = true, mov = true, webm = true, mkv = true }
 
 local function is_film(name)
   local kind = tostring(name):lower():match("%.(%w+)$")

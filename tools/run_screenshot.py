@@ -8582,25 +8582,30 @@ def check_file_types(guest):
     programs handle those files".
 
     Each application says what it opens in its header; the File types page
-    lists every type something opens. Opened on it with `--find mp4`, as a
+    lists every type something opens. Opened on it with `--find md`, as a
     person typing in its Find field would:
 
       it says it shows one row, and where its choice is;
-      Play chosen there for a film is what the page says it chose, and what
+      Reader chosen there for a note is what the page says it chose, and what
       `/Home/Preferences/filetypes` keeps - only that, the one choice that
       differs from the default;
-      Info on a film then says it opens with Play, of Video and Play.
+      Info on a note then says it opens with Reader, of Text Editor and Reader.
 
     **The control**: with the choice taken out of the file, Info on the same
-    film says Video, the default - so it was the choice that Info read.
+    note says Text Editor, the default - so it was the choice that Info read.
 
-    And Tracker's right click on the film: Open with, Video the default and
-    then Play, and Play chosen starts Play on it, this once.
+    And Tracker's right click on the note: Open with, Text Editor the default
+    and then Reader, and Reader chosen starts Reader on it, this once.
+
+    **A note, not a film**, since 0.12.96: Video is an application on the
+    disk now (`docs/media.md` M6c), and this machine has none, so Play alone
+    opens a film here. Markdown is what two of the image's own applications
+    open.
     """
-    guest.type('fs.write("/Home/film.mp4", "a film, as far as its name goes") '
+    guest.type('fs.write("/Home/note.md", "a note, as far as its name goes") '
                'fs.write("/Home/Preferences/filetypes", {}) '
                'print("types" .. "-set")')
-    guest.wait_for("types-set", "put a film in /Home")
+    guest.wait_for("types-set", "put a note in /Home")
 
     def stop():
         back = len(guest.seen)
@@ -8618,7 +8623,7 @@ def check_file_types(guest):
 
     try:
         mark = len(guest.seen)
-        guest.type("wm preferences:filetypes --find mp4")
+        guest.type("wm preferences:filetypes --find md")
         line = guest.wait_for_line("wm: window Preferences at ",
                                    "Preferences to open", mark)
         said = guest.wait_for_line("preferences: file types, ",
@@ -8626,7 +8631,7 @@ def check_file_types(guest):
         found = re.match(r"(\d+) rows, a choice at (\d+),(\d+)", said)
 
         if not found or found.group(1) != "1":
-            raise Failure("the File types page found for mp4 is not one row "
+            raise Failure("the File types page found for md is not one row "
                           "with a choice in it: %r" % said)
 
         x, y = (int(v) for v in re.match(r"(\d+),(\d+)", line).groups())
@@ -8645,67 +8650,67 @@ def check_file_types(guest):
         before = len(guest.seen)
         click(x + cx, y + cy)
         menu = guest.wait_for_line("wm: menu of Preferences at ",
-                                   "the film's choice to open", before)
+                                   "the note's choice to open", before)
         mx, my = (int(v) for v in re.match(r"(\d+),(\d+)", menu).groups())
         time.sleep(1.0)
         click(mx + 20, menu_row_middle(my, 2))
-        chose = guest.wait_for_line("preferences: .mp4 opens with ",
-                                    "Play to be chosen for a film", before)
+        chose = guest.wait_for_line("preferences: .md opens with ",
+                                    "Reader to be chosen for a note", before)
     finally:
         stop()
 
-    if chose != "play":
-        raise Failure("choosing Play for a film said %r" % chose)
+    if chose != "reader":
+        raise Failure("choosing Reader for a note said %r" % chose)
 
     guest.type('local t = fs.read("/Home/Preferences/filetypes") or {} '
                'local n = 0 for _ in pairs(t) do n = n + 1 end '
-               'print("types" .. "-kept", t.mp4, n)')
+               'print("types" .. "-kept", t.md, n)')
     kept = guest.wait_for_line("types-kept\t", "the choice read back")
 
-    if kept.split("\t") != ["play", "1"]:
-        raise Failure("/Home/Preferences/filetypes does not keep Play for a "
-                      "film and nothing else: %r" % kept)
+    if kept.split("\t") != ["reader", "1"]:
+        raise Failure("/Home/Preferences/filetypes does not keep Reader for a "
+                      "note and nothing else: %r" % kept)
 
     def info_says():
         mark = len(guest.seen)
-        guest.type("wm info:/Home/film.mp4")
+        guest.type("wm info:/Home/note.md")
 
         try:
-            return guest.wait_for_line("info: .mp4 opens with ",
-                                       "Info to say what opens a film", mark)
+            return guest.wait_for_line("info: .md opens with ",
+                                       "Info to say what opens a note", mark)
         finally:
             stop()
 
     shown = info_says()
 
-    if shown != "play, of video, play":
-        raise Failure("Info on a film, with Play chosen, says %r" % shown)
+    if shown != "reader, of texteditor, reader":
+        raise Failure("Info on a note, with Reader chosen, says %r" % shown)
 
     guest.type('fs.write("/Home/Preferences/filetypes", {}) '
                'print("types" .. "-cleared")')
     guest.wait_for("types-cleared", "take the choice out")
     shown = info_says()
 
-    if shown != "video, of video, play":
-        raise Failure("Info on a film with nothing chosen says %r - wanted "
-                      "Video, the default" % shown)
+    if shown != "texteditor, of texteditor, reader":
+        raise Failure("Info on a note with nothing chosen says %r - wanted "
+                      "Text Editor, the default" % shown)
 
     #
-    # **Open with, from Tracker's right click**: on the film, its second
-    # row, and in it Video, the default, then Play - which starts Play on
-    # the film, this once. A folder with only the film in it, so it is the
+    # **Open with, from Tracker's right click**: on the note, its second
+    # row, and in it Text Editor, the default, then Reader - which starts
+    # Reader on the note, this once. A folder with only the note in it, so it is the
     # list's first row.
     #
     guest.type('fs.send("/Home/typestest", { type = "mkdir" }) '
-               'fs.write("/Home/typestest/film.mp4", "a film, by its name") '
+               'fs.write("/Home/typestest/note.md", "a note, by its name") '
                'print("types" .. "-folder")')
-    guest.wait_for("types-folder", "put a film in a folder of its own")
+    guest.wait_for("types-folder", "put a note in a folder of its own")
 
     try:
         mark = len(guest.seen)
         guest.type("wm tracker:/Home/typestest")
         line = guest.wait_for_line("wm: window Tracker at ",
-                                   "Tracker to open on the film", mark)
+                                   "Tracker to open on the note", mark)
         content = guest.wait_for_line("tracker: content at ",
                                       "Tracker to say where its list is", mark)
         wx, wy = (int(v) for v in re.match(r"(\d+),(\d+)", line).groups())
@@ -8724,7 +8729,7 @@ def check_file_types(guest):
         time.sleep(0.1)
         guest.mouse_button(False, "right")
         said = guest.wait_for_line("wm: menu of Tracker at ",
-                                   "the film's menu to open", at)
+                                   "the note's menu to open", at)
         mx, my = (int(v) for v in re.match(r"(\d+),(\d+)", said).groups())
         time.sleep(1.0)
 
@@ -8742,12 +8747,12 @@ def check_file_types(guest):
         guest.mouse_button(True)
         time.sleep(0.1)
         guest.mouse_button(False)
-        launched = guest.wait_for_line("wm: launched play -> ",
-                                       "Play to start on the film from Open "
+        launched = guest.wait_for_line("wm: launched reader -> ",
+                                       "Reader to start on the note from Open "
                                        "with", at)
 
         if not launched.startswith("true"):
-            raise Failure("Play chosen from Open with did not start: %r"
+            raise Failure("Reader chosen from Open with did not start: %r"
                           % launched)
     finally:
         stop()

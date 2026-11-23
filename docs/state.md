@@ -353,8 +353,12 @@ Diego decided on 23 November: `media.elf` a system image, and the old FFmpeg
 out at M6): **M6a in 0.12.94** (18.1015), `media.elf` in
 `/Home/System/Media`, seen as `/Kosmos/Media`, and the Media Kit's Lua door
 demuxing; **M6b in 0.12.95** (18.1016), decoders from the door, held stream
-by stream to `mediatest`. Next: M6c, `video.lua` on the door with Video and
-`listen` in `media.elf`; M6d, the closure and `mp4.lua` out; M6e, Big Buck
+by stream to `mediatest`; **M6c in 0.12.96** (18.1017), `video.lua` on the
+door, Video a system application in `media.elf` playing WebM too. **For
+Diego**: a system application's `needs audio` is now granted (the band
+only), which Video's sound needed after leaving the image; and Tracker's
+film preview shows a refusal until a preview is drawn in `media.elf`
+(roadmap). Next: M6d, the closure and `mp4.lua` out; M6e, Big Buck
 Bunny. Then the new Music (`docs/player.md`, agreed, the old Music retired
 at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake

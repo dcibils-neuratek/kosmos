@@ -12230,9 +12230,13 @@ spend a day here; a laptop cannot.
   `/Kosmos/Media`, and the Lua door's demuxing, held to `mediatest`.
   **M6b built** (0.12.95, 18.1016): decoders from the door, pictures onto
   a surface and sound as an address, every stream's frames and times held
-  to `mediatest`'s. Next: M6c, `video.lua` on it with Video and
-  `listen` moved; M6d, the closure and `mp4.lua` out; M6e, Big Buck
-  Bunny.
+  to `mediatest`'s. **M6c built** (0.12.96, 18.1017): `video.lua` on the
+  door, Video a system application in `/Home/System/Apps/Video` naming
+  `media.elf`, WebM and Matroska opened, `listen` and `play` in the image;
+  a system application's `needs audio` granted. **Owed from M6c**:
+  Tracker's preview of a film (Q4) runs outside `media.elf` and shows the
+  refusal; a preview drawn in `media.elf` and lent to Tracker brings it
+  back. Next: M6d, the closure and `mp4.lua` out; M6e, Big Buck Bunny.
 - **Low-latency audio, in and out**: a microphone, USB audio interfaces,
   and the audio band for a web process (M4's owed pieces).
 - **Video calls**: WebRTC in JetSki - the camera that exists, the
@@ -13208,8 +13212,38 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   **U10f's QEMU half built** (0.12.93, `testing.md` 18.1014): noise found
   bit for bit at the speaker when `exact`, and not when each reason is
   introduced, with QEMU's speaker set to its top (`usbaudio=full`), the
-  only level of its own that is unity. Left: 96/24 on the M60, and Diego's
-  word on whether Kosmos sets a speaker's own volume to 0 dB.
+  only level of its own that is unity. Left: 96/24 on the M60.
+  **U10g AGREED 23 November** (Diego: "go with C"): Kosmos's master volume
+  drives a USB speaker's own volume control where it has one, as macOS
+  does, and the mix goes out at unity - exact at any volume; the master
+  in the mix where a speaker has none (`usbaudio.md`, U10g). To build.
+  **Hi-res FLAC and AIFF, file to speaker - AGREED 23 November** (Diego,
+  showing an album sold as 96 kHz / 24-bit FLAC and AIFF: "will kosmos be
+  able to play this hi res tracks?", then "yes add hi-res flac and aiff to
+  the roadmap"). What was true that day: the Media Kit decodes FLAC (its
+  FFmpeg has the decoder and the demuxer, and `x86-mediakit` holds a FLAC);
+  the sound path carries 24 and 32 bits to 192 kHz and the USB speaker
+  follows the best stream (U10a-U10f). What was missing, in order, after
+  U10g:
+  1. **The Media Kit's door hands sound at the decoder's own depth.**
+     `dec:sound()` (`media_kosmos.c`, M6b) rounds every sound to 16 bits,
+     which was right for a film's track and is wrong here: 24-bit
+     samples handed on as 24 (or 32), with the depth said, so a stream
+     opened at the file's own rate and depth (`AUDIO_OP_OPEN` with a
+     format) receives them untouched. `x86-mediakit` holds a 96/24 FLAC's
+     samples bit for bit against FFmpeg on the host.
+  2. **AIFF in the Media Kit**: FFmpeg's `aiff` demuxer and its big-endian
+     PCM decoders (`pcm_s16be`, `pcm_s24be`, `pcm_s32be`) in
+     `tools/w5_build.py`'s list, and an AIFF of 96/24 beside the FLAC in
+     `x86-mediakit`.
+  3. **The player opens `flac`, `aiff` and `aif`** - Music now, the new
+     player (`docs/player.md`) when it replaces it - through the Media Kit
+     in media.elf, with tags (FLAC's Vorbis comments and picture, AIFF's
+     ID3 chunk) and the format shown as it reaches the speaker:
+     *FLAC · 24-bit · 96 kHz*.
+  4. **Heard bit for bit on the M60**: a 96/24 FLAC and the same in AIFF,
+     alone at any master volume, `exact` and the speaker at setting 1.2,
+     96 kHz - U10f's M700 half, with real files.
   **The speaker's suite under the gate's load** (found 23 November,
   `testing.md` 18.1012): `x86-usb-3` fails one gate in two or three. A
   stream stops being taken, or a beep takes 41 s, because the guest is
