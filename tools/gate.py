@@ -44,6 +44,7 @@ Usage: gate.py [--jobs N] [--at-once N] [--arm] [--all] [--only NAME,...]
 """
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -197,31 +198,207 @@ def system_print(suites):
     return hashlib.sha256((tree + docs).encode()).hexdigest()
 
 
+#
+# **A suite runs for what it exercises, and the files are worked out rather
+# than written** (Diego, 23 November 2026: "a suite of os-core tests that
+# test the servers drivers kits kernel and else", "And one for apps and
+# other higher level parts"; `roadmap.md`, *Core and apps*, T1-T4). Of 236
+# suites 184 named no `watch` and stood on the whole tree, so a change to
+# one server ran 119 x86 suites. Each of them now names its **subjects** in
+# `suite_subjects.py` - an app, a server, a kit, a driver - and
+# `suitedeps.py` turns those into files: the build's `.d` files for C, the
+# `use()` chains for Lua. Then:
+#
+#   * what no suite claims - the kernel, `arch/`, `hal/`, init, the
+#     runtime - and the pieces every window stands on (`SHARED`) reach
+#     every suite, as the whole tree did;
+#   * a file some suites claim reaches those suites only;
+#   * an application's file no suite claims (`APP_LEVEL`) reaches the
+#     smoke tier alone, and the gate says nothing tests it;
+#   * the smoke tier (`SMOKE`) stands on the whole tree, so any change runs
+#     it: the desktop drawn, a window composed, a disk, the network.
+#
+# A suite whose subjects say `core` - it tests the system as a whole -
+# stands on every server and driver as well.
+#
+SHARED = tuple(RUNTIME) + ("kernel/", "arch/", "hal/", "boot/", "lua/", "Makefile",
+                           "tools/gate.py", "tools/suitedeps.py", "tools/suite_subjects.py",
+                           "user/lib/ui.lua", "user/lib/keys.lua", "user/lib/theme.lua",
+                           "user/lib/wmproto.lua", "user/lib/files.lua",
+                           "user/lib/filetypes.lua", "user/lib/wm/", "user/kits/gfx/",
+                           "user/servers/console")
+APP_LEVEL = ("user/bin/", "user/lib/", "user/installed/", "user/desktops/",
+             "user/themes/", "user/pages/", "user/templates/", "user/tutorial/",
+             "user/examples/", "tools/")
+
+
+@functools.lru_cache(maxsize=None)
+def build_tools():
+    """The scripts under tools/ the Makefile runs to make an image: shared,
+    since each changes what every image holds. Any other script reaches
+    only the suites that run it."""
+    with open(os.path.join(ROOT, "Makefile")) as f:
+        named = set(re.findall(r"tools/[\w./-]+\.(?:py|lua|sh|c)", f.read()))
+
+    # A runner or a host test the Makefile names is a suite's, not a builder.
+    return tuple(sorted(p for p in named if not re.match(r"tools/(run_|test_)", p)))
+SMOKE = ("x86-display-5", "x86-headless", "x86-disk", "x86-network", "x86-scene")
+
+
+def _files_under(paths):
+    """Every file a list of files, folders and globs names, relative."""
+    import glob as _glob
+
+    out = set()
+
+    for p in paths:
+        full = os.path.join(ROOT, p)
+
+        if any(c in p for c in "*?["):
+            out.update(os.path.relpath(q, ROOT) for q in _glob.glob(full, recursive=True)
+                       if os.path.isfile(q))
+        elif os.path.isdir(full):
+            for d, _, fs in os.walk(full):
+                out.update(os.path.relpath(os.path.join(d, f), ROOT) for f in fs)
+        elif os.path.isfile(full):
+            out.add(p)
+
+    return out
+
+
+def subject_files(suites):
+    """Each subject suite's own files, less what is shared: {name: set}."""
+    import suite_subjects
+    import suitedeps
+
+    by_name = {s.name: s for s in suites}
+    mine = {}
+
+    for name, entry in suite_subjects.SUBJECTS.items():
+        if name not in by_name or name in SMOKE:
+            continue
+
+        subjects = [x for x in entry["subjects"] if x != "core"]
+        files = set(suitedeps.suite_files(subjects))
+        files |= {a for a in by_name[name].cmd if a.startswith("tools/")}
+
+        if "core" in entry["subjects"]:
+            files |= {"user/servers", "user/drivers"}
+
+        mine[name] = {p for p in _files_under(files)
+                      if not p.startswith(SHARED + build_tools())}
+
+    return mine
+
+
+def tree_index(exclude):
+    """Every file in the tree as {path: blob id}, less `exclude`."""
+    return {p: h for p, h in blobs().items() if not p.startswith(exclude)}
+
+
+def subject_prints(suites, system):
+    """Each subject suite's fingerprint, and the application files nothing
+    tests: ({name: print}, [path])."""
+    import hashlib
+
+    mine = subject_files(suites)
+    claimed = set().union(*mine.values()) if mine else set()
+    docs = set(image_docs())
+    exclude = tuple(p for p in WRITING) + tuple(owned(suites))
+    index = {p: h for p, h in tree_index(exclude).items()}
+    index.update({p: h for p, h in tree_index(()).items() if p in docs})
+    # And `VERSION`, which every commit with a bump changes: a suite that
+    # stood on it would run on every commit for a number no suite reads.
+    untested = sorted(p for p in index if p not in claimed
+                      and (p.startswith(APP_LEVEL) or p == "VERSION")
+                      and not p.startswith(SHARED + build_tools()))
+    loose = set(untested)
+    base = hashlib.sha256()
+
+    for p in sorted(index):
+        if p not in claimed and p not in loose:
+            base.update(("%s %s\n" % (p, index[p])).encode())
+
+    for cmd in TOOLCHAIN:
+        base.update(_version(tuple(cmd)))
+
+    prints = {}
+
+    for name, files in mine.items():
+        h = base.copy()
+
+        for p in sorted(files):
+            h.update(("%s %s\n" % (p, index.get(p, "absent"))).encode())
+
+        prints[name] = h.hexdigest()
+
+    return prints, untested
+
+
+@functools.lru_cache(maxsize=None)
+def changed_since(since):
+    """The files changed since commit `since`, and in the tree now."""
+    git = ["git", "-C", ROOT]
+    names = set()
+
+    if since:
+        r = subprocess.run(git + ["diff", "--name-only", since, "--"], capture_output=True)
+        names |= set(r.stdout.decode().split())
+
+    r = subprocess.run(git + ["status", "--porcelain", "--untracked-files=all"],
+                       capture_output=True)
+    names |= {l[3:] for l in r.stdout.decode().splitlines() if len(l) > 3}
+    return names
+
+
 SSL = library("tools/run_ssl.py", "user/kits/ssltest", *W5)
 
 
-def fingerprint(paths, root=ROOT, toolchain=TOOLCHAIN):
-    """What `paths` hold, as one hash: git's for every tracked file, and the
-    bytes of every one that differs from it or is not tracked."""
+def blobs(paths=None, root=ROOT):
+    """Every file under `paths` (all of the tree for None) as {path: git's
+    blob id of what it holds now}. **The same id committed or not**: a file
+    being edited is hashed as git would name its blob, so committing it
+    changes nothing here. `fingerprint` used to hash the status lines and
+    the bytes beside the index's ids, and every commit after a gate made
+    each watched suite look changed with not a byte different."""
     import hashlib
 
-    h = hashlib.sha256()
     git = ["git", "-C", root]
-    h.update(subprocess.run(git + ["ls-files", "-s", "--"] + paths,
-                            capture_output=True, check=True).stdout)
-    changed = subprocess.run(git + ["status", "--porcelain", "-z",
-                                    "--untracked-files=all", "--"] + paths,
-                             capture_output=True, check=True).stdout
+    spec = ["--"] + list(paths) if paths is not None else []
+    index = {}
 
-    for entry in sorted(e for e in changed.split(b"\0") if len(e) > 3):
+    for entry in subprocess.run(git + ["ls-files", "-s", "-z"] + spec, capture_output=True,
+                                check=True).stdout.split(b"\0"):
+        if entry:
+            meta, name = entry.split(b"\t", 1)
+            index[name.decode()] = meta.split()[1].decode()
+
+    for entry in subprocess.run(git + ["status", "--porcelain", "-z",
+                                       "--untracked-files=all"] + spec,
+                                capture_output=True, check=True).stdout.split(b"\0"):
+        if len(entry) <= 3 or entry[:1] == b"R":
+            continue
+
         name = entry[3:].decode()
-        h.update(entry)
 
         try:
             with open(os.path.join(root, name), "rb") as f:
-                h.update(hashlib.sha256(f.read()).digest())
+                data = f.read()
+            index[name] = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
         except OSError:
-            h.update(b"gone")
+            index.pop(name, None)       # deleted: as if never there
+
+    return index
+
+
+def fingerprint(paths, root=ROOT, toolchain=TOOLCHAIN):
+    """What `paths` hold, as one hash: each file's blob id as it is now."""
+    import hashlib
+
+    h = hashlib.sha256()
+
+    for name, blob in sorted(blobs(paths, root).items()):
+        h.update(("%s %s\n" % (name, blob)).encode())
 
     for cmd in toolchain:
         h.update(_version(tuple(cmd)))
@@ -264,6 +441,13 @@ SUITES = [
                                  "qwen2.5-1.5b-instruct-q4_0", "qwen2.5-3b-instruct-q4_0"))],
     # The LLM Kit's steps on Vulkan, each held on this Mac's lavapipe
     # (`docs/xavier.md` X12, V3), named as `host-llm` is.
+    # **What each suite stands on, held** (T1): the derivation's own checks,
+    # with its control, and every suite's subjects naming real paths.
+    Suite("host-gate", ["sh", "-c", "python3 tools/test_suitedeps.py && "
+                                    "python3 tools/suite_subjects.py && "
+                                    "python3 tools/test_gatelibs.py"],
+          watch=["tools/gate.py", "tools/suitedeps.py", "tools/test_suitedeps.py",
+                 "tools/suite_subjects.py", "tools/test_gatelibs.py", "Makefile"]),
     Suite("host-llmvk", ["make", "--no-print-directory", "host-llmvk-check"],
           watch=["user/kits/llm", "user/kits/vulkan/kvk.c", "user/kits/vulkan/kvk.h",
                  "user/include/utf8.h", "user/include/gpuproto.h",
@@ -1535,6 +1719,8 @@ def main():
                         help="run the AArch64 suites too (held back for now)")
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")
+    parser.add_argument("--plan", action="store_true",
+                        help="say which suites would run, and why, and run none")
     parser.add_argument("--all", "--libs", dest="all", action="store_true",
                         help="run every suite, even one nothing it stands on changed for")
     args = parser.parse_args()
@@ -1618,7 +1804,19 @@ def main():
             pass
 
     system = system_print(SUITES)
-    prints = {s.name: fingerprint(s.watch) if s.watch else system for s in chosen}
+    subject, untested = subject_prints(SUITES, system)
+    prints = {s.name: fingerprint(s.watch) if s.watch else subject.get(s.name, system)
+              for s in chosen}
+    at_file = os.path.join(LOGS, "passed_at.json")
+
+    try:
+        with open(at_file) as f:
+            passed_at = json.load(f)
+    except (OSError, ValueError):
+        passed_at = {}
+
+    head = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"],
+                          capture_output=True).stdout.decode().strip()
 
     if not args.all and not args.only:
         same = [s.name for s in chosen if marks.get(s.name) == prints[s.name]]
@@ -1628,6 +1826,43 @@ def main():
             print("SKIP: %d suites, nothing they stand on changed since each passed%s; "
                   "ALL=1 runs them." % (len(same), ": " + ", ".join(same) if len(same) < 20 else ""),
                   flush=True)
+
+        # **Why each runs** (T4): the changed files that reached it, named
+        # once with the suites they brought - a selection that is wrong is
+        # then a line to read rather than a gate to wonder about.
+        mine = subject_files(SUITES)
+        claimed = set().union(*mine.values())
+        reasons = {}
+
+        loose = set(untested)
+        writing = tuple(WRITING) + tuple(owned(SUITES))
+        docs = set(image_docs())
+
+        for s in chosen:
+            files = {p for p in changed_since(passed_at.get(s.name))
+                     if not p.startswith(writing) or p in docs}
+            if s.watch:
+                files = {p for p in files if p.startswith(tuple(s.watch))}
+            elif s.name in mine:
+                files = {p for p in files if p in mine[s.name]
+                         or (p not in claimed and p not in loose)}
+            key = ", ".join(sorted(files)[:3]) + (" and %d more" % (len(files) - 3)
+                                                  if len(files) > 3 else "")
+            reasons.setdefault(key or "(never passed here, or ALL)", []).append(s.name)
+
+        for key, names in sorted(reasons.items(), key=lambda kv: -len(kv[1])):
+            print("RUN: %d for %s: %s" % (len(names), key,
+                                          " ".join(names) if len(names) <= 12
+                                          else " ".join(names[:12]) + " ..."), flush=True)
+
+        touched = sorted(set(untested) & changed_since(None))
+        if touched:
+            print("NOTE: no suite tests %s - the smoke tier alone runs for it"
+                  % ", ".join(touched), flush=True)
+
+        if args.plan:
+            print("PLAN: %d suites would run" % len(chosen))
+            return 0
 
         if not chosen:
             print("PASS: nothing to run - no suite stands on what changed since it last passed")
@@ -1709,6 +1944,11 @@ def main():
 
     with open(marks_file, "w") as f:
         json.dump(marks, f, indent=1, sort_keys=True)
+
+    passed_at.update({s.name: head for s in chosen if s.code == 0 and head})
+
+    with open(at_file, "w") as f:
+        json.dump(passed_at, f, indent=1, sort_keys=True)
 
     print()
     print("slowest: " + ", ".join("%s %.0fs" % (s.name, s.took) for s in

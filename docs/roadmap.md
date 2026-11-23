@@ -194,6 +194,13 @@ about 9.5 minutes, where ten were about sound. The order:
 - **T4, `make test` says why** each suite ran, the file that reached it.
 - `make prepush` stays every suite (decided 23 November). A suite past
   five minutes is split, as `x86-usb-2` was into `x86-usb-3`.
+**T1-T4 built in 0.12.90** (`testing.md` 18.1011): `audio.c` runs 33
+suites rather than 119, `mixer.lua` 6, a bump 5, the documents none; the
+smoke tier is five existing suites for now. **Left from it**: a smoke suite
+of its own, one boot, if the five prove slow or thin; the ported
+libraries' suites still stand on all of `user/include` through `RUNTIME`,
+so a protocol header runs them - their headers derived as the rest are; and
+a suite for each of the 68 application files nothing tests.
 
 **A gate that runs what a change reaches - AGREED and BUILT on 14 November
 2026.** Diego, after a 20-minute gate for W5f: "why do we run the entire

@@ -1075,6 +1075,21 @@ changed is what `make test` does by itself. `make test ALL=1` (`LIBS=1` is
 its older name) runs every suite whatever changed, naming one in `ONLY=`
 runs it, and `make prepush` runs `ALL=1` before every push.
 
+**And since 23 November each suite runs for what it exercises, the files
+worked out rather than written** - Diego: "a suite of os-core tests that
+test the servers drivers kits kernel and else", "And one for apps and other
+higher level parts", "we need to move faster". Each suite without a `watch`
+names its subjects - an app, a server, a kit, a driver - in
+`tools/suite_subjects.py`, with a tier, core or app; `tools/suitedeps.py`
+derives their files from the build's `.d` files and the `use()` chains. The
+kernel, `arch/`, `hal/`, init, the runtime, the image-building scripts and
+the shared kit pieces (`SHARED`) still reach every suite; an application's
+file no suite tests, a script, and `VERSION` reach only the smoke tier
+(`SMOKE`, about a minute), which runs on any change. `make test` prints why
+each suite ran, and `tools/gate.py --plan` says what would run. **A new
+suite names its subjects there, and a new application gets a suite** - the
+`NOTE` lines name the files nothing tests (`testing.md` 18.1011).
+
 **x86-64 only, for now.** Diego, 8 October 2026: "from now on lets do tests
 on x86 only and leave arm for a later period. i will tell you when to resume
 arm tests" - and "we need to be clever about what to test and the platforms

@@ -42794,3 +42794,65 @@ now, and each write is checked rather than assumed.
 never written, and the driver's own beep's WAV stopping at two seconds. Two
 old development stick images went (Diego: "Delete both"), and the 13 again
 passed, 13 of 13 in 290 s.
+
+## 18.1011 Each suite run for what it exercises (the test tiers, T1-T4)
+
+`roadmap.md`, *Core and apps* (Diego, 23 November: "we need to move
+faster", "paralellize as much work as possible"). Built as two lanes beside
+the session - the derivation and the suites' subjects - and folded in here.
+
+**Before**: 184 of 236 suites named no `watch` and stood on the whole tree.
+A change to `audio.c` ran 119 x86 suites, about 9.5 minutes, and so did a
+change to `VERSION` - which every bump makes.
+
+**`tools/suite_subjects.py`** gives each of those 184 its subjects - `app:`,
+`server:`, `kit:`, `driver:`, `lib:`, `files:`, and `core` for the 41 that
+test the system as a whole - and a tier, 114 core and 70 app, read off the
+script each runs. **`tools/suitedeps.py`** turns subjects into files: for C,
+the `.d` files the build writes, falling back to `#include`; for Lua, the
+`use()`, `require` and `sys.kit` chains, with the namespace's mapping read
+from the Makefile, `binfs.c`, `init.lua` and `sys_user.c`'s kit table. All
+69 applications in 0.21 s; a median application stands on 18 files.
+`test_suitedeps.py`, 21 checks; **its control**, the transitive follow
+switched off, fails 11 of 11.
+
+**The gate** (`subject_prints`): a file no suite claims - the kernel,
+`arch/`, `hal/`, init, the runtime, the scripts the Makefile builds images
+with - and the shared kit pieces (`SHARED`: `ui.lua`, the window manager,
+`gfx`, the console) reach every suite. A claimed file reaches its suites.
+An application's file, a script or `VERSION` that nothing claims reaches
+the smoke tier alone, said as a `NOTE`. The smoke tier (`SMOKE`:
+`x86-display-5`, `x86-headless`, `x86-disk`, `x86-network`, `x86-scene`,
+about a minute side by side) stands on the whole tree. `make test` prints
+`RUN:` lines - the files that reached each group of suites, against the
+commit each last passed at (`passed_at.json`) - and `tools/gate.py --plan`
+says what would run and runs nothing.
+
+**Measured with `--plan`**, one file changed at a time and put back:
+
+| changed | suites run |
+|---|---|
+| nothing, or `docs/state.md` | 0 |
+| `VERSION` | 5, the smoke tier |
+| `user/bin/apps/paint.lua` (no suite tests it) | 5, and said |
+| `user/bin/apps/mixer.lua` | 6 |
+| `tools/run_x86.py` | 11 |
+| `user/servers/audio.c` | 33 (was 119) |
+| `kernel/ipc.c`, `user/lib/ui.lua`, `tools/kfs.lua` | 128-130, all of x86 |
+
+**And a fingerprint changed by a commit with not a byte different.**
+`fingerprint` hashed the index's ids with the status lines and the bytes of
+what was being edited, so committing a file changed every watched suite's
+print: the 33 library suites were due again after U10c's commit with
+nothing in them changed. Every file is now hashed as git names its blob,
+committed or not (`blobs`), checked against `git hash-object` for a
+committed, an edited and an untracked file. The marks were carried over to
+the new prints for every suite that had passed at this content - today's
+gate and its rerun; only `VERSION`, the documents and the gate's own tools
+had changed since, which no image holds - leaving the ARM suites, paused,
+to run when ARM resumes. **`host-gate`** runs the derivation's checks, the
+subjects' and `test_gatelibs` whenever the gate's tools change.
+
+**What it costs**, as agreed: a dependency the derivation misses lets a
+break through to `make prepush`, which still runs every suite. The 68
+application files no suite tests are named, and are where a test is owed.
