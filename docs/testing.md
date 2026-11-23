@@ -42557,3 +42557,28 @@ time and 396 at 0.12.83, before the mix changed, so it is the load and not
 U10b. **The gate's length is the next thing to fix** (`CLAUDE.md`, five to
 ten minutes): Flight's 747 alone took 624 s.
 
+## 18.1004 The gate's length: where a whole run's time goes
+
+0.12.84's whole run was 163 suites and **10,905 suite-seconds**, on ten
+cores, so 1167 s of wall clock. The gate already starts the longest first
+(`times.json`), so the order cannot shorten it: it is the total. A suite
+under the gate's load takes about 1.8 times what it takes alone (`x86-flight-land`
+342 s against 195, `x86-cafesa3d-2` 583 against 243).
+
+| Suites | Suite-seconds |
+|---|---|
+| Flight: `x86-flight-747`, `x86-flight`, `x86-flight-land` | 1,522 |
+| Cafesa3D: `x86-cafesa3d-2`, `-1` | 719 |
+| The LLM Kit on the Mac: `host-llm`, `host-llmvk` | 822 |
+| `x86-llm-vk` | 464 |
+| `arm-sandbox-linuxsetup` | 386 |
+| `x86-ssl-slow` | 369 |
+| `x86-desktops` | 326 |
+
+**First, `host-llm` and `host-llmvk` name what they stand on** (`gate.py`):
+the LLM Kit, the tests, their references and the GPU kernels' sources. Both
+boot nothing, and until now both ran for every change, a change to the
+audio server among them. That takes 822 suite-seconds off any change that
+does not touch the LLM Kit. **Next**: the same checks in less time in
+Flight's and Cafesa3D's suites, the largest totals left.
+

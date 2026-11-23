@@ -236,10 +236,24 @@ SUITES = [
     # Everything that boots nothing: the filesystem's format, the decoders,
     # the licences and every syscall's arguments, in seconds.
     Suite("host", ["make", "--no-print-directory", "host-check"]),
-    Suite("host-llm", ["make", "--no-print-directory", "host-llm-check"]),
+    #
+    # **The LLM Kit on the Mac, five models held to llama.cpp: ten minutes of
+    # a core, and it boots nothing**, so it names what it stands on rather than
+    # the whole tree (testing.md 18.1003: every change ran it, a change to the
+    # audio server among them). What `test_llm` is built from, its references,
+    # and what the GPU's kernels header is made from - `make`'s own
+    # prerequisites for it. The Makefile, as for every library suite, is not in
+    # it, so a change to how it is built is `ONLY=host-llm` or `make prepush`.
+    #
+    Suite("host-llm", ["make", "--no-print-directory", "host-llm-check"],
+          watch=["user/kits/llm", "tools/test_llm.c", "tools/eu_emu.c", "tools/eu_emu.h",
+                 "tools/llm_reference_*", "tools/llmgpu_header.lua", "user/lib/llmgpu.lua",
+                 "user/lib/kc.lua", "user/lib/eu.lua", "lua/upstream"]),
     # The LLM Kit's steps on Vulkan, each held on this Mac's lavapipe
-    # (`docs/xavier.md` X12, V3): two seconds.
-    Suite("host-llmvk", ["make", "--no-print-directory", "host-llmvk-check"]),
+    # (`docs/xavier.md` X12, V3), named as `host-llm` is.
+    Suite("host-llmvk", ["make", "--no-print-directory", "host-llmvk-check"],
+          watch=["user/kits/llm", "user/kits/vulkan/kvk.c", "user/kits/vulkan/kvk.h",
+                 "tools/test_llmvk.c", "tools/vkshaders.py", "tools/upstream.py"]),
 
     # The kernel from inside: the largest test asset here, and the only thing
     # that exercises the kernel from inside it.
