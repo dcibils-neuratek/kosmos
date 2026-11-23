@@ -142,6 +142,10 @@ a second adds a fraction of that.
    one (the swap is by renames, above). Held by `x86-install`: a package
    installed for other protocols, a boot naming the server, and the new one
    in place without anybody typing; the control is a boot that names none.
+   **Built in 0.12.81** (`testing.md` 18.1000): the pass in `systemapps`, and
+   `x86-install`'s three checks - the same files under a new version left,
+   other files brought, a copy for other protocols brought - with their
+   control, every package said to be the server's, failing two of them.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).
 

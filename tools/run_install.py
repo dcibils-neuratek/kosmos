@@ -63,7 +63,8 @@ def package(folder, files, f, tamper=False):
     out = io.BytesIO()
     lines = "".join("file        %d %s %s\n" % (len(t), hashlib.sha256(t.encode()).hexdigest(), n)
                     for n, t in sorted(files.items()))
-    f = dict(f, bytes=sum(len(t) for t in files.values()))
+    f = dict(f, bytes=sum(len(t) for t in files.values()),
+             sums=hashlib.sha256(lines.encode()).hexdigest()[:16])
     manifest = P.facts_text(f) + lines
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
@@ -231,6 +232,34 @@ def main():
         check("pkg: hello - 1.0 -> 2.0 in /Home/Apps/Hello" in updated and "GOT the third" in got,
               "pkg update did not bring hello from 1.0 to 2.0: %r %r" % (updated[-300:], got[-200:]))
 
+        # **Installed packages kept to the server's at login** (P5,
+        # `systemapps.lua`): a new version with the same files is left
+        # where it is; other files are brought; and a copy made for other
+        # protocols is brought though its files are the server's.
+        offer("hello", *package("Hello", {"hello.txt": "the third\n"},
+                                dict(facts("hello", "Hello", "/Home/Apps/Hello"), version="3.0")))
+        same = run("systemapps", "\nkosmos> ", 60)
+        check("systemapps: hello is the server's, 3.0" in same and "hello here is" not in same,
+              "systemapps brought hello again though its files were the server's: %r"
+              % same[-400:])
+        offer("hello", *package("Hello", {"hello.txt": "the fourth\n"},
+                                dict(facts("hello", "Hello", "/Home/Apps/Hello"), version="3.0")))
+        other_files = run("systemapps", "\nkosmos> ", 60)
+        got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
+        check("systemapps: hello here is 2.0, with other files than the server's 3.0: bringing"
+              in other_files and "systemapps: hello is in /Home/Apps/Hello, 3.0" in other_files
+              and "GOT the fourth" in got,
+              "systemapps did not bring hello when its files were not the server's: %r %r"
+              % (other_files[-400:], got[-200:]))
+        run('local t = fs.read("/Home/Packages/hello") '
+            'fs.write("/Home/Packages/hello", (t:gsub("protocols%s+%S+", "protocols   0123456789abcdef", 1)))',
+            "\nkosmos> ", 10)
+        old_protocols = run("systemapps", "\nkosmos> ", 60)
+        check("systemapps: hello here is made for other protocols (0123456789abcdef; this is "
+              in old_protocols and "systemapps: hello is in /Home/Apps/Hello, 3.0" in old_protocols,
+              "systemapps did not bring hello when it was made for other protocols: %r"
+              % old_protocols[-400:])
+
         # **Kosmos's own on the disk** (`systemapps.lua`): a package of kind
         # `system`, brought when it is not there, left when it is this
         # build's, and brought again when the server's is another build.
@@ -249,7 +278,7 @@ def main():
         old = run('print("OLD " .. tostring(fs.getattr("/Home/Apps/Demo")) .. " " '
                   '.. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "OLD ")
         check("systemapps: sysdemo's copy from before it was Kosmos's own, in /Home/Apps/Demo, "
-              "is gone" in brought and "OLD nil the third" in old,
+              "is gone" in brought and "OLD nil the fourth" in old,
               "systemapps did not take away the application copy of a system package, or "
               "took another: %r %r" % (brought[-400:], old[-200:]))
         got = run('print("GOT " .. tostring(fs.read("/Home/System/Apps/Demo/demo.txt")))', "GOT ")
@@ -290,7 +319,9 @@ def main():
           "person put beside them, and pkg update bringing a newer version; and "
           "systemapps bringing Kosmos's own when it is missing or another build's, "
           "leaving it when it is this build's, and taking away its copy from when it "
-          "was an application)" % checks)
+          "was an application; and at login every installed package brought again "
+          "when its files are not the server's or it was made for other protocols, "
+          "and left when only the version differs)" % checks)
     return 0
 
 

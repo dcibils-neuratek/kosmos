@@ -42374,3 +42374,21 @@ copy was 0.12.66's, Flight's 0.12.63's, made for other protocols - and
 nothing said why but the log. `pkg update` over Telnet brought eight; P5 of
 `docs/packages.md` makes the boot do it, and the roadmap has the window
 that says why.
+
+## 18.1000 Installed packages brought up to the server's at login (Packages, P5)
+
+Quake III and Flight would not start on the M700 (18.999): their copies were
+0.12.66's and 0.12.63's, made for other protocols. `systemapps` already ran
+at every login on a machine whose boot names a package server, and brought
+Kosmos's own packages up to the build. Now it does the same for every
+installed package (`docs/packages.md` P5). Each one `/Home/Packages` lists
+is installed again when its files are not the server's (`sums`), or when
+it was made for other protocols. A new version with the same files is left
+where it is. What it brought is said in one notification.
+
+**Held by** `x86-install`, 19 checks: Hello at 2.0 offered as 3.0 with the
+same files is left ("is the server's"); offered with other files, it is
+brought; and its kept manifest, edited to name other protocols, is brought
+again though its files are the server's. **The control**, `differs`
+answering that nothing differs, fails 3 of 19: both brings, and a later
+check that reads the file Hello was brought with.

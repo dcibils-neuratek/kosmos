@@ -1,10 +1,13 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: needs network
--- systemapps: Kosmos's own applications on the disk, held to this build.
+-- systemapps: Kosmos's own applications on the disk, held to this build -
+-- and every installed package, held to the server's.
 --
 --   systemapps                 each one looked at, and brought from the
 --                              boot's package server when it is not this
 --                              build's
+--                              - and each installed package brought
+--                              again when its files are not the server's
 --
 -- **Kosmos's own, too big for the image** (Diego, 15 November 2026:
 -- "/Home/System, seen as /Kosmos"): JetSki is 208 MB, so it lives on the
@@ -164,6 +167,74 @@ for _, p in ipairs(list) do
       end
     end
   end
+end
+
+--
+-- **And every other installed package** (`docs/packages.md` P5; Diego, 22
+-- November 2026: "yes, make it update apps automatically at boot"). Quake
+-- III would not start on the M700: its copy was 0.12.66's, made for other
+-- protocols, and nobody had typed `install` after the netboot. So each
+-- package `/Home/Packages` says is installed is brought again when its
+-- files are not the server's - `sums`, one hash over every file's SHA-256,
+-- so a new revision that changed nothing in Doom does not fetch Doom, and
+-- one for other protocols always differs, its image carrying the stamp.
+--
+local brought = {}
+
+local function differs(m, p)
+  if sys.protostamp and m.protocols and m.protocols ~= sys.protostamp then
+    return ("made for other protocols (%s; this is %s)"):format(tostring(m.protocols),
+                                                                tostring(sys.protostamp))
+  end
+
+  if p.sums and m.sums then
+    return m.sums ~= p.sums and ("%s, with other files than the server's %s")
+                                :format(tostring(m.version), tostring(p.version)) or nil
+  end
+
+  -- A manifest from before `sums`: its version is all there is.
+  if (m.version or "") ~= (p.version or "") then
+    return ("%s, and the server's is %s"):format(tostring(m.version), tostring(p.version))
+  end
+
+  return nil
+end
+
+for _, p in ipairs(list) do
+  local m = p.kind ~= "system" and packages.installed(p.name)
+
+  if m then
+    local reason = differs(m, p)
+
+    if not reason then
+      say(("%s is the server's, %s"):format(p.name, tostring(p.version)))
+    elseif sys.protostamp and p.protocols ~= sys.protostamp then
+      say(("%s here is %s, and the server's is for other protocols too (%s) - make "
+           .. "the packages again from this tree"):format(p.name, reason, tostring(p.protocols)))
+      failed = true
+    else
+      say(("%s here is %s: bringing %d MB from %s"):format(p.name, reason,
+                                                           (p.zip or 0) // (1024 * 1024), server))
+      local ok, oops = packages.install(p, server)
+
+      if ok then
+        say(("%s is in %s, %s"):format(p.name, p.into, tostring(p.version)))
+        brought[#brought + 1] = p.title or p.name
+      else
+        say(("%s was not brought: %s"):format(p.name, tostring(oops)))
+        failed = true
+      end
+    end
+  end
+end
+
+if #brought > 0 then
+  pcall(function()
+    use("/Kosmos/Libraries/notify.lua").post{
+      title = #brought == 1 and (brought[1] .. " updated") or (#brought .. " applications updated"),
+      body = table.concat(brought, ", ") .. ", from " .. server .. ", for this build.",
+      open = "/Home/Apps" }
+  end)
 end
 
 if failed then sys.exit(1) end

@@ -1401,7 +1401,7 @@ protocols, and nobody had run `install` after the netboot). `docs/packages.md`
 P5: a boot that names a package server runs `pkg update --at-boot` in the
 background. It waits for the server, then replaces every installed package
 whose files differ from the ones offered, and says so in a notification.
-Next, before U4.
+**Built in 0.12.81** (`testing.md` 18.1000).
 **And an application that does not start says why, in a window - AGREED on
 22 November 2026** (Diego, after Flight would not open on the M700 either:
 "and also it does not say why", "we should show a window with the error
