@@ -315,8 +315,17 @@ the server's pulse (`window:watch_code`, new in the UI kit), and the
 Deskbar's notification when a speaker comes or goes. **U10a and U10b
 built in 0.12.84** (18.1003): `pcm_convert_wide` with a windowed sinc
 (-117 dB at 44.1 to 48 kHz, linear -54), and the mix in 32 bits, narrowed
-exactly or dithered. **First, the gate's length** (1167 s, past ten
-minutes). **Next**: U10c, a stream's own format; then the rest of U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
+exactly or dithered. **The gate's length, 0.12.85 to 0.12.88**
+(18.1004-18.1009): Flight's 747 takes off at 16x and the landing flies at
+4x (the same flights in a quarter of the frames); the LLM Kit's host suite
+is five, one model each; the LLM server starts no workers while Vulkan
+answers (`x86-llm-vk` 943 s of processor to 325); the sinc in Q30 integers;
+the Playback Kit's counts read whole under load (Radio's "0 frames heard");
+and the gate says each suite's processor (`cpu.json`). **An ordinary `make
+test` - every whole-tree suite, 127 - is 571 s; `make test ALL=1`, which
+`make prepush` runs, is 870 s** (1,167 before), 6,473 s of processor, so no
+packing gets it under 647. Whether prepush's every-suite run must fit in
+ten minutes too is Diego's to say. **Next**: U10c, a stream's own format; then the rest of U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
 the old Music retired at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for

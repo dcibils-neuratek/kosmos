@@ -42722,3 +42722,10 @@ The POSIX layer's mutexes and condition variables wait on futexes
 (`runtime/posix/pthread.c`), so ported threads waiting do not spin -
 checked, since `x86-llm-vk` takes 325 s of processor alone and 613 in the
 gate. What grows under load there is TCG's own cost, not waiting.
+
+**And an ordinary `make test`**: a change no library watches runs the 127
+suites that stand on the whole tree. Run as that (`ONLY=` the 127) at
+0.12.88: **all 127 passed in 571 s (9:31)**, 3,498 s of processor. The
+longest, `x86-cafesa3d-2`, 341 s. So `make test` is inside ten minutes;
+`make test ALL=1` - every library's suite as well, what `make prepush`
+runs - is 870.
