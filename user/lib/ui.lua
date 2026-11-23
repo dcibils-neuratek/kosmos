@@ -9278,6 +9278,9 @@ function window:close()
   -- A folder it watched, taken back: its server lets the door go.
   self:unwatch_folder()
 
+  -- And every other code it was told by.
+  for code in pairs(self.code_watches or {}) do self:drop_code(code) end
+
   wmproto.banded[self.handle] = nil
   wmproto.served[self.handle] = nil
   self.closed = true
@@ -9893,6 +9896,33 @@ function window:unwatch_folder()
   pcall(fs.send, "/Running/wm", { type = "drop_code", code = w.code, window = self.handle })
 end
 
+--
+-- **A code that tells this window, for anything that pulses** - the audio
+-- server's list of devices (`audio.watch`), a kit's news. The window
+-- manager hands a code and a door to itself, as for a folder; the caller
+-- gives both to whatever will tell, and `fn(code)` is called in this
+-- window's poll each time it does. Returns the code and the door, or nil
+-- and why. The door is the caller's to hand on, and then to release.
+-- `window:drop_code(code)` stops it; closing the window drops them all.
+--
+-- `watch_folder` is this, for a folder's server. JetSki wrote it by hand
+-- before it was here (`jetski.lua`, WebKit's wake).
+--
+function window:watch_code(fn)
+  local r, why = fs.send("/Running/wm", { type = "watch_code", window = self.handle })
+
+  if not (r and r.code and r.passed) then return nil, why or "the window manager gave no code" end
+
+  self.code_watches = self.code_watches or {}
+  self.code_watches[r.code] = fn
+  return r.code, r.passed
+end
+
+function window:drop_code(code)
+  if self.code_watches then self.code_watches[code] = nil end
+  pcall(fs.send, "/Running/wm", { type = "drop_code", code = code, window = self.handle })
+end
+
 function window:folder_changed(ev)
   local w = self.folder_watch
 
@@ -9900,6 +9930,17 @@ function window:folder_changed(ev)
     local ok, err = pcall(w.fn, w.path)
 
     if not ok then print("ui: a folder's change was not taken: " .. tostring(err)) end
+
+    self.served_change = true
+    return
+  end
+
+  local fn = self.code_watches and self.code_watches[ev.code]
+
+  if fn then
+    local ok, err = pcall(fn, ev.code)
+
+    if not ok then print("ui: a pulse was not taken: " .. tostring(err)) end
 
     self.served_change = true
   end

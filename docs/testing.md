@@ -42458,3 +42458,42 @@ whether it shows, so no control makes it fail every time.
 
 **Next**: U5, Mixer's chooser, and the notification when a speaker is
 plugged in.
+
+## 18.1002 Mixer's Output card, and a speaker plugged in, said (USB audio, U5)
+
+`docs/usbaudio.md` U5. What was built:
+
+- **`window:watch_code(fn)` in the UI kit** (`ui.lua`): a code and a door
+  from the window manager, for anything that pulses. `fn` runs in the
+  window's poll each time it does. `drop_code` stops it, and closing the
+  window drops every one. `watch_folder` was the only way in before, and
+  JetSki had written the same thing by hand for WebKit's wake.
+- **Mixer's Output card** (`mixer.lua`): the device in a dropdown, then the
+  format tiles with what else each offers, then the conversion line, then
+  Master. The page is made again when a device comes, goes or is chosen.
+  The window hears that from the audio server's pulse, not on its tick.
+- **The Deskbar says it** (`deskbar.lua`): watching the same list, it posts
+  a notification for a speaker plugged in or pulled out, with where the
+  sound now plays.
+
+**Held by** `usb_audio_mixer` in `x86-usb-2`, 5 checks, new. It boots
+`wm deskbar,mixer` with a screen and types nothing, because once the
+desktop runs it takes the serial line's keys. (The first attempt typed into
+`usb_audio_choose` beside a desktop, and its lines went to Mixer as keys.)
+Mixer shows Built-in alone, and the Deskbar is told of the list. When the
+speaker is plugged in through QEMU's monitor, the Deskbar says "QEMU USB
+Audio was plugged in; playing on QEMU USB Audio", and Mixer moves to the
+speaker, 48 kHz and two devices, by the pulse alone. When it is pulled out,
+the Deskbar says the sound is on Built-in, and Mixer goes back. **Its
+control**, `USBAUDIO_STUCK=1`, fails 2 of 5: the Deskbar says "playing on
+Built-in", and Mixer stays there.
+
+**The gate** ran 162 suites, because the UI kit changed, in 1018 s - past
+the ten minutes. Four failed under that load and passed alone, 4 of 4 in
+260 s: `x86-sql` (speedtest1's hash, the lock, the rows), `x86-jetski` (the
+film's tone heard at 396 Hz, not 440), `x86-cafesa3d-2` (the plane opened
+again, 126232 pixels different) and `x86-display-4` (no replicant green).
+JetSki's tone touches the audio path U4 and U5 changed, so it is the one to
+read first if it fails again.
+
+**Next**: U10, hi-res, then the new Music.

@@ -315,6 +315,20 @@ Each is small enough to be checked by itself:
 - **U5, Mixer.** The Output chooser, each device's format and what it can
   do, as `docs/usbaudio.html` draws it; the notification when one is
   plugged in.
+  **Built in 0.12.83** (`testing.md` 18.1002). Mixer's Output card: a
+  dropdown of every output, showing the one playing; choosing one is
+  `audio.choose`. Under it, three tiles - sample size, rate, channels -
+  each with what else the device offers, and "Mixed at 44.1 kHz,
+  converted to 48 kHz here" when the device's rate is not the mix's. The
+  window is told of a change by the server's pulse, not on its tick, through
+  `window:watch_code`, which the UI kit now has for anything that pulses
+  (`watch_folder` was the only door before, and JetSki had written its own).
+  The Deskbar posts the notification, because it runs in every session and
+  Mixer need not be open: "QEMU USB Audio - Plugged in. Sound is playing
+  here.", and "... unplugged - Sound is playing on Built-in." **Left from
+  the drawing**: the tiles cannot be chosen yet (that is U7); the Input card
+  comes at U9; the dropdown lists names, not the drawing's groups ("This
+  machine", "USB") with a line of facts under each.
 - **U6, asynchronous devices.** The feedback endpoint read and each TD
   sized from it. QEMU's speaker is adaptive, so this is held by a host test
   of the arithmetic and by the Edifier speakers if they are asynchronous.

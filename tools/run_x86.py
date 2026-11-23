@@ -5019,6 +5019,7 @@ def usb_audio_choose(image, check):
         check(plugged, "the speaker plugged in was not streamed: %r"
               % [l for l in machine.since(mark).splitlines() if "speaker" in l][-3:])
 
+
         for name, text in programs.items():
             machine.typed('fs.write("/Temporary/%s.lua", %s) print("WROTE")'
                           % (name, lua_string(text)), r"WROTE", 10)
@@ -5080,6 +5081,82 @@ def usb_audio_choose(image, check):
         check(speaker_playing(again),
               "plugged in again with nothing chosen, the speaker did not play: %r"
               % [l for l in again.splitlines() if l.startswith(("DEV", "CHOSEN"))])
+    finally:
+        machine.close()
+
+
+def usb_audio_mixer(image, check):
+    """**Mixer's Output card, and a speaker plugged in, said** -
+    `docs/usbaudio.md` U5.
+
+    The Deskbar and Mixer at boot (`opt/kosmos/boot` is `wm deskbar,mixer`),
+    HD Audio and QEMU's USB controller, and nothing typed - the desktop
+    takes the serial line's keys. Through QEMU's monitor alone:
+
+      * Mixer shows Built-in, the one device, and the Deskbar is told of
+        the list;
+      * the speaker plugged in: the Deskbar says so, with the sound playing
+        there, and Mixer moves to it - 48 kHz, two devices - by the audio
+        server's pulse, not on its tick;
+      * pulled out: the Deskbar says so, and that the sound is on Built-in,
+        and Mixer is back on Built-in alone.
+
+    Its control, `USBAUDIO_STUCK=1`, boots with `opt/kosmos/audio=machine`:
+    the speaker is never the one playing, so the Deskbar says the sound
+    stays on Built-in and Mixer never moves - two of the five fail.
+    """
+    wav = os.path.join(os.path.dirname(image), "usb-audio-mixer.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    extra = ("-device", "ich9-intel-hda",
+             "-device", "hda-output,audiodev=a0",
+             "-audiodev", "none,id=a0",
+             "-device", "qemu-xhci,id=usb0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav,
+             "-vga", "none", "-device", "ramfb",
+             "-fw_cfg", "name=opt/kosmos/boot,string=wm deskbar,,mixer")  # ",," is QEMU's comma
+
+    if os.environ.get("USBAUDIO_STUCK") is not None:
+        extra += ("-fw_cfg", "name=opt/kosmos/audio,string=machine")
+
+    machine = PluggedMachine(image, extra)
+
+    def said(mark):
+        return [l for l in machine.since(mark).splitlines()
+                if l.startswith(("mixer:", "deskbar: told"))]
+
+    try:
+        watching = machine.wait_for(0, r"deskbar: told of sound devices", 120)
+        alone = machine.wait_for(0, r"mixer: output Built-in, 16 bit, 44100 Hz, 2 channels; "
+                                    r"1 devices", 60)
+        check(watching and alone and
+              machine.wait_for(0, r"xhci: watching for devices plugged in and out", 30),
+              "Mixer did not show Built-in alone, or the Deskbar was not told of devices: %r"
+              % said(0))
+
+        mark = machine.mark()
+        machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
+        check(machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30),
+              "the speaker plugged in was not streamed")
+        check(machine.wait_for(mark, r"deskbar: told that QEMU USB Audio was plugged in; "
+                                     r"playing on QEMU USB Audio", 20),
+              "plugged in, the Deskbar did not say so with the sound playing there: %r"
+              % said(mark))
+        check(machine.wait_for(mark, r"mixer: output QEMU USB Audio, 16 bit, 48000 Hz, "
+                                     r"2 channels; 2 devices", 20),
+              "plugged in, Mixer did not move to the speaker: %r" % said(mark))
+
+        mark = machine.mark()
+        machine.monitor.ask("device_del spk", quiet=0.3)
+        check(machine.wait_for(mark, r"deskbar: told that QEMU USB Audio was unplugged; "
+                                     r"playing on Built-in", 20)
+              and machine.wait_for(mark, r"mixer: output Built-in, 16 bit, 44100 Hz, "
+                                         r"2 channels; 1 devices", 20),
+              "pulled out, the Deskbar did not say where the sound went, or Mixer "
+              "did not go back to Built-in: %r" % said(mark))
     finally:
         machine.close()
 
@@ -6264,7 +6341,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6382,6 +6459,8 @@ def main():
         usb_audio_play(image, check)
     if 'usb_audio_choose' in wanted:
         usb_audio_choose(image, check)
+    if 'usb_audio_mixer' in wanted:
+        usb_audio_mixer(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

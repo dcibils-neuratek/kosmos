@@ -27,7 +27,7 @@ local audio = use("/Kosmos/Libraries/audio.lua")
 
 local theme = ui.theme
 
-local W, H = 460, 400
+local W, H = 460, 540
 
 local win, err = ui.window{ title = "Mixer", w = W, h = H, x = 150, y = 110,
                             header = true }
@@ -44,6 +44,8 @@ local master = 256
 local master_muted = false
 local rows = {}                 -- what the server last said
 local mixes = 0                 -- periods the server has mixed, ever
+local devices = {}              -- every output, as `audio.devices()` says
+local chosen = ""               -- the name chosen; "" for the newest
 
 --------------------------------------------------------------------------
 -- The window, as `docs/apps.html` draws it (`roadmap.md` 5zp).
@@ -239,6 +241,106 @@ local function strip(key)
 end
 
 --------------------------------------------------------------------------
+-- **Output: which device plays, and at what** (`docs/usbaudio.md` U5, as
+-- `docs/usbaudio.html` draws it). A dropdown of every output, the one
+-- playing shown; choosing one moves every program's sound to it at once,
+-- and is kept (`audio.choose`). Under it three tiles - the sample size,
+-- the rate and the channels the device runs at, with what else it offers
+-- beneath each - and, when the device's rate is not the mix's, a line
+-- saying the sound is converted there. A format is chosen at U7; here the
+-- tiles say what is.
+--------------------------------------------------------------------------
+
+local function playing_device()
+  for _, d in ipairs(devices) do
+    if d.playing then return d end
+  end
+
+  return devices[1]
+end
+
+local function khz(rate)
+  local s = ("%.1f"):format(rate / 1000):gsub("%.0$", "")
+
+  return s .. " kHz"
+end
+
+local function facts(d)
+  if d.kind == "machine" then return "This machine" end
+
+  return ("USB · %04x:%04x"):format(d.vendor or 0, d.product or 0)
+end
+
+local function also(list, now, say)
+  local out = {}
+
+  for _, x in ipairs(list) do
+    if x ~= now then out[#out + 1] = say(x) end
+  end
+
+  return #out > 0 and ("also " .. table.concat(out, ", ")) or "only"
+end
+
+local TILE_H, TILE_GAP = 54, 8
+
+local function tiles()
+  local v = ui.view{ h = TILE_H + 22 }
+
+  v.fill = true
+
+  function v:draw(g)
+    local d = playing_device()
+
+    if not d then return end
+
+    local w = (self.w - 2 * TILE_GAP) // 3
+    local items = {
+      { "Sample", ("%d bit"):format(d.bits or 16),
+        also(d.offers.bits, d.bits, function(b) return tostring(b) end) },
+      { "Rate", khz(d.rate or 0),
+        also(d.offers.rates, d.rate, function(r) return khz(r):gsub(" kHz", "") end) },
+      { "Channels", tostring(d.channels or 2),
+        d.channels == 2 and "stereo" or (d.channels == 1 and "mono" or "") },
+    }
+
+    for i, t in ipairs(items) do
+      local x = (i - 1) * (w + TILE_GAP)
+
+      g:fill_round(x, 0, w, TILE_H, theme.raised, 7)
+      g:frame_round(x, 0, w, TILE_H, theme.line_soft, 7)
+      g:text(x + 10, 6, t[1], theme.text_dim, nil, "ui")
+      g:text(x + 10, 6 + gfx.height("ui"), t[2], theme.text, nil, "label")
+      g:text(x + 10, 6 + gfx.height("ui") + gfx.height("label"), t[3], theme.text_dim, nil, "ui")
+    end
+
+    if fmt.rate > 0 and d.rate and d.rate ~= fmt.rate then
+      g:text(0, TILE_H + 6, ("Mixed at %s, converted to %s here"):format(khz(fmt.rate), khz(d.rate)),
+             theme.text_dim, nil, "ui")
+    end
+  end
+
+  return v
+end
+
+local function chooser()
+  local choices, now = {}, playing_device()
+
+  for _, d in ipairs(devices) do
+    choices[#choices + 1] = { d.name, d.name }
+  end
+
+  return ui.dropdown{
+    choices = choices,
+    value = now and now.name or nil,
+    on_change = function(_, name)
+      local list, said = audio.choose(name)
+
+      if list then devices, chosen = list, said end
+      print(("mixer: chose %s; playing on %s"):format(name,
+            (playing_device() or {}).name or "nothing"))
+    end,
+  }
+end
 
 local header = ui.header{
   x = 0, y = 0, w = W, title = "Mixer",
@@ -312,6 +414,12 @@ local function rebuild()
                               control = strip(r.stream) }
   end
 
+  -- The devices too: one plugged in, pulled out or chosen is a new page.
+  for _, d in ipairs(devices) do
+    key[#key + 1] = ("%s:%s:%d:%d:%d"):format(d.name, d.playing and "on" or "off",
+                                              d.rate or 0, d.bits or 0, d.channels or 0)
+  end
+
   key = table.concat(key, " ")
 
   if key == shown then return end
@@ -338,11 +446,25 @@ local function rebuild()
                    note = "Test tone plays three seconds of A." }
   end
 
+  local output = {}
+  local now = playing_device()
+
+  if now then
+    output[#output + 1] = { label = "Device", note = facts(now), control = chooser() }
+    output[#output + 1] = { control = tiles() }
+  end
+
+  output[#output + 1] = { label = "Master", name_w = name_w, control = strip("master") }
+
   cards:set({
-    { name = "Output", rows = { { label = "Master", name_w = name_w,
-                                  control = strip("master") } } },
+    { name = "Output", rows = output },
     { name = "Playing", rows = playing },
   })
+
+  if now then
+    print(("mixer: output %s, %d bit, %d Hz, %d channels; %d devices"):format(
+          now.name, now.bits or 0, now.rate or 0, now.channels or 0, #devices))
+  end
 
   mixed.y = L.head + cards.content_h + 10
 end
@@ -400,10 +522,42 @@ if fmt.period == 0 then
   return
 end
 
+--
+-- The devices asked for once, and again whenever the server says they
+-- changed - a speaker plugged in, pulled out, or chosen from elsewhere -
+-- by a pulse to this window rather than on the tick (`win:watch_code`).
+--
+local function heard_devices()
+  local list, said = audio.devices()
+
+  if list then devices, chosen = list, said end
+  rebuild()
+end
+
+do
+  local code, door = win:watch_code(heard_devices)
+
+  if code then
+    local ok, why = audio.watch(code, door)
+
+    pcall(sys.release, door)
+    if not ok then
+      win:drop_code(code)
+      print("mixer: not told when a device changes: " .. tostring(why))
+    end
+  end
+end
+
 win:add(cards)
 win:add(mixed)
 win:add(ticker)
 win:add(header)
+
+do
+  local list, said = audio.devices()
+
+  if list then devices, chosen = list, said end
+end
 
 ticker:tick()
 win:run()

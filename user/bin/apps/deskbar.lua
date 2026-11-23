@@ -2667,6 +2667,71 @@ win.on_frame = function(self)
   return any_starting() or more
 end
 
+--
+-- **A speaker plugged in or pulled out, said** (`docs/usbaudio.md` U5, as
+-- `docs/usbaudio.html` draws it). The audio server pulses this window when
+-- its list of devices changes; the list is asked for then, set against the
+-- one before, and a device that came or went is a notification - with
+-- where the sound is playing now, since that is what a person wants to
+-- know. Here because the Deskbar is the one program every session has, as
+-- for `audio.restore()` above: Mixer need not be open for it to be said.
+-- The list at the start is taken as it is, unsaid.
+--
+do
+  local audio = use("/Kosmos/Libraries/audio.lua")
+  local notify = use("/Kosmos/Libraries/notify.lua")
+  local before = {}
+
+  local function present()
+    local out, playing = {}, nil
+
+    for _, d in ipairs(audio.devices() or {}) do
+      if d.kind == "usb" then out[d.name] = true end
+      if d.playing then playing = d.name end
+    end
+
+    return out, playing
+  end
+
+  local function told()
+    local now, playing = present()
+    local where = playing or "nothing"
+
+    for name in pairs(now) do
+      if not before[name] then
+        notify.post{ title = name,
+                     body = playing == name and "Plugged in. Sound is playing here."
+                            or ("Plugged in. Sound stays on " .. where .. ".") }
+        print("deskbar: told that " .. name .. " was plugged in; playing on " .. where)
+      end
+    end
+
+    for name in pairs(before) do
+      if not now[name] then
+        notify.post{ title = name .. " unplugged", body = "Sound is playing on " .. where .. "." }
+        print("deskbar: told that " .. name .. " was unplugged; playing on " .. where)
+      end
+    end
+
+    before = now
+  end
+
+  local ok, why = pcall(function()
+    local code, door = win:watch_code(told)
+
+    if not code then error(door) end
+
+    local watched, no = audio.watch(code, door)
+
+    pcall(sys.release, door)
+    if not watched then win:drop_code(code) error(no) end
+    before = present()
+    print("deskbar: told of sound devices")
+  end)
+
+  if not ok then print("deskbar: not told of sound devices: " .. tostring(why)) end
+end
+
 -- The first second at once, after the first picture (`heard`, above): a
 -- pass a tick from now rather than a second, which `pace_breathing` puts
 -- back when the tick has listened.
