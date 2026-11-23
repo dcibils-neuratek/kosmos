@@ -43460,3 +43460,51 @@ refuses a header with two - the class, rather than this instance. Its
 control is the header as the lane wrote it, which it fails by name.
 
 **Result**: `x86-sysmon` 45 of 45 (rows 1-41, End ending `spin`); `x86-sysapps`, `x86-platinum` and `x86-display-3` pass on the shared table; host with the new needs check.
+
+## 18.1024 System Monitor's GPU, Disks and Network pages (S5), folded from their lane
+
+**What was built** (`docs/sysmonitor.md` S5). GPU Monitor's, Disk
+Monitor's and Network Monitor's bodies as pages in `user/lib/sysmon/`
+(`gpu.lua`, `disks.lua`, `network.lua`), the GPU's watts as a graph over
+the minute, and the Processes strip's third line: the chosen process's
+drives, connections and GPU buffers. The three old windows are now thin
+shells over the same pages, each asking `sample.lua` for its own part, so
+there is one body rather than two; they stay until S9. A drive's row in
+the sidebar opens Disks with that drive chosen.
+
+**What is checked.** `x86-sysmon` holds rows 1-86 now. A new second half,
+`x86-sysmon-io` (`run_sysmon.py --io`), boots with a FAT stick that
+`reader` reads and the network pulled by `pull`, and checks the stick's
+rate, `pull`'s megabytes, both minutes mirrored, bits a second from the
+dots, and the strip naming `reader`'s drive and `pull`'s connection. Every
+new check has a control. `x86-gpumon`, `x86-diskmon` and `x86-netmon` run
+on the shells with their old lines unchanged.
+
+**What the first run found.** Fifteen of `x86-sysmon`'s click checks
+failed, and the dots check in the second half. The desktop's own startup
+set holds a System Monitor; it opened after the suite's, at 38,66 over the
+suite's at 90,130, and took its clicks. Both boots now empty the startup
+set first, as This Machine's suite does since 18.1022.
+
+**Departures from the mockup**, for Diego: the GPU page says "not measured
+on this machine" like every other unmeasured row; no "PCI 00:02.0" or "In
+About This Machine" link, since no reply carries the PCI address; "Clock,
+and asleep" is the clock's graph with asleep in its heading; the Disks
+page keeps its own drive list beside the sidebar's; and GPU Monitor gains
+the power and temperature graphs.
+
+The second run's two failures, both the suite's and both now fixed. **The
+dots**: the window is as wide as its page (880, 1080 for the GPU, 1332 for
+Processes) and the dots end its header, so they move with the page; the
+second half clicked them where they were on the GPU page while Network
+showed. System Monitor now says `the dots at` after every relayout, and
+the suite clicks the latest. **The pace**: 10 samples in 7.6 s at a half
+second, the same twice, so not load. `--tell` prints the inventory every
+ten samples, 90 lines with S5, and under TCG that took 1.2 s each time,
+which made the tick that told late. The menu's line now says how much of
+its span went on telling, and the pace is held to the rest: 10 samples in
+7.6 s, 2.4 s of it telling.
+
+**Result**: `x86-sysmon` 46 of 46 and `x86-sysmon-io` 20 of 20, side by
+side; `x86-gpumon`, `x86-diskmon`, `x86-netmon`, `x86-platinum`,
+`x86-display-1` and `x86-display-4` pass on the shells and the pages.

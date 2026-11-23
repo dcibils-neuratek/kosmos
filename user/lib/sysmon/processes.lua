@@ -23,8 +23,13 @@
 -- **Added: the chosen process in a strip under the table** - its share of
 -- the machine and its memory over the minute. The minute is the sample's
 -- (`S:follow`): kept for every process from the moment it is seen, so a
--- process chosen now shows the minute before it was chosen. S5 adds its
--- drives, its connections and its GPU buffers to the strip.
+-- process chosen now shows the minute before it was chosen. **And since
+-- S5 what it holds elsewhere**, under the two graphs: the drives it reads
+-- and writes (each drive's `.programs`, asked of every drive while this
+-- page shows), its connections (`NET_OP_STATS`'s, by the process the
+-- stack named) and its GPU buffers (`GPU_OP_STATS`'s holders) - four lists
+-- in four windows until now, joined here by the process's id. Its LLM
+-- answers join them in S8.
 --
 -- **Nothing here asks anything in a repaint.** The rows are built on the
 -- window's clock from what the sample heard - `sys.processes()`,
@@ -37,6 +42,7 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local proctable = use("/Kosmos/Libraries/proctable.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local cpu_page = use("/Kosmos/Libraries/sysmon/cpu.lua")
 local theme = ui.theme
 local L = ui.layout
@@ -55,6 +61,50 @@ local SHARE_COL = cpu_page.USER_COL
 local MEMORY_COL = 0xff4fb3ff           -- the Overview's memory, the same in every look
 
 local memory_of = proctable.memory
+
+--
+-- **What the chosen process holds elsewhere**, from what the sample last
+-- heard: the drives whose programs list it, its connections and its GPU
+-- buffers, each a list of words and a total. Nothing asked here.
+--
+function M.holdings(S, id)
+  local drives, conns, bufs = {}, {}, {}
+  local cin, cout, bytes = 0, 0, 0
+
+  for _, d in ipairs(S.drives or {}) do
+    local p = S.programs and S.programs[d.key]
+
+    for _, r in ipairs(p and p.list or {}) do
+      if r.process == id then
+        drives[#drives + 1] = ("%s %s/%s"):format(d.path, files.rate(r.rin), files.rate(r.rout))
+      end
+    end
+  end
+
+  for _, c in ipairs(S.conns or {}) do
+    if c.process == id then
+      conns[#conns + 1] = c.to
+      cin, cout = cin + c.rin, cout + c.rout
+    end
+  end
+
+  local now = S.gpu_lib and S.gpu.now
+
+  for _, b in ipairs(now and now.buffers or {}) do
+    if b.holder == id then
+      bufs[#bufs + 1] = b
+      bytes = bytes + b.bytes
+    end
+  end
+
+  return {
+    drives = #drives > 0 and table.concat(drives, ", ") or "none",
+    connections = #conns > 0 and ("%d, %s in, %s out (%s)"):format(#conns, files.rate(cin), files.rate(cout),
+                                                                  table.concat(conns, ", ")) or "none",
+    buffers = #bufs > 0 and ("%d, %s"):format(#bufs, files.size(bytes))
+              or (S.gpu_lib and "none" or "no GPU here"),
+  }
+end
 
 function M.new(spec)
   local S = spec.S
@@ -167,7 +217,8 @@ function M.new(spec)
     y = y + list.view.h + BAND_GAP
 
     m.strip = y
-    m.strip_h = 12 + gfx.height("label") + gfx.height("ui") + 8 + STRIP_GRAPH + 12
+    m.strip_h = 12 + gfx.height("label") + gfx.height("ui") + 8 + STRIP_GRAPH + 10
+                + gfx.height("label") + gfx.height("ui") + 12
     y = y + m.strip_h
 
     m.foot = y + 10
@@ -211,6 +262,19 @@ function M.new(spec)
                     { mode = "line", columns = S.columns, ground = cpu_page.GRAPH_GROUND,
                       most = math.max(1, ui.history.most(strip.memory)),
                       colours = { MEMORY_COL }, radius = 6 })
+
+    -- What it holds elsewhere: a column each, its name small above it.
+    local held = M.holdings(S, r.id)
+    local hy = gy + STRIP_GRAPH + 10
+    local cw = (w - 28 - 2 * 12) // 3
+
+    for i, part in ipairs({ { "DRIVES", held.drives }, { "CONNECTIONS", held.connections },
+                            { "GPU BUFFERS", held.buffers } }) do
+      local hx = x + 14 + (i - 1) * (cw + 12)
+
+      g:text(hx, hy, part[1], theme.text_dim, theme.raised, "label")
+      g:text(hx, hy + lh, ui.fitted(part[2], cw, "ui"), theme.text, theme.raised, "ui")
+    end
   end
 
   function view:draw(g)
@@ -245,9 +309,12 @@ function M.new(spec)
 
     if not r then return "nothing chosen" end
 
-    return ("%d %s: share %d columns, now %d%%; memory %d columns, now %s"):format(
+    local held = M.holdings(S, r.id)
+
+    return ("%d %s: share %d columns, now %d%%; memory %d columns, now %s; drives %s; connections %s; "
+            .. "buffers %s"):format(
            r.id, r.name, #share, share[#share] and share[#share][1] or 0,
-           #mem, memory_of(r))
+           #mem, memory_of(r), held.drives, held.connections, held.buffers)
   end
 
   function page:rows()

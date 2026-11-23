@@ -12,22 +12,24 @@
 -- Diego, 17 October 2026: "we need to vreate a gpu monitor app now to see
 -- memory pressure, gpu usage, etc", with Windows' GPU page as the picture.
 -- Drawn in `docs/gpumonitor.html` and agreed ("go ahead, build it as
--- drawn"); `docs/gpumonitor.md` is what it is made of, and this is G2.
+-- drawn"); `docs/gpumonitor.md` is what it is made of, and this was G2.
+--
+-- **Its body is System Monitor's GPU page now** (`docs/sysmonitor.md` S5):
+-- `/Kosmos/Libraries/sysmon/gpu.lua` draws it here and there, so there is
+-- one body and not two that look alike, with the power over the minute as
+-- a graph and the temperature beside it. This window is the header, the
+-- dots and a sample that asks only the GPU (`sysmon/sample.lua`, its parts
+-- named). S9 retires it, and `gpumon` opens System Monitor on its GPU page
+-- (decision 3).
 --
 -- **It measures nothing itself.** The GPU's driver reads its registers and
 -- keeps its buffers (`GPU_OP_STATS`, `gpu.stats`), Nebula reads the GPU's
--- energy (`sys.info().gpu_energy_uj`), and this asks once a pace and takes
--- the difference between two readings, as the other monitors do. **Busy is
--- each engine by its own clock**: the blitter's copies, and the render
--- engine's runs - a program's compute kernel (`compute.md`). Until 18
--- October only the blitter was counted, and GPU Fractal and lesson 15
--- running on the GPU read as an idle GPU asleep.
+-- energy (`sys.info().gpu_energy_uj`), and the sample asks once a pace and
+-- takes the difference between two readings, as the other monitors do.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
-local gpu = use("/Kosmos/Libraries/gpu.lua")
-local meters = use("/Kosmos/Libraries/meters.lua")
-local rendering = use("/Kosmos/Libraries/rendering.lua")
-local theme = ui.theme
+local sample = use("/Kosmos/Libraries/sysmon/sample.lua")
+local gpu_page = use("/Kosmos/Libraries/sysmon/gpu.lua")
 local L = ui.layout
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
@@ -46,141 +48,19 @@ local pace = PACES[2]
 -- `--tell`: a line a sample, for a suite to read. Not without it.
 local TELL = (tostring(args or "")):find("%-%-tell") ~= nil
 
-local MAIN_W   = 640
-local SIDE_W   = 240
-local W        = MAIN_W + SIDE_W
-local CARD_H   = 90
-local CHIP     = 56
-local GRAPH_H  = 96
-local SMALL_H  = 72
-local COLUMNS  = 60
-local ROWS     = 6
-local ROW_H    = 24
-local GRAPH_GROUND = 0xff16181d         -- Monitor's: dark in every look
-local GPU_COLOUR   = 0xffb98cff         -- the GPU's own, as the processor's are green and red
-local MEM_COLOUR   = 0xff4fb3ff
-local DISP_COLOUR  = 0xff5fd08a
-local FAINT        = 0xff8b949e
-local MEMORY_SCALE = 256 * 1048576      -- the memory graph's top: room for the screens and more
+local function pace_ticks(p) return counter_hz * p.half // 2 end
 
---------------------------------------------------------------------------
--- What the window shows, refreshed a sample at a time.
---------------------------------------------------------------------------
+-- The GPU, and the processor beside it for the graphics plane's energy and
+-- the package's temperature; the rendering mode while the page shows,
+-- which is always here.
+local S = sample.new(counter_hz, 60, { cpu = true, gpu = true })
 
--- The GPU's meter (`meters.gpu`): two snapshots' rates, the engines' busy,
--- the buffers' bytes and the power plane's watts.
-local measured = meters.gpu(counter_hz)
-local now, rate = nil, nil              -- the latest snapshot, and rates from the one before
-local watts = nil                       -- the GPU's power, where it is known
-local why_not = nil                     -- the driver's sentence when there is no GPU
-local clock_h, mem_h, disp_h, busy_h = {}, {}, {}, {}
-local names = {}
-local mode = nil                        -- the rendering mode in use, the window manager's word
+S.pace_ticks = pace_ticks(pace)
+S:want("rendering", true)
 
--- Who does a stage, as `docs/composing.png` colours it.
-local STAGE_COLOUR = { cpu = 0xff4f7fd6, gpu = 0xff9d74e8, display = 0xff4fb878,
-                       none = 0xff3a414f }
+local page = gpu_page.new{ S = S, pace = function() return pace end, prefix = "gpumon:" }
 
-local function sample()
-  local s, why = gpu.stats()
-  local info = sys.info() or {}
-  local r = fs.send("/Running/wm", { type = "rendering" })
-
-  -- The rendering mode in use (`docs/rendering.md`; Diego: "also the gpu
-  -- monitor needs to show the current rendering mode selected").
-  mode = type(r) == "table" and r.ok and r.mode or mode
-
-  if not s then
-    why_not = why
-    return
-  end
-
-  for _, p in ipairs(sys.processes() or {}) do names[p.id] = p.name end
-
-  if measured:take(s, info) then
-    rate = measured.rate
-
-    -- Busy is either engine at work: the blitter's copies and the
-    -- render engine's runs, each by its own clock, the larger of the two.
-    ui.history.push(busy_h, { math.floor(measured.busy * 100 + 0.5) }, COLUMNS)
-    ui.history.push(clock_h, { s.max_mhz > 0 and math.floor(100 * s.mhz / s.max_mhz) or 0 },
-                    COLUMNS)
-    ui.history.push(mem_h, { math.min(100, math.floor(100 * measured.bytes / MEMORY_SCALE + 0.5)) },
-                    COLUMNS)
-    ui.history.push(disp_h, { rate.frames > 0 and math.min(100, math.floor(100 * rate.flips / rate.frames)) or 0 },
-                    COLUMNS)
-  end
-
-  now, rate, watts = measured.now, measured.rate, measured.watts
-
-  if TELL and rate then
-    print(("gpumon: %s, %d MHz, asleep %.0f%%, %.1f frames a second, %.1f flips a second, %d buffers")
-          :format(s.model, s.mhz, rate.asleep * 100, rate.frames, rate.flips, #s.buffers))
-  end
-end
-
---------------------------------------------------------------------------
--- How numbers are said.
---------------------------------------------------------------------------
-
-local function mb(bytes) return ("%.1f MB"):format(bytes / 1048576) end
-
-local function clock_words(s)
-  return s.mhz > 0 and ("%d MHz"):format(s.mhz) or "asleep"
-end
-
-local function holder(id)
-  return id == 0 and "the firmware" or names[id] or ("process " .. id)
-end
-
-local function buffer_bytes(s)
-  local bytes = 0
-
-  for _, b in ipairs(s.buffers) do bytes = bytes + b.bytes end
-
-  return bytes
-end
-
---------------------------------------------------------------------------
--- Where everything goes.
---------------------------------------------------------------------------
-
-local function measure()
-  local m = { inner = MAIN_W - 2 * L.page_side }
-  local y = L.page_top
-
-  m.card = y
-  y = y + CARD_H + L.between
-  m.busy_heading = y
-  y = y + L.group + 4
-  m.engines = y
-  y = y + 26
-  m.busy = y
-  y = y + SMALL_H + L.between
-  m.clock_heading = y
-  y = y + L.group + 4
-  m.clock = y
-  y = y + GRAPH_H + L.between
-  m.mem_heading = y
-  y = y + L.group + 4
-  m.mem = y
-  y = y + SMALL_H + L.between
-  m.disp_heading = y
-  y = y + L.group + 4
-  m.disp = y
-  y = y + SMALL_H + L.between
-  m.holders_heading = y
-  y = y + L.group + 4
-  m.holders = y
-  y = y + (ROWS + 1) * ROW_H
-  m.foot = y + 10
-  m.h = m.foot + gfx.height() + L.page_foot
-  return m
-end
-
-local M = measure()
-
-local win, err = ui.window{ title = "GPU Monitor", w = W, h = L.head + M.h,
+local win, err = ui.window{ title = "GPU Monitor", w = page.w, h = L.head + page.h,
                             x = 130, y = 90, header = true }
 
 if not win then
@@ -206,191 +86,11 @@ more.on_click = function()
   win:open_menu(win.origin_x + more.x, win.origin_y + L.head, items)
 end
 
-win:add(ui.header{ x = 0, y = 0, w = W, title = "GPU Monitor", right = { more }, title_bar = true })
+win:add(ui.header{ x = 0, y = 0, w = page.w, title = "GPU Monitor", right = { more }, title_bar = true })
 
---------------------------------------------------------------------------
--- The page.
---------------------------------------------------------------------------
+local body = ui.view{ x = 0, y = L.head, w = page.w, h = page.h }
 
-local function heading(g, x, y, left, right, colour)
-  ui.group_heading(g, x, y, M.inner, L.group, left, right, colour)
-end
-
-local function graph(g, x, y, h, list, colour, top)
-  ui.history.draw(g, x, y, M.inner, h, list, { columns = COLUMNS, ground = GRAPH_GROUND,
-                                               colours = { colour } })
-
-  if top then
-    g:text(x + 10, y + 6, top, FAINT, GRAPH_GROUND, "label")
-  end
-end
-
--- A sentence in the middle of an empty graph.
-local function note(g, x, y, h, text)
-  g:fill_round(x, y, M.inner, h, GRAPH_GROUND, 8)
-  g:text(x + (M.inner - gfx.measure(text)) // 2, y + (h - gfx.height()) // 2, text,
-         FAINT, GRAPH_GROUND, "ui")
-end
-
-local ENGINES = { "Render", "Blitter", "Video", "Video enhance" }
-
--- Each engine's chip: the render engine's share now - a program's runs,
--- a compute kernel's (`compute.md`) - and the blitter's (G3); the video
--- engines a dash, nothing sends them work yet.
-local function engines(g, x, y)
-  for _, name in ipairs(ENGINES) do
-    local text = name == "Blitter" and rate and ("Blitter  %.1f%%"):format(rate.blitter * 100)
-                 or name == "Render" and rate and ("Render  %.1f%%"):format((rate.render or 0) * 100)
-                 or (name .. "  -")
-    local w = gfx.measure(text, "label") + 18
-
-    g:frame_round(x, y, w, 22, theme.line_soft, 6)
-    g:text(x + 9, y + (22 - gfx.height("label")) // 2, text, theme.text_dim, theme.window, "label")
-    x = x + w + 8
-  end
-end
-
-local HOLDER_COLS = { 0, 0.30, 0.52, 0.70 }
-
-local function holders(g, x, y)
-  local w = M.inner
-  local function col(i) return x + 8 + math.floor((w - 16) * HOLDER_COLS[i]) end
-  local hy = y + (ROW_H - gfx.height("label")) // 2
-
-  for i, name in ipairs({ "Holder", "Size", "Memory", "For" }) do
-    g:text(col(i), hy, name, theme.text_dim, theme.window, "label")
-  end
-
-  g:fill(x, y + ROW_H - 1, w, 1, theme.line_soft)
-
-  for r, b in ipairs(now and now.buffers or {}) do
-    if r > ROWS then break end
-
-    local ty = y + r * ROW_H + (ROW_H - gfx.height()) // 2
-
-    g:text(col(1), ty, ui.fitted(holder(b.holder), col(2) - col(1) - 8, "ui"), theme.text, theme.window, "ui")
-    g:text(col(2), ty, ("%d x %d"):format(b.width, b.height), theme.text_dim, theme.window, "ui")
-    g:text(col(3), ty, mb(b.bytes), theme.text_dim, theme.window, "ui")
-    g:text(col(4), ty, b.kind, theme.text_dim, theme.window, "ui")
-  end
-end
-
--- The facts down the right, as Windows lists them.
-local function side(g, x, y)
-  local s = now
-  local ground = theme.raised
-
-  g:fill(x, 0, SIDE_W, M.h, ground)
-  g:fill(x, 0, 1, M.h, theme.line_soft)
-  x = x + 18
-  y = y + 4
-
-  local function fact(label, value, colour)
-    g:text(x, y, label, theme.text_dim, ground, "label")
-    y = y + gfx.height("label") + 2
-    g:text(x, y, value, colour or theme.text, ground, "heading")
-    y = y + gfx.height("heading") + 12
-  end
-
-  fact("Utilisation", rate and ("render %.1f%% \u{b7} blitter %.1f%%"):format((rate.render or 0) * 100,
-                                                                         rate.blitter * 100) or "-")
-  fact("Clock", s and (clock_words(s) .. " / " .. s.max_mhz .. " MHz") or "-", GPU_COLOUR)
-  fact("Asleep (RC6)", rate and ("%.0f%%"):format(rate.asleep * 100) or "-")
-  fact("Power", watts and ("%.2f W"):format(watts) or "not known here")
-  fact("Memory", s and mb(buffer_bytes(s)) .. " in " .. #s.buffers .. " buffers" or "-", MEM_COLOUR)
-  fact("Display", s and s.width > 0 and ("%d x %d, %.0f Hz"):format(s.width, s.height, rate and rate.frames or 0) or "-",
-       DISP_COLOUR)
-
-  -- The rendering mode in use, and the six stages it gives whom.
-  g:text(x, y, "Rendering mode", theme.text_dim, ground, "label")
-  y = y + gfx.height("label") + 2
-  g:text(x, y, mode and rendering.name(mode) or "-", theme.text, ground, "heading")
-  y = y + gfx.height("heading") + 6
-
-  if mode and rendering.MODES[mode] then
-    local sw = (SIDE_W - 36 - 5 * 2) // 6
-
-    for i, who in ipairs(rendering.MODES[mode].stages) do
-      local sx = x + (i - 1) * (sw + 2)
-
-      if who == "gpu+cpu" then
-        g:fill_round(sx, y, sw, 14, STAGE_COLOUR.cpu, 3)
-        g:fill_round(sx, y, sw * 55 // 100, 14, STAGE_COLOUR.gpu, 3)
-      else
-        g:fill_round(sx, y, sw, 14, STAGE_COLOUR[who] or STAGE_COLOUR.none, 3)
-      end
-    end
-
-    y = y + 20
-    g:text(x, y, ui.fitted("Needs " .. rendering.MODES[mode].needs, SIDE_W - 36, "label"),
-           theme.text_dim, ground, "label")
-    y = y + gfx.height("label")
-  end
-
-  y = y + 14
-
-  -- Vulkan is Mesa's `anv` in an application's own image, on every GPU this
-  -- driver serves (`docs/gpu3d.md` G7); this said "not yet" from before
-  -- G7 until Diego asked why (20 November). GL ES is G8's.
-  for _, kv in ipairs({ { "Vulkan", s and "1.4, Mesa anv" or "-" }, { "OpenGL ES", "not yet" },
-                        { "Device", s and ("%04x:%04x"):format(gpu.vendor(s.device), s.device) or "-" } }) do
-    g:text(x, y, kv[1], theme.text_dim, ground, "label")
-    g:text(x + 84, y, kv[2], theme.text, ground, "label")
-    y = y + gfx.height("label") + 6
-  end
-end
-
-local body = ui.view{ x = 0, y = L.head, w = W, h = M.h }
-
-function body:draw(g)
-  local x = L.page_side
-  local s = now
-
-  if not s then
-    ui.meter_card(g, x, M.card, M.inner, CARD_H, {
-      picture = function(pg, px, py) ui.processor_chip(pg, px, py, CHIP, "", "GPU") end,
-      size = CHIP, maker = "", model = "No GPU this driver knows",
-      facts = why_not or "asking the GPU's driver",
-    })
-    note(g, x, M.busy, SMALL_H, "Under QEMU there is no Intel GPU to watch.")
-    side(g, MAIN_W, M.card)
-    return
-  end
-
-  ui.meter_card(g, x, M.card, M.inner, CARD_H, {
-    picture = function(pg, px, py) ui.processor_chip(pg, px, py, CHIP, "intel", "GPU") end,
-    size = CHIP, maker = "Intel", model = s.model,
-    facts = ("%04x:%04x \u{b7} %d to %d MHz"):format(gpu.vendor(s.device), s.device, s.min_mhz, s.max_mhz),
-    rates = { { clock_words(s), "clock, now", GPU_COLOUR },
-              { rate and ("%.0f%%"):format(rate.asleep * 100) or "-", "asleep" } },
-  })
-
-  heading(g, x, M.busy_heading, "Busy", pace.heading:lower())
-  engines(g, x, M.engines)
-  -- Either engine's busy share over the minute, by its own clock - the
-  -- blitter's copies, the render engine's runs; video has no work yet.
-  graph(g, x, M.busy, SMALL_H, busy_h, GPU_COLOUR, "100%")
-
-  heading(g, x, M.clock_heading, "Clock", rate and ("asleep %.0f%% of the time"):format(rate.asleep * 100),
-          GPU_COLOUR)
-  graph(g, x, M.clock, GRAPH_H, clock_h, GPU_COLOUR, s.max_mhz .. " MHz")
-
-  heading(g, x, M.mem_heading, "Memory", ("%s in %d buffers"):format(mb(buffer_bytes(s)), #s.buffers),
-          MEM_COLOUR)
-  graph(g, x, M.mem, SMALL_H, mem_h, MEM_COLOUR, "256 MB")
-
-  heading(g, x, M.disp_heading, "The display",
-          rate and ("%.0f flips a second of %.0f frames%s"):format(rate.flips, rate.frames,
-                                                                 s.underrun and ", an underrun seen" or ""),
-          DISP_COLOUR)
-  graph(g, x, M.disp, SMALL_H, disp_h, DISP_COLOUR, "every frame")
-
-  heading(g, x, M.holders_heading, "Who holds its memory", ("%d buffers"):format(#s.buffers))
-  holders(g, x, M.holders)
-
-  g:text(x + 3, M.foot, pace.foot, theme.text_dim, theme.window, "ui")
-  side(g, MAIN_W, M.card)
-end
+function body:draw(g) page:draw(g) end
 
 win:add(body)
 
@@ -398,26 +98,34 @@ win:add(body)
 -- The sampling, on the window kit's clock set to the pace.
 --------------------------------------------------------------------------
 
+local function take()
+  S:take()
+
+  local line = TELL and page:tell_line()
+
+  if line then print("gpumon: " .. line) end
+end
+
 local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
-function sampler:tick() sample() end
+function sampler:tick() take() end
 
 win:add(sampler)
 
 set_pace = function(p)
   pace = p
-  win.tick_every = counter_hz * p.half // 2
+  win.tick_every = pace_ticks(p)
   win.last_tick = sys.ticks()
+  S.pace_ticks = win.tick_every
 
   -- Begun again: columns at one pace beside columns at another would be a
   -- time axis that lies.
-  clock_h, mem_h, disp_h, busy_h = {}, {}, {}, {}
-  measured:restart()
-  sample()
+  S:restart()
+  take()
   print(("gpumon: %s"):format(p.menu:lower()))
 end
 
-sample()
-print(now and ("gpumon: " .. now.model) or ("gpumon: no GPU: " .. tostring(why_not)))
-win.tick_every = counter_hz * pace.half // 2
+take()
+print(S.gpu_lib and ("gpumon: " .. tostring(S.gpu_model)) or ("gpumon: no GPU: " .. tostring(S.gpu_why)))
+win.tick_every = pace_ticks(pace)
 win:run()

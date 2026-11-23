@@ -493,17 +493,24 @@ suite("x86-sysmon", "app", ["app:sysmon", "lib:sysmon", "kit:series", "lib:meter
                             "lib:procshare.lua", "lib:drivelist.lua", "lib:gpu.lua", "lib:hardware.lua",
                             "app:deskbar", "lib:indicators.lua",
                             "lib:prockind.lua", "lib:wmproto.lua", "lib:prefs.lua", "lib:clock.lua",
-                            "lib:filetypes.lua", "lib:proctable.lua", "program:spin"],
-      "run_sysmon.py: System Monitor - inventory rows 1-41, QEMU's absences, cost, pages, paces, Deskbar meters")
+                            "lib:filetypes.lua", "lib:proctable.lua", "program:spin",
+                            "app:gpumon", "app:diskmon", "app:netmon"],
+      "run_sysmon.py: System Monitor - inventory rows 1-86, QEMU's absences, cost, pages, paces, Deskbar meters")
+suite("x86-sysmon-io", "app", ["app:sysmon", "lib:sysmon", "kit:series", "lib:meters.lua",
+                               "app:diskmon", "app:netmon", "app:gpumon", "server:net",
+                               "server:drives", "lib:drivelist.lua", "driver:usb/xhci",
+                               "lib:proctable.lua", "lib:http.lua", "files:tools/fatstick.py",
+                               "files:tools/run_sysmon.py"],
+      "run_sysmon.py --io: GPU, Disks and Network pages - a stick read, the network pulled, the strip")
 suite("x86-scheduler", "app", ["app:scheduler", "lib:scheduling.lua", "files:kernel/sched*",
                                "lib:wm/gamemode.lua"],
       "run_scheduler.py: the Scheduler window - lanes, Fair (round-robin), 20 ms turn, game mode")
-suite("x86-netmon", "app", ["app:netmon", "kit:series", "server:net", "lib:hardware.lua"],
+suite("x86-netmon", "app", ["lib:sysmon", "app:netmon", "kit:series", "server:net", "lib:hardware.lua"],
       "run_netmon.py: Network Monitor's rate in, busiest connection by name, mirrored graph")
-suite("x86-diskmon", "app", ["app:diskmon", "kit:series", "server:drives", "lib:drivelist.lua", "driver:usb/xhci",
+suite("x86-diskmon", "app", ["lib:sysmon", "app:diskmon", "kit:series", "server:drives", "lib:drivelist.lua", "driver:usb/xhci",
                              "files:tools/fatstick.py"],
       "run_diskmon.py: Disk Monitor's rate on a FAT stick, the busiest program by name")
-suite("x86-gpumon", "app", ["app:gpumon", "kit:series", "program:gpustat", "program:gpu", "lib:gpu.lua",
+suite("x86-gpumon", "app", ["lib:sysmon", "app:gpumon", "kit:series", "program:gpustat", "program:gpu", "lib:gpu.lua",
                             "program:rendering", "lib:rendering.lua", "driver:display/intelgpu"],
       "run_gpumon.py: gpustat, the desktop's label and GPU Monitor with no Intel GPU; contexts")
 suite("x86-machine", "app", ["app:machine", "lib:devices.lua", "lib:hardware.lua", "server:devices",

@@ -811,10 +811,13 @@ SUITES = [
     # level on one and a ring on the other.
     Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
     Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
-    # System Monitor (`docs/sysmonitor.md` S3, S4): the inventory's rows 1-41 on
+    # System Monitor (`docs/sysmonitor.md` S3-S5): the inventory's rows 1-86 on
     # their pages, QEMU's absences, the cost of a sample, pages by a click,
     # Monitor's paces held to the counter, and the Deskbar's meters.
     Suite("x86-sysmon", ["python3", "tools/run_sysmon.py", X86], x86=True),
+    # System Monitor's second half (S5): a FAT stick read by `reader` and the
+    # network pulled by `pull`, the GPU, Disks and Network pages, the strip.
+    Suite("x86-sysmon-io", ["python3", "tools/run_sysmon.py", X86, "--io"], x86=True),
     # The Scheduler: its lanes, Fair on every core and back, a turn, and
     # game mode said to be next (`docs/scheduler.md` G1-G2).
     Suite("x86-scheduler", ["python3", "tools/run_scheduler.py", X86], x86=True),

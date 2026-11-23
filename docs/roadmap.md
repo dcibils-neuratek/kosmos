@@ -966,8 +966,11 @@ their old windows until S4-S8. **To measure on the M700**: the cost of a
 second, which `--tell` prints. **S4 built** (0.12.102, 18.1023), by a lane: the
 Processes page - Process Viewer's table, band and End - with Process Viewer
 and the page drawing one table through `proctable.lua`, the selected
-process's strip, and rows 19-41 in `x86-sysmon`. S5 (GPU, Disks, Network)
-is in a lane.
+process's strip, and rows 19-41 in `x86-sysmon`. **S5 built** (0.12.103,
+18.1024), by a lane: the GPU, Disks and Network pages, the three old
+windows thin shells over them until S9, the GPU's watts as a graph, the
+strip's drives, connections and buffers, rows 42-86 and `x86-sysmon-io`.
+Next: S6, Memory and Heat and power.
 
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64

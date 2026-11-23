@@ -11,6 +11,8 @@
 --   wm sysmon                  the Overview
 --   wm sysmon:cpu              the CPU page
 --   wm sysmon:processes        the Processes page
+--   wm sysmon:gpu              the GPU page; disks, network the same
+--   wm sysmon:disks /Home      the Disks page, that drive chosen
 --   wm sysmon:--tell cpu       and a line a sample, for a suite
 --
 -- Diego, 22 November 2026: "i want to have 1 place to see all the system
@@ -22,7 +24,10 @@
 -- each core's temperature added, and it opens on the Overview
 -- (`sysmon/overview.lua`), which the Deskbar's meters open too. Step S3.
 -- Process Viewer's table, band and End are its Processes page since S4
--- (`sysmon/processes.lua`), with the chosen process's minute under them.
+-- (`sysmon/processes.lua`), with the chosen process's minute under them;
+-- GPU Monitor's, Disk Monitor's and Network Monitor's windows are its GPU,
+-- Disks and Network pages since S5 (`sysmon/gpu.lua`, `disks.lua`,
+-- `network.lua`), which those windows draw too until S9 retires them.
 --
 -- **The window is the thinnest layer** (*Kits supply, applications
 -- orchestrate*): it counts nothing. Every number is the kernel's, a
@@ -32,10 +37,11 @@
 -- shows a page, and says what it shows with `--tell`.
 --
 -- **The sidebar always shows**, a row for each part of this machine with
--- a live number. A part whose page is not here yet - the GPU, the drives,
--- the network, the LLM server, until S5 to S8 move each in - opens the
--- window that shows it today, which stays until its rows have been seen
--- here (S9), so nothing is out of reach in between. Heat and power opens
+-- a live number, and a row for each drive under Disks that opens the page
+-- with that drive chosen. A part whose page is not here yet - the LLM
+-- server, until S8 moves it in - opens the window that shows it today,
+-- which stays until its rows have been seen here (S9), so nothing is out
+-- of reach in between. Heat and power opens
 -- the CPU page, whose card holds the package's heat and power, and Memory
 -- the Processes page, whose band holds memory and the pools, until each
 -- has its own page (S6).
@@ -59,14 +65,25 @@ local sample = use("/Kosmos/Libraries/sysmon/sample.lua")
 local cpu_page = use("/Kosmos/Libraries/sysmon/cpu.lua")
 local overview_page = use("/Kosmos/Libraries/sysmon/overview.lua")
 local processes_page = use("/Kosmos/Libraries/sysmon/processes.lua")
+local gpu_page = use("/Kosmos/Libraries/sysmon/gpu.lua")
+local disks_page = use("/Kosmos/Libraries/sysmon/disks.lua")
+local network_page = use("/Kosmos/Libraries/sysmon/network.lua")
 
 local ARGS = tostring(args or "")
 local TELL = ARGS:find("%-%-tell") ~= nil     -- a line a sample, for its suite
 
 local START = "overview"
+local START_DRIVE = nil               -- `sysmon disks /Home`: the drive chosen
 
-for word in ARGS:gmatch("%S+") do
-  if word:sub(1, 1) ~= "-" then START = word:lower() break end
+do
+  local words = {}
+
+  for word in ARGS:gmatch("%S+") do
+    if word:sub(1, 1) ~= "-" then words[#words + 1] = word end
+  end
+
+  if words[1] then START = words[1]:lower() end
+  START_DRIVE = words[2]
 end
 
 -- The counter's rate, for the window's clock and for every rate, read where
@@ -96,6 +113,7 @@ local function pace_ticks(p) return counter_hz * p.half // 2 end
 local S = sample.new(counter_hz, 60)
 
 S.pace_ticks = pace_ticks(pace)
+if START_DRIVE then S.chosen_drive = START_DRIVE end
 
 local CORES = S.cores
 local WIDE = CORES > 16 and CORES <= 32
@@ -111,21 +129,27 @@ local function the_pace() return pace end
 local function in_bits() return bits end
 
 local win, err                                -- the window, made once the pages say how tall
+local side                                    -- the sidebar, made below
+local drive_chosen                            -- forward: the Disks page's choice said in the sidebar
 
 local pages = {
   cpu = cpu_page.new{ S = S, w = MW, pace = the_pace, processor = P },
   overview = overview_page.new{ S = S, w = MW, pace = the_pace, bits = in_bits, processor = P },
   processes = processes_page.new{ S = S, w = math.max(MW, processes_page.WIDTH), pace = the_pace,
                                   cpu = CPU, window = function() return win end },
+  gpu = gpu_page.new{ S = S, pace = the_pace, prefix = "sysmon: gpu" },
+  disks = disks_page.new{ S = S, pace = the_pace, bits = in_bits, prefix = "sysmon: disks",
+                          on_choose = function(key) drive_chosen(key) end },
+  network = network_page.new{ S = S, w = math.max(MW, network_page.WIDTH), pace = the_pace, bits = in_bits },
 }
 
 -- How wide each page is: its own `w`, the window's width the sidebar and it.
 for _, page in pairs(pages) do page.w = page.w or MW end
 
+-- The pages in the order `--tell` says them.
+local TOLD = { "overview", "cpu", "processes", "gpu", "disks", "network" }
+
 local ELSEWHERE = {
-  gpu       = "/Kosmos/Apps/gpumon.lua",
-  disks     = "/Kosmos/Apps/diskmon.lua",
-  network   = "/Kosmos/Apps/netmon.lua",
   llm       = "/Kosmos/Apps/llmmon.lua",
 }
 
@@ -196,8 +220,8 @@ local function side_items()
   return items
 end
 
-local side = ui.sidebar{ x = 0, y = L.head + 2, w = SIDE - 1, h = 400, items = side_items(),
-                         selected = showing, follow = { "left", "top", "bottom" } }
+side = ui.sidebar{ x = 0, y = L.head + 2, w = SIDE - 1, h = 400, items = side_items(),
+                   selected = showing, follow = { "left", "top", "bottom" } }
 
 --
 -- **Chosen by the pointer only, until every row is a page** (S9): the
@@ -246,26 +270,35 @@ side.h = height() - 2
 -- The header: the page's name, what the two colours mean, and the dots.
 --------------------------------------------------------------------------
 
-local legend = ui.view{ w = 2 * (10 + 6) + 14 + gfx.measure("User")
-                             + gfx.measure("Kernel"), h = 26 }
+-- What a page's two colours mean: the processors' user and kernel, a
+-- drive's reading and writing, the network's in and out.
+local function make_legend(parts)
+  local v = ui.view{ w = 2 * (10 + 6) + 14 + gfx.measure(parts[1][2]) + gfx.measure(parts[2][2]), h = 26 }
 
-function legend:draw(g)
-  local fh = gfx.height()
-  local y = (self.h - 10) // 2
-  local ty = (self.h - fh) // 2
-  local x = 0
+  function v:draw(g)
+    local y = (self.h - 10) // 2
+    local ty = (self.h - gfx.height()) // 2
+    local x = 0
 
-  for _, part in ipairs({ { cpu_page.USER_COL, "User" }, { cpu_page.KERNEL_COL, "Kernel" } }) do
-    g:fill_round(x, y, 10, 10, part[1], 3)
-    x = x + 10 + 6
-    g:text(x, ty, part[2], theme.text_dim, theme.raised, "ui")
-    x = x + gfx.measure(part[2]) + 14
+    for _, part in ipairs(parts) do
+      g:fill_round(x, y, 10, 10, part[1], 3)
+      x = x + 10 + 6
+      g:text(x, ty, part[2], theme.text_dim, theme.raised, "ui")
+      x = x + gfx.measure(part[2]) + 14
+    end
   end
+
+  return v
 end
+
+local legend = make_legend({ { cpu_page.USER_COL, "User" }, { cpu_page.KERNEL_COL, "Kernel" } })
+local legend_io = make_legend({ { theme.io_in, "Reading" }, { theme.io_out, "Writing" } })
+local legend_net = make_legend({ { theme.io_in, "In" }, { theme.io_out, "Out" } })
 
 -- Declared here and defined with the sampling, which is what they change.
 local set_pace, set_bars, set_per_core, set_bits, show, refresh
 local paced_at = sys.ticks()
+local told_ticks = 0                  -- how long `--tell` has taken since `paced_at`
 
 local more = ui.iconbutton{ icon = "more" }
 
@@ -313,20 +346,26 @@ more.on_click = function()
   -- to the pace, since the words above the history could say a second
   -- while the clock kept another.
   if m then
-    print(("sysmon: more menu at %d,%d, %d wide, rows of %d; %d samples in %.1f s")
-          :format(m.x, m.y, m.w, m.row, S.samples, (sys.ticks() - paced_at) / counter_hz))
+    print(("sysmon: more menu at %d,%d, %d wide, rows of %d; %d samples in %.1f s, %.1f s of it telling")
+          :format(m.x, m.y, m.w, m.row, S.samples, (sys.ticks() - paced_at) / counter_hz,
+                  told_ticks / counter_hz))
   end
 end
 
 local header = ui.header{ x = SIDE, y = 0, w = pages[showing].w, title = pages[showing].title,
-                          right = { legend, end_button, more }, title_bar = true }
+                          right = { legend, legend_io, legend_net, end_button, more }, title_bar = true }
 
 -- What the header holds on each page: the processors' colours where there
--- are graphs of them, and End with the machine's line on Processes.
+-- are graphs of them, a drive's and the network's on theirs, End with the
+-- machine's line on Processes, and on the Overview how long the machine
+-- has been up (row 85).
 local function header_for(id)
-  legend.hidden = (id == "processes") or nil
+  legend.hidden = (id ~= "overview" and id ~= "cpu") or nil
+  legend_io.hidden = (id ~= "disks") or nil
+  legend_net.hidden = (id ~= "network") or nil
   end_button.hidden = (id ~= "processes") or nil
-  header.sub = id == "processes" and pages.processes:summary() or nil
+  header.sub = id == "processes" and pages.processes:summary()
+               or id == "overview" and pages.network:since() or nil
 end
 
 header_for(showing)
@@ -404,6 +443,9 @@ function body:draw(g)
 end
 
 function body:mouse(action, x, y)
+  local page = pages[showing]
+
+  if page.mouse then return page:mouse(action, x, y) end
   if showing ~= "overview" then return false end
 
   return ui.click(self, action, x, y, function(px, py)
@@ -424,13 +466,17 @@ end
 local function ms(ticks) return ticks * 1000 / counter_hz end
 
 local function tell_rows()
-  for _, name in ipairs({ "overview", "cpu", "processes" }) do
+  for _, name in ipairs(TOLD) do
     for _, r in ipairs(pages[name]:rows()) do
       print(("sysmon: row %d %s: %s = %s"):format(r[1], name, r[2], r[3]))
     end
   end
 
+  -- Row 85 in the Overview's header, which is the window's.
+  print(("sysmon: row 85 overview: The header, since the machine started = %s"):format(pages.network:since()))
+
   print("sysmon: core temperatures " .. pages.cpu:temperatures())
+  print("sysmon: gpu temperature " .. pages.gpu:temperature())
   print("sysmon: strip " .. pages.processes:strip_words())
 
   local slow = {}
@@ -480,7 +526,7 @@ end
 function sampler:tick()
   S:take()
   pages.processes:tick(showing == "processes")
-  if showing == "processes" then header.sub = pages.processes:summary() end
+  if showing == "processes" or showing == "overview" then header_for(showing) end
 
   -- The sidebar's numbers, and its rows when a part came or went.
   local items = side_items()
@@ -493,11 +539,25 @@ function sampler:tick()
     moved = true
   end
 
+  -- A stick came or went: the Disks page's list as long as the drives.
+  if showing == "disks" and pages.disks:stale() then moved = true end
+
   if moved then relayout("the parts changed") say_where() end
 
+  -- The shown page's line a sample, for a suite - the GPU's, a drive's,
+  -- the network's - as their windows said theirs (row 60).
+  local line = TELL and pages[showing].tell_line and pages[showing]:tell_line()
+
+  if line then print(("sysmon: %s %s"):format(showing, line)) end
+
+  -- Telling is the suite's, and on TCG its 90 lines are long enough to
+  -- make the tick that tells late: so it is timed, and the menu's line
+  -- says how much of the span it took (`x86-sysmon`'s pace check).
   if TELL and (S.samples == 3 or S.samples % 10 == 0) then
+    local t0 = sys.ticks()
     tell_rows()
     tell_cost()
+    told_ticks = told_ticks + (sys.ticks() - t0)
   end
 end
 
@@ -521,14 +581,51 @@ function relayout(why)
   print(("sysmon: %s, %s, its page %d, the sidebar %d"):format(why,
         ok and ("%dx%d"):format(w, h) or "not resized", page.h, side_need()))
   win:paint()
+
+  -- The dots are at the header's right end, so a page of another width
+  -- moves them: said again, for a suite that clicks them after a page.
+  local mx, my = more:in_window()
+  print(("sysmon: the dots at %d,%d"):format(mx + more.w // 2, my + more.h // 2))
 end
 
 -- A page shown: the header's name, the sidebar's choice and the page, all
 -- in the same paint as the click that asked for them.
 local function first_line(id)
-  if id == "cpu" then return pages.cpu:heading() end
   if id == "processes" then return pages.processes:summary(true) end
-  return "tiles " .. pages.overview:names()
+  if id == "overview" then return "tiles " .. pages.overview:names() end
+  return pages[id]:heading()
+end
+
+--
+-- **What a page asks while it shows** (*Sampling*): the window manager's
+-- windows for Processes' **draws**, its rendering mode for the GPU's, the
+-- chosen drive's programs for Disks and every drive's for the Processes
+-- strip, and the connections as rows for Network and that strip.
+--
+local function wants_for(id)
+  S:want("windows", id == "processes")
+  S:want("rendering", id == "gpu")
+  S:want("programs", id == "disks" and "chosen" or id == "processes" and "all" or nil)
+  S:want("connections", id == "network" or id == "processes")
+end
+
+-- Where a page's minute is in the window, for a suite to look at.
+local function say_graph(id)
+  local page = pages[id]
+
+  if not page.graph_box then return end
+
+  local gx, gy, gw, gh = page:graph_box()
+
+  print(("sysmon: %s graph at %d,%d, %dx%d"):format(id, body.x + gx, body.y + gy, gw, gh))
+end
+
+-- The Disks page's choice, in the sidebar's rows.
+function drive_chosen(key)
+  if showing == "disks" then
+    side.selected = "drive:" .. tostring(key)
+    win:paint()
+  end
 end
 
 function show(id, why)
@@ -541,15 +638,17 @@ function show(id, why)
     if page.view then page.view.hidden = (pid ~= id) or nil end
   end
 
-  -- The window manager's windows asked only while Processes shows, and its
-  -- rows from what the sample last heard, so the page paints at once.
-  S:want("windows", id == "processes")
+  -- What only this page asks, from the next sample; Processes' rows from
+  -- what the sample last heard, so the page paints at once.
+  wants_for(id)
   if id == "processes" then pages.processes:refresh() end
+  if id == "disks" and S.chosen_drive then side.selected = "drive:" .. S.chosen_drive end
 
   header_for(id)
   relayout(why or ("page " .. id))
 
   print(("sysmon: page %s shown: %s"):format(id, first_line(id)))
+  say_graph(id)
 
   if id == "processes" then
     local ex, ey = end_button:in_window()
@@ -577,7 +676,16 @@ end
 function open_part(id, from)
   id = tostring(id or "")
 
-  if id:match("^drive:") then id = "disks" end
+  -- A drive's row: the Disks page with that drive chosen.
+  local key = id:match("^drive:(.+)$")
+
+  if key then
+    pages.disks:choose(key)
+    show("disks", from)
+    side.selected = id
+    win:paint()
+    return
+  end
 
   local page = pages[id] and id or STANDS_IN[id]
 
@@ -631,6 +739,7 @@ function set_pace(p)
   S.pace_ticks = win.tick_every
   S:restart()
   paced_at = win.last_tick
+  told_ticks = 0
 
   print(("sysmon: %s, %s"):format(p.menu:lower(), p.heading:lower()))
   win:paint()
@@ -642,12 +751,12 @@ win:add(header)
 win:add(body)
 win:add(sampler)
 
-if showing == "processes" then
-  S:want("windows", true)
-  pages.processes:refresh()
-end
+wants_for(showing)
+if showing == "processes" then pages.processes:refresh() end
+if showing == "disks" and S.chosen_drive then side.selected = "drive:" .. S.chosen_drive end
 
 print(("sysmon: page %s shown: %s"):format(showing, first_line(showing)))
+say_graph(showing)
 
 -- After the sampler, which is what makes the kit read a clock at all.
 win.tick_every = pace_ticks(pace)
