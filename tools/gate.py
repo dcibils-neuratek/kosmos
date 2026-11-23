@@ -120,6 +120,16 @@ TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
              ["qemu-system-x86_64", "--version"], ["qemu-system-aarch64", "--version"]]
 
 
+LLM_HOST_WATCH = ["user/kits/llm", "tools/test_llm.c", "tools/eu_emu.c", "tools/eu_emu.h",
+                 "user/include/utf8.h", "user/include/gpuproto.h",
+                 # The reference's source and every answer it gave, by name:
+                 # a watch is paths, not patterns.
+                 *sorted("tools/" + f for f in os.listdir(os.path.dirname(os.path.abspath(__file__)))
+                         if f.startswith("llm_reference")),
+                 "tools/llmgpu_header.lua", "user/lib/llmgpu.lua",
+                 "user/lib/kc.lua", "user/lib/eu.lua", "lua/upstream"]
+
+
 def library(*own):
     return RUNTIME + list(own)
 
@@ -245,15 +255,12 @@ SUITES = [
     # prerequisites for it. The Makefile, as for every library suite, is not in
     # it, so a change to how it is built is `ONLY=host-llm` or `make prepush`.
     #
-    Suite("host-llm", ["make", "--no-print-directory", "host-llm-check"],
-          watch=["user/kits/llm", "tools/test_llm.c", "tools/eu_emu.c", "tools/eu_emu.h",
-                 "user/include/utf8.h", "user/include/gpuproto.h",
-                 # The reference's source and every answer it gave, by name:
-                 # a watch is paths, not patterns.
-                 *sorted("tools/" + f for f in os.listdir(os.path.dirname(os.path.abspath(__file__)))
-                         if f.startswith("llm_reference")),
-                 "tools/llmgpu_header.lua", "user/lib/llmgpu.lua",
-                 "user/lib/kc.lua", "user/lib/eu.lua", "lua/upstream"]),
+    # One model a suite (18.1007): the five in one were the whole gate's end.
+    *[Suite("host-llm-%d" % (n + 1),
+            ["make", "--no-print-directory", "host-llm-model", "LLM_MODEL=" + model],
+            watch=LLM_HOST_WATCH)
+      for n, model in enumerate(("phi-2.Q8_0", "phi-2.Q4_0", "qwen2.5-0.5b-instruct-q4_0",
+                                 "qwen2.5-1.5b-instruct-q4_0", "qwen2.5-3b-instruct-q4_0"))],
     # The LLM Kit's steps on Vulkan, each held on this Mac's lavapipe
     # (`docs/xavier.md` X12, V3), named as `host-llm` is.
     Suite("host-llmvk", ["make", "--no-print-directory", "host-llmvk-check"],

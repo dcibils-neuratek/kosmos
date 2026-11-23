@@ -42663,3 +42663,18 @@ reason to keep it is the ARM figure, the Pi 5's architecture. Controls: a
 row scaled by 1.001 fails 4 checks; flooring instead of rounding passes,
 half a step at 32 bits being below anything a check can see.
 
+
+## 18.1007 The LLM Kit on the Mac, one model a suite
+
+`host-llm` was the five models one after another on one core: 335 s alone,
+312 of them the processor's, and 624 s in 0.12.85's gate - the gate's
+longest suite, and started first, so no whole gate could end before it did.
+It is five suites now, `host-llm-1` to `-5`, one model each
+(`make host-llm-model LLM_MODEL=...`), with the same watch; `gate-images`
+builds `test_llm` before any suite starts, so no two build it at once.
+`make host-llm-check` still runs the five in one.
+
+Alone, side by side: **phi-2 Q8_0 70 s, Q4_0 96, Qwen2.5 0.5B 20, 1.5B 76,
+3B 133**, all five in 189 s with the images. The same 532 checks. The work
+is the same; what changed is that the longest piece of it is 133 s, not
+335.

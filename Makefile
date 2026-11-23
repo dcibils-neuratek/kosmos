@@ -2780,13 +2780,22 @@ LLAMA_CPP := build/downloads/llama.cpp-b12205
 # RMSNorm, grouped-query attention, SwiGLU, Qwen2's split and ChatML. A
 # skip that says so where `build/models/` has no model. Two minutes of the
 # host suite's four, so a suite of its own, run beside it (9 November 2026).
-.PHONY: host-llm-check
+#
+# **One model a suite, side by side** (23 November 2026, `testing.md`
+# 18.1007): the five one after another were 335 s of one core, the gate's
+# longest suite at 624 s under its load, and the end of every whole gate.
+# `host-llm-model LLM_MODEL=...` is one; the gate runs the five as
+# `host-llm-1` to `-5`, and `gate-images` builds `test_llm` first, so no
+# two of them build it at once.
+LLM_HOST_MODELS := phi-2.Q8_0 phi-2.Q4_0 qwen2.5-0.5b-instruct-q4_0 \
+                   qwen2.5-1.5b-instruct-q4_0 qwen2.5-3b-instruct-q4_0
+.PHONY: host-llm-check host-llm-model
 host-llm-check: $(HOSTDIR)/test_llm
-	$(HOSTDIR)/test_llm build/models/phi-2.Q8_0.gguf tools/llm_reference_phi-2.Q8_0.txt
-	$(HOSTDIR)/test_llm build/models/phi-2.Q4_0.gguf tools/llm_reference_phi-2.Q4_0.txt
-	$(HOSTDIR)/test_llm build/models/qwen2.5-0.5b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt
-	$(HOSTDIR)/test_llm build/models/qwen2.5-1.5b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-1.5b-instruct-q4_0.txt
-	$(HOSTDIR)/test_llm build/models/qwen2.5-3b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-3b-instruct-q4_0.txt
+	for m in $(LLM_HOST_MODELS); do \
+	    $(HOSTDIR)/test_llm build/models/$$m.gguf tools/llm_reference_$$m.txt || exit 1; \
+	done
+host-llm-model: $(HOSTDIR)/test_llm
+	$(HOSTDIR)/test_llm build/models/$(LLM_MODEL).gguf tools/llm_reference_$(LLM_MODEL).txt
 
 .PHONY: llm-reference
 llm-reference:
@@ -6929,7 +6938,7 @@ GATE_ARM_APPS ?= 1
 # made fresh every gate because the suites boot them and write to them -
 # and the four sticks are made side by side, each one's own temporary
 # files named after it.
-gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
+gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer $(HOSTDIR)/test_llm
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory -j$(J) FILTERS= x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) TEST=1 x86-build >/dev/null && \
