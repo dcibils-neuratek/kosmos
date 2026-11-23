@@ -111,6 +111,12 @@ static long ask(struct audio_request *req, long pass, struct audio_reply *out)
 
 long audio_stream_open(struct audio_stream *out, const char *name, unsigned periods)
 {
+    return audio_stream_open_format(out, name, periods, 0, 0, 0);
+}
+
+long audio_stream_open_format(struct audio_stream *out, const char *name, unsigned periods,
+                              unsigned rate, unsigned bits, unsigned channels)
+{
     struct audio_request req;
     struct audio_reply rep;
     long r;
@@ -121,6 +127,21 @@ long audio_stream_open(struct audio_stream *out, const char *name, unsigned peri
 
     if (audio < 0 || out->format.period == 0) {
         return AUDIO_ERR_NO_DEVICE;
+    }
+
+    /* A format of its own: the period as long as the machine's, in this
+     * stream's frames - the one sum, audioproto.h's. */
+    if (rate != 0 || bits != 0 || channels != 0) {
+        uint32_t mix_frames = out->format.period / (2u * (out->format.channels ? out->format.channels : 2u));
+
+        if (!audio_format_valid(rate, bits, channels)) {
+            return AUDIO_ERR_FORMAT;
+        }
+
+        out->format.period = audio_period_frames(mix_frames, out->format.rate, rate)
+                             * channels * (bits / 8u);
+        out->format.rate = rate;
+        out->format.channels = channels;
     }
 
     out->ring = audio_ring_create(out->format.period, periods, &out->cap);
@@ -137,6 +158,9 @@ long audio_stream_open(struct audio_stream *out, const char *name, unsigned peri
     req.master = -1;
     req.master_muted = -1;
     strncpy(req.name, name != NULL ? name : "sound", AUDIO_NAME_MAX - 1);
+    req.rate = rate;
+    req.bits = bits;
+    req.channels = channels;
 
     r = ask(&req, out->cap, &rep);
 

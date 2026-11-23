@@ -397,6 +397,16 @@ adaptive; U6 and U7 if they are not. U1 says which.
     the same length of time as the mix's. The server converts each such
     stream into the mix. The protocol changes here, so installed
     applications are built again (P5 brings them).
+    **Built in 0.12.89** (`testing.md` 18.1010): `rate`, `bits` and
+    `channels` at the end of `audio_request`, all nought for format 0;
+    `audio_period_frames` in `audioproto.h` is the one sum both sides
+    make a ring's period from, and the server holds the ring to it
+    (`AUDIO_ERR_FORMAT` otherwise). A stream in the mix's own format is
+    mixed sample for sample as before; any other goes through its own
+    carry and sinc (`pcm_convert_wide`) into the 32-bit mix, a period at
+    a time, and its position comes back in its own frames.
+    `audio.open(name, periods, { rate, bits, channels })` and
+    `audio_stream_open_format` are the two doors.
   - **U10d, the output follows the best stream.** The mix runs at the
     output's rate. A USB speaker's setting and rate follow the
     highest-resolution stream playing, within what it offers, and the

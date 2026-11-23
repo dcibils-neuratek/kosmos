@@ -42729,3 +42729,68 @@ suites that stand on the whole tree. Run as that (`ONLY=` the 127) at
 longest, `x86-cafesa3d-2`, 341 s. So `make test` is inside ten minutes;
 `make test ALL=1` - every library's suite as well, what `make prepush`
 runs - is 870.
+
+## 18.1010 Streams in formats of their own (USB audio, U10c)
+
+`docs/usbaudio.md` U10c. **`AUDIO_OP_OPEN` takes a format**: `rate`,
+`bits` and `channels` at the end of `audio_request`, all nought for format
+0. A stream's ring holds periods as long as the mix's, in its own frames -
+`audio_period_frames` in `audioproto.h`, the one sum the client makes its
+ring from and the server holds it to, `AUDIO_ERR_FORMAT` when they differ
+or the format is not 8 to 192 kHz, 16, 24 or 32 bits, 1 or 2 channels. 256
+frames of the mix at 44.1 kHz are 557 at 96 kHz, 279 at 48 and 128 at
+22.05. A stream in the mix's own format is mixed sample for sample, as
+every stream was. Any other has a carry and a sinc of its own (66 KB, only
+for a converting stream) and goes through `pcm_convert_wide` into the
+32-bit mix, a period at a time, with its position given back in its own
+frames. The doors are `audio.open(name, periods, { rate, bits, channels })`
+and `audio_stream_open_format`.
+
+**`usb_audio_format`**, in a new suite `x86-usb-3` with the four speaker
+parts that were in `x86-usb-2` (241 s): HD Audio for the mix's clock, QEMU's
+speaker plugged in, a WAV at 48 kHz. A program writes 0.8 s of a tone at
+half scale in each format, and each must reach the speaker as that tone:
+
+| stream | heard | crossings | peak |
+|---|---|---|---|
+| 96 kHz, 24 bits, stereo, 1000 Hz | 0.8000 s, 1000.0 Hz | 800 | 15424 |
+| 48 kHz, 32 bits, mono, 1000 Hz | 0.8000 s, 999.9 Hz | 800 | 15430 |
+| 22.05 kHz, 16 bits, stereo, 1050 Hz | 0.8002 s, 1052.2 Hz | 842 | 15422 |
+| 44.1 kHz, 16 bits, stereo, 1050 Hz | 0.8000 s, 1050.0 Hz | 840 | 15422 |
+
+The 22.05 kHz tone's two extra crossings are the sinc ringing at the tone's
+own start and end, which a band-limited tone cut on and off has; every
+tenth of a second between holds its 105. Each position comes back within
+a period of all that was written, and 20 bits is refused by number and
+said. **Its control**, the server built to take every stream's rate for
+the mix's, fails 6 of 15: 458.8 Hz for 1.63 s at 96 kHz, 2097.3 Hz for
+0.40 s at 22.05, 918.0 at 48, and the positions 152476 and 8800 of 76800
+and 17640.
+
+**Two ends of a sound were being cut, and the first runs found both.** A
+converting stream's last part-period waited in its carry for a whole
+period that never came, so a stream's position stopped up to a period
+short (76210 of 76800 at 96 kHz) and the end of its sound was never heard.
+Padding that period with silence was half of it: the filter's lookahead,
+33 frames, was still held, so the tone stopped 1.5 ms early and mid-cycle,
+and the speaker's sinc rang at the cut at +-300 - 844 crossings for 840
+cycles, read as 1055.2 Hz every run. Now a ring found dry converts what
+the filter holds to its end (`last`), silence past it, and the next period
+starts afresh - which is what a late client gets in any case. **And the
+speaker's own converter did the same, for every sound, before U10c**: the
+mix's last 33 frames waited in `usb_carry` until something else played, so
+the 44.1 kHz stream's position stopped 15 frames short and a sound ended
+wherever in a cycle the cut fell - 1051.2 Hz on one run, 1064.0 on the
+control's, where nothing touched that stream's path. `refill_usb` now
+converts the carry to its end when nothing was mixed, and empties it.
+
+**And the part was its own first bug.** The program was typed as one
+`fs.write` with newlines in it, which the prompt ends at, and then as one
+line of 1100 bytes, which the prompt cuts off; it is sent in pieces of 300
+now, and each write is checked rather than assumed.
+
+**The gate**, 0.12.89: 161 suites in 718 s, 13 failed - every one the disk:
+2.1 GB free, "No space left on device" for SQLite's image, screendumps
+never written, and the driver's own beep's WAV stopping at two seconds. Two
+old development stick images went (Diego: "Delete both"), and the 13 again
+passed, 13 of 13 in 290 s.

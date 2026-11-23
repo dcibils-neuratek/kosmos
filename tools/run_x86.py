@@ -5092,6 +5092,128 @@ def usb_audio_choose(image, check):
         machine.close()
 
 
+def usb_audio_format(image, check):
+    """**Streams in formats of their own, converted into the mix** -
+    `docs/usbaudio.md` U10c.
+
+    HD Audio for the mix's clock and QEMU's USB speaker, plugged in, its
+    sound written to a WAV at 48 kHz. A program opens a stream with a
+    format - `audio.open(name, periods, { rate, bits, channels })` - and
+    writes 0.8 s of a tone in it, at half scale, as a file would hold it:
+
+      * 96 kHz, 24 bits, stereo, 1000 Hz;
+      * 48 kHz, 32 bits, mono, 1000 Hz;
+      * 22.05 kHz, 16 bits, stereo, 1050 Hz;
+      * 44.1 kHz, 16 bits, stereo, 1050 Hz - the mix's own, said aloud.
+
+    Each must reach the speaker as that tone, 0.7 s of it and within 5 Hz,
+    and its position must come back in the stream's own frames, within a
+    period of all it wrote. A format the server cannot take - 20
+    bits - is refused by number, and said.
+
+    Its control is the server built to take every stream's rate for the
+    mix's (`testing.md` 18.1010): the pitches move by the ratio and the
+    first three tones fail.
+    """
+    wav = os.path.join(os.path.dirname(image), "usb-audio-format.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    extra = ("-device", "ich9-intel-hda",
+             "-device", "hda-output,audiodev=a0",
+             "-audiodev", "none,id=a0",
+             "-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav)
+    machine = PluggedMachine(image, extra)
+    program = r"""
+local A = use("/Kosmos/Libraries/audio.lua")
+local rate, bits, ch, hz = %d, %d, %d, %d
+local s, why = A.open("format", 8, { rate = rate, bits = bits, channels = ch })
+if not s then print("FMT refused " .. tostring(why)) return end
+local per = rate // hz
+local code = bits == 16 and "<i2" or bits == 24 and "<i3" or "<i4"
+local amp = (1 << (bits - 1)) // 2
+local cyc = {}
+for i = 0, per - 1 do
+  local one = string.pack(code, math.floor(math.sin(2 * math.pi * i / per) * amp))
+  cyc[#cyc + 1] = ch == 2 and one .. one or one
+end
+local tone = table.concat(cyc):rep(hz * 8 // 10)
+print("FMT open " .. s.frames .. " frames, " .. s.period .. " bytes")
+for at = 1, #tone, s.period do
+  local ok, w = s:write(tone:sub(at, at + s.period - 1))
+  if not ok then print("FMT stopped " .. tostring(w)) break end
+end
+local want = #tone // (ch * bits // 8)
+for _ = 1, 2000 do
+  if s:position() >= want then break end
+  sys.sleep(1)
+end
+print("FMT played " .. s:position() .. " of " .. want .. " frames " .. s.frames)
+s:close()
+"""
+    tones = [(96000, 24, 2, 1000), (48000, 32, 1, 1000),
+             (22050, 16, 2, 1050), (44100, 16, 2, 1050)]
+
+    try:
+        if not machine.wait_for(0, r"kosmos> ", 90) or \
+           not machine.wait_for(0, r"xhci: watching for devices plugged in and out", 60):
+            check(False, "the machine did not reach a prompt with its USB driver watching")
+            return
+
+        mark = machine.mark()
+        machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
+        check(machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30),
+              "the speaker plugged in was not streamed")
+
+        for rate, bits, ch, hz in tones + [(48000, 20, 2, 1000)]:
+            name = "fmt%d_%d_%d" % (rate, bits, ch)
+            # One line: what is typed at the prompt ends at its newline.
+            text = " ".join(l.strip() for l in (program % (rate, bits, ch, hz)).splitlines()
+                            if l.strip())
+            # And in pieces: the prompt keeps a line of only so many bytes.
+            machine.typed('FMT_T = ""', r"", 10)
+
+            for at in range(0, len(text), 300):
+                machine.typed('FMT_T = FMT_T .. %s' % lua_string(text[at:at + 300]), r"", 10)
+
+            wrote, said = machine.typed('fs.write("/Temporary/%s.lua", FMT_T) print("WROTE")'
+                                        % name, r"WROTE", 10)
+            check(wrote, "the program for %s was not written: %r" % (name, said[-300:]))
+
+        for rate, bits, ch, hz in tones:
+            label = "%d Hz, %d bits, %d channel%s" % (rate, bits, ch, "s" if ch > 1 else "")
+            size = os.path.getsize(wav) if os.path.exists(wav) else 44
+            _, out = machine.typed("run /Temporary/fmt%d_%d_%d.lua" % (rate, bits, ch),
+                                   r"FMT (?:played|refused|stopped)[^\n]*\n", 120)
+            played = re.search(r"FMT played (\d+) of (\d+) frames (\d+)", out)
+            heard, pitch = wav_tone(wav, size)
+            check(heard >= 0.7 and abs(pitch - hz) <= 5,
+                  "%s: the speaker did not play %d Hz for 0.7 s - %.3f s at %.1f Hz: %r"
+                  % (label, hz, heard, pitch,
+                     [l for l in out.splitlines() if l.startswith("FMT")]
+                     or out[-400:]))
+            # Within a period of all it wrote, either way: the end is
+            # padded to a period, and the filters' taps - the stream's and
+            # the speaker's - hold its last 33 frames or so. Counted in the
+            # mix's frames instead it would be 2.2 times off at 96 kHz.
+            check(played is not None
+                  and abs(int(played.group(1)) - int(played.group(2)))
+                  <= int(played.group(3)) + 64,
+                  "%s: the position was not the stream's frames, within a period of all "
+                  "it wrote: %r" % (label, played and played.group(0)))
+
+        _, out = machine.typed("run /Temporary/fmt48000_20_2.lua", r"FMT refused[^\n]*\n", 30)
+        check("FMT refused the audio server cannot take that format" in out,
+              "20 bits was not refused as a format: %r"
+              % [l for l in out.splitlines() if l.startswith("FMT")])
+    finally:
+        machine.close()
+
+
 def usb_audio_mixer(image, check):
     """**Mixer's Output card, and a speaker plugged in, said** -
     `docs/usbaudio.md` U5.
@@ -6348,7 +6470,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_audio_format', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6468,6 +6590,8 @@ def main():
         usb_audio_choose(image, check)
     if 'usb_audio_mixer' in wanted:
         usb_audio_mixer(image, check)
+    if 'usb_audio_format' in wanted:
+        usb_audio_format(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

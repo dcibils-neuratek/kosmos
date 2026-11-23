@@ -53,6 +53,16 @@ struct audio_stream {
  * AUDIO_ERR_ number, or a negative syscall error.
  */
 long audio_stream_open(struct audio_stream *out, const char *name, unsigned periods);
+
+/*
+ * The same, for samples in a format of their own (`docs/usbaudio.md`
+ * U10c): `rate` 8000 to 192000, `bits` 16, 24 or 32, `channels` 1 or 2.
+ * The server converts them into the mix. `out->format` is then the
+ * stream's - its rate, channels, and a period's bytes - rather than the
+ * machine's.
+ */
+long audio_stream_open_format(struct audio_stream *out, const char *name, unsigned periods,
+                              unsigned rate, unsigned bits, unsigned channels);
 void audio_stream_close(struct audio_stream *s);
 
 /* Its fader at the server: `gain` 0..256 (256 is unity) and `muted` 0 or 1,

@@ -202,19 +202,42 @@ end
 -- Omitted means the default in `audioring.h`, which is what every caller
 -- got before this argument existed.
 --
-function audio.open(name, periods)
+-- **`format`, `{ rate =, bits =, channels = }`, is what the samples are**
+-- (`docs/usbaudio.md` U10c): 8 to 192 kHz, 16, 24 or 32 bits, 1 or 2
+-- channels, as a file holds them. The server converts them into the mix,
+-- so a program never resamples. Omitted is the mix's own - its rate, 16
+-- bits, stereo - which is mixed sample for sample. A period is then as
+-- long as the mix's in the stream's frames (`audio_period_frames`), and
+-- `frames` and `rate` on the stream are the stream's.
+--
+function audio.open(name, periods, format)
   local fmt = audio.format()
 
   if fmt.period == 0 then return nil, "this machine has no sound device" end
 
-  local cap, at = sys.ring_create(fmt.period, periods)
+  local rate, bits, channels = 0, 0, 0
+  local period, frames, srate = fmt.period, fmt.frames, fmt.rate
+
+  if format then
+    rate = math.tointeger(format.rate) or fmt.rate
+    bits = math.tointeger(format.bits) or 16
+    channels = math.tointeger(format.channels) or 2
+    -- audioproto.h's audio_period_frames, the same sum on this side.
+    frames = (fmt.frames * rate + fmt.rate // 2) // math.max(1, fmt.rate)
+    period = frames * channels * (bits // 8)
+    srate = rate
+  end
+
+  local cap, at = sys.ring_create(period, periods)
 
   if not cap then return nil, tostring(at) end
 
   -- The capability goes as `send`'s third argument, which is how a window
   -- hands the compositor its surface. It is not a field in the message: a
   -- capability is not data and does not travel as any.
-  local r, why = request(OP_OPEN, { name = tostring(name or "sound") }, cap)
+  local r, why = request(OP_OPEN, { name = tostring(name or "sound"),
+                                     rate = rate, bits = bits,
+                                     channels = channels }, cap)
 
   if not r then
     sys.release(cap)
@@ -231,7 +254,7 @@ function audio.open(name, periods)
   -- now a different number per stream.
   local s = setmetatable({ id = r.stream, period = r.period,
                            periods = r.periods, ring = at, cap = cap,
-                           frames = fmt.frames, rate = fmt.rate }, stream)
+                           frames = frames, rate = srate }, stream)
 
   --
   -- Asked of the ring rather than taken from what was requested.
@@ -264,9 +287,9 @@ end
 --------------------------------------------------------------------------
 
 -- struct audio_request: op, stream, gain, balance, muted, master, name[24],
--- device[32]
-local REQUEST  = "<I4I4i4i4i4i4i4c24c32"   -- ..., master_muted, name, device
-local REQ_SIZE = 84
+-- device[32], and open's format: rate, bits, channels
+local REQUEST  = "<I4I4i4i4i4i4i4c24c32I4I4I4"   -- ..., name, device, format
+local REQ_SIZE = 96
 
 -- struct audio_stream_info: stream, gain, balance, muted, peak, queued, name
 local INFO      = "<I4I4i4I4I4I4c24"
@@ -286,7 +309,7 @@ local DEVICE_SIZE  = 88
 
 assert(#string.pack(DEVICE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "") == DEVICE_SIZE,
        "audio: the device layout does not match audioproto.h")
-assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, "", "") == REQ_SIZE,
+assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, "", "", 0, 0, 0) == REQ_SIZE,
        "audio: the request layout does not match audioproto.h")
 assert(#string.pack(INFO, 0, 0, 0, 0, 0, 0, "") == INFO_SIZE,
        "audio: the stream layout does not match audioproto.h")
@@ -305,6 +328,7 @@ local ERRORS = {
   [3] = "that is not an audio ring",
   [4] = "too many streams already",
   [5] = "the audio server did not understand that",
+  [6] = "the audio server cannot take that format",
 }
 
 function request(op, fields, pass)
@@ -326,7 +350,9 @@ function request(op, fields, pass)
                             fields.muted or -1,
                             fields.master or -1,
                             fields.master_muted or -1,
-                            name, device)
+                            name, device,
+                            fields.rate or 0, fields.bits or 0,
+                            fields.channels or 0)
 
   local reply, why = fs.raw("/Devices/audio", bytes, pass, "audio")
 

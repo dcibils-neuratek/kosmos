@@ -62,6 +62,7 @@
 #define AUDIO_ERR_NO_RING     3u
 #define AUDIO_ERR_FULL        4u
 #define AUDIO_ERR_BAD_OP      5u
+#define AUDIO_ERR_FORMAT      6u    /* open: a format, or a ring, it cannot take */
 
 #define AUDIO_NAME_MAX   24u
 #define AUDIO_LIST_MAX    8u    /* streams one `streams` reply can carry */
@@ -97,6 +98,19 @@ struct audio_request {
     int32_t  master_muted;      /* 0 or 1; -1 leaves it */
     char     name[AUDIO_NAME_MAX];
     char     device[AUDIO_DEVICE_NAME_MAX];     /* choose: whose */
+
+    /*
+     * **open: the stream's own format** (`docs/usbaudio.md` U10c) - its
+     * rate, 16, 24 or 32 bits, and 1 or 2 channels. All three nought is
+     * format 0, the mix's own: its rate, 16 bits, stereo, which is what
+     * every stream was before these fields existed and is mixed exactly
+     * as it was. Any other is converted into the mix by the server, with
+     * the sinc `pcmconvert.h` has, so a program hands over what its file
+     * holds and never resamples it itself.
+     */
+    uint32_t rate;
+    uint32_t bits;
+    uint32_t channels;
 };
 
 struct audio_stream_info {
@@ -154,6 +168,35 @@ struct audio_reply {
  * raise without thinking, and the failure would be a reply silently
  * truncated rather than a build that stops.
  */
+/*
+ * **A stream's period, in its own frames**: as long as the mix's, rounded
+ * to a whole frame. Both sides compute it here - the client to make its
+ * ring, the server to hold the ring to it - so there is one sum and not
+ * two that might disagree. 256 frames of the mix at 44.1 kHz are 557 at
+ * 96 kHz; the few microseconds that rounding leaves are the converter's,
+ * which carries its phase from one period to the next.
+ */
+static inline uint32_t audio_period_frames(uint32_t mix_frames, uint32_t mix_rate,
+                                           uint32_t rate)
+{
+    if (mix_rate == 0) {
+        return 0;
+    }
+
+    return (uint32_t)(((uint64_t)mix_frames * rate + mix_rate / 2u) / mix_rate);
+}
+
+/* What a format may be: 8 to 192 kHz, 16, 24 or 32 bits, 1 or 2 channels. */
+#define AUDIO_RATE_MIN     8000u
+#define AUDIO_RATE_MAX   192000u
+
+static inline int audio_format_valid(uint32_t rate, uint32_t bits, uint32_t channels)
+{
+    return rate >= AUDIO_RATE_MIN && rate <= AUDIO_RATE_MAX
+           && (bits == 16 || bits == 24 || bits == 32)
+           && (channels == 1 || channels == 2);
+}
+
 _Static_assert(sizeof(struct audio_request) <= 2048,
                "an audio request must fit in one message");
 _Static_assert(sizeof(struct audio_reply) <= 2048,

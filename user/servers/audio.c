@@ -47,9 +47,38 @@ struct stream {
     uint32_t           peak;            /* from the last mix, before gain */
     uint64_t           consumed;        /* frames taken from this ring, ever */
     char               name[AUDIO_NAME_MAX];
+
+    /*
+     * **Its own format, when it is not the mix's** (`docs/usbaudio.md`
+     * U10c). `convert` is false for format 0 and for a format that is the
+     * mix's exactly, which are mixed sample for sample as they always
+     * were; true for any other, whose periods go through `conv`.
+     */
+    bool               convert;
+    uint32_t           rate, bits, channels;
+    struct conv       *conv;
+};
+
+/*
+ * **A converting stream's working state**: the ring's periods not yet
+ * converted, with the taps the filter keeps behind its phase; the mix's
+ * frames converted and not yet mixed, because a pass takes exactly one
+ * mix period and a ring period's worth of input does not land on one; and
+ * the filter, made once for the stream's rate. Kept beside the streams
+ * rather than in them so a format-0 stream - nearly every stream - costs
+ * nothing: the filter alone is 66 KB.
+ */
+struct conv {
+    unsigned char carry[HAL_SND_PERIOD_BYTES_MAX * 2u + (2u * PCM_SINC_HALF + 2u) * 8u];
+    size_t        have;                 /* bytes in `carry` */
+    double        phase;
+    int32_t       out[HAL_SND_PERIOD_BYTES_MAX / 2];   /* the mix's, 32-bit stereo */
+    unsigned      got;                  /* frames in `out` */
+    struct pcm_sinc sinc;               /* when the rate is not the mix's */
 };
 
 static struct stream streams[STREAM_MAX];
+static struct conv   convs[STREAM_MAX];
 static uint32_t      next_id = 1;
 static int32_t       master  = 256;
 
@@ -174,6 +203,80 @@ static struct stream *find(uint32_t id)
  * takes 24 bits gets 24 of them. At unity a 16-bit sample is itself with
  * sixteen noughts under it, so narrowing back to 16 gives it back exactly.
  */
+/*
+ * A converting stream's next period of the mix, in `s->conv->out`: the
+ * ring's periods taken into the carry and converted until `frames` of the
+ * mix are there, or until the ring is dry - when what the filter held is
+ * converted to its end and the rest of the period is silence. False only
+ * when there was nothing at all.
+ */
+static bool converted(struct stream *s, unsigned frames)
+{
+    struct conv *c = s->conv;
+    unsigned period = s->ring->period_bytes;
+
+    for (;;) {
+        size_t used = 0;
+        long n;
+
+        n = pcm_convert_wide(c->carry, c->have, (long)s->rate, (long)s->channels,
+                                  (long)s->bits, 0, &c->phase, c->out + 2u * c->got,
+                                  (long)(frames - c->got), &used, (long)mix_rate, &c->sinc);
+
+        memmove(c->carry, c->carry + used, c->have - used);
+        c->have -= used;
+        c->got += (unsigned)n;
+
+        if (c->got >= frames) {
+            return true;
+        }
+
+        /*
+         * The ring is dry with part of a period converted: that part is
+         * mixed now, silence after it. Waiting for a whole period would
+         * keep a stream's last few milliseconds - the end of the sound -
+         * in here until it opened something else, and a client that is
+         * merely late gets silence either way, as a format-0 one does.
+         */
+        if (audio_ring_acquire(&s->ring->write) - s->ring->read == 0) {
+            /* What the filter was holding back for taps, converted to its
+             * end with silence past it - so the sound ends where it was
+             * written to, not a filter's length early and mid-cycle. */
+            if (c->have > 0) {
+                n = pcm_convert_wide(c->carry, c->have, (long)s->rate, (long)s->channels,
+                                     (long)s->bits, 1, &c->phase, c->out + 2u * c->got,
+                                     (long)(frames - c->got), &used, (long)mix_rate, &c->sinc);
+                c->got += (unsigned)n;
+
+                if (c->got >= frames) {
+                    memmove(c->carry, c->carry + used, c->have - used);
+                    c->have -= used;
+                    return true;        /* more to come out next pass */
+                }
+
+                c->have = 0;            /* all of it out: the next starts afresh */
+                c->phase = 0;
+            }
+
+            if (c->got == 0) {
+                return false;
+            }
+
+            memset(c->out + 2u * c->got, 0, (frames - c->got) * 2u * sizeof(c->out[0]));
+            c->got = frames;
+            return true;
+        }
+
+        if (c->have + period > sizeof(c->carry)) {
+            c->have = 0;                /* cannot happen: the filter keeps 33 */
+        }
+
+        memcpy(c->carry + c->have, audio_ring_slot(s->ring, s->ring->read), period);
+        c->have += period;
+        audio_ring_consumed(s->ring, s->ring->read + 1);
+    }
+}
+
 static bool mix(int32_t *out)
 {
     static int64_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
@@ -197,8 +300,10 @@ static bool mix(int32_t *out)
             continue;
         }
 
-        /* Acquire: having seen this index, the samples behind it are there. */
-        if (audio_ring_acquire(&s->ring->write) - s->ring->read == 0) {
+        /* Acquire: having seen this index, the samples behind it are there.
+         * A converting stream may have a period in hand with its ring
+         * empty, and `converted` is what knows. */
+        if (!s->convert && audio_ring_acquire(&s->ring->write) - s->ring->read == 0) {
             s->peak = 0;
             continue;
         }
@@ -217,6 +322,33 @@ static bool mix(int32_t *out)
             left = (g * (100 - s->balance)) / 100;
         } else if (s->balance < 0) {
             right = (g * (100 + s->balance)) / 100;
+        }
+
+        if (s->convert) {
+            const int32_t *w;
+
+            if (!converted(s, samples / 2u)) {
+                s->peak = 0;
+                continue;               /* not a whole period yet */
+            }
+
+            w = s->conv->out;
+
+            for (k = 0; k < samples; k++) {
+                int32_t mag = (int32_t)((w[k] < 0 ? -(int64_t)w[k] : (int64_t)w[k]) >> 16);
+
+                if (mag > peak) {
+                    peak = mag;
+                }
+
+                acc[k] += ((int64_t)w[k] * ((k & 1u) ? right : left)) / 256;
+            }
+
+            s->peak = (uint32_t)peak;
+            s->conv->got = 0;
+            s->consumed += period_frames;
+            mixed++;
+            continue;
         }
 
         in = (const int16_t *)(const void *)audio_ring_slot(s->ring,
@@ -400,29 +532,48 @@ static bool refill_usb(void)
     unsigned bytes = period_bytes * 2u;         /* the mix, at 32 bits */
     unsigned bits = usb->subframe * 8u;
     size_t used = 0;
+    bool fresh;
     long n, i;
 
-    if (waiting >= usb_keep) {
+    if (waiting >= usb_keep || period_bytes == 0) {
         return false;
     }
 
-    if (period_bytes == 0 || !mix(wide)) {
+    /*
+     * **Nothing mixed, and the filter still holding the end of the
+     * sound**: converted to its end, silence past it, and the carry
+     * emptied. Without this the last 33 frames of every sound played on a
+     * speaker waited here for the next one, and the sound was cut a
+     * filter's length early, mid-cycle, where the sinc rings (`testing.md`
+     * 18.1010).
+     */
+    fresh = mix(wide);
+
+    if (!fresh && usb_have == 0) {
         return false;
     }
 
-    if (usb_have + bytes > sizeof(usb_carry)) {
-        usb_have = 0;                   /* cannot happen: the filter keeps 31 */
+    if (fresh) {
+        if (usb_have + bytes > sizeof(usb_carry)) {
+            usb_have = 0;               /* cannot happen: the filter keeps 31 */
+        }
+
+        memcpy(usb_carry + usb_have, wide, bytes);
+        usb_have += bytes;
     }
 
-    memcpy(usb_carry + usb_have, wide, bytes);
-    usb_have += bytes;
-
-    n = pcm_convert_wide(usb_carry, usb_have, (long)mix_rate, 2, 32, 0,
+    n = pcm_convert_wide(usb_carry, usb_have, (long)mix_rate, 2, 32, !fresh,
                          &usb_phase, converted,
                          (long)(sizeof(converted) / sizeof(converted[0]) / 2), &used,
                          (long)usb->rate, &usb_sinc);
-    memmove(usb_carry, usb_carry + used, usb_have - used);
-    usb_have -= used;
+
+    if (fresh) {
+        memmove(usb_carry, usb_carry + used, usb_have - used);
+        usb_have -= used;
+    } else {
+        usb_have = 0;                   /* all of it out: the next starts afresh */
+        usb_phase = 0;
+    }
 
     for (i = 0; i < n && waiting + (uint64_t)i < usb->frames; i++) {
         uint8_t *at = usb_audio_at(usb, write + (uint64_t)i);
@@ -482,8 +633,13 @@ static void publish_positions(void)
             continue;
         }
 
+        /* In the stream's own frames: a converting stream's position is
+         * the mix's, at its rate. */
         audio_ring_position(s->ring,
-                            audio_frames_played(s->consumed, (uint64_t)held));
+                            s->convert
+                            ? audio_frames_played(s->consumed, (uint64_t)held)
+                              * s->rate / mix_rate
+                            : audio_frames_played(s->consumed, (uint64_t)held));
     }
 }
 
@@ -514,11 +670,67 @@ static void do_open(const struct audio_request *req, long cap,
         return;
     }
 
-    at = kosmos_mem_map(cap);
+    {
+        uint32_t rate = req->rate, bits = req->bits, channels = req->channels;
+        bool zero = rate == 0 && bits == 0 && channels == 0;
 
-    if (at < 0 || !audio_ring_valid((struct audio_ring *)(uintptr_t)at)) {
-        rep->error = AUDIO_ERR_NO_RING;
-        return;
+        if (zero) {
+            rate = mix_rate;
+            bits = 16;
+            channels = 2;
+        }
+
+        if (!audio_format_valid(rate, bits, channels)) {
+            kosmos_cap_drop(cap);       /* the ring is the client's; our name for it goes */
+            rep->error = AUDIO_ERR_FORMAT;
+            return;
+        }
+
+        at = kosmos_mem_map(cap);
+
+        if (at < 0 || !audio_ring_valid((struct audio_ring *)(uintptr_t)at)) {
+            rep->error = AUDIO_ERR_NO_RING;
+            return;
+        }
+
+        /*
+         * The ring is held to the format: a period as long as the mix's,
+         * in the stream's frames. One that is not would be converted at
+         * the wrong length, and the sound would drift from its pictures by
+         * the difference, quietly, for as long as it played.
+         */
+        if (((struct audio_ring *)(uintptr_t)at)->period_bytes
+            != audio_period_frames(period_frames, mix_rate, rate) * channels * (bits / 8u)) {
+            (void)kosmos_share_unmap((unsigned long)at,
+                                     (AUDIO_RING_DATA
+                                      + ((struct audio_ring *)(uintptr_t)at)->periods
+                                        * ((struct audio_ring *)(uintptr_t)at)->period_bytes
+                                      + 4095u) / 4096u);
+            kosmos_cap_drop(cap);
+            rep->error = AUDIO_ERR_FORMAT;
+            return;
+        }
+
+        streams[i].rate = rate;
+        streams[i].bits = bits;
+        streams[i].channels = channels;
+        streams[i].convert = !(rate == mix_rate && bits == 16 && channels == 2);
+        streams[i].conv = NULL;
+
+        if (streams[i].convert) {
+            struct conv *c = &convs[i];
+
+            c->have = 0;
+            c->phase = 0;
+            c->got = 0;
+
+            if (rate != mix_rate && (c->sinc.in_rate != (long)rate
+                                     || c->sinc.out_rate != (long)mix_rate)) {
+                pcm_sinc_prepare(&c->sinc, (long)rate, (long)mix_rate);
+            }
+
+            streams[i].conv = c;
+        }
     }
 
     streams[i].open = true;
@@ -544,7 +756,7 @@ static void do_open(const struct audio_request *req, long cap,
 
     rep->error = AUDIO_OK;
     rep->stream = streams[i].id;
-    rep->period = period_bytes;
+    rep->period = streams[i].ring->period_bytes;
     rep->periods = device_depth;
 }
 

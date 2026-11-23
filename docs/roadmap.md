@@ -168,6 +168,33 @@ or open path loses a race in one particular way. The suite should first
 say what differs (where, and whether the whole model, the camera or the
 materials), and then the race should be fixed rather than waited out.
 
+**Core and apps, each suite run for what it stands on, worked out rather
+than written - AGREED on 23 November 2026, next after U10c.** Diego: "The
+Tests for all kosmos is becoming too big with all the new apps and
+services", "I expect we can have a suite of os-core tests that test the
+servers drivers kits kernel and else", "And one for apps and other higher
+level parts", and "yes, add it to the roadmap and build it after U10c".
+The selection below exists, but 184 of 236 suites declare nothing and so
+stand on the whole tree: a change to `audio.c` ran all 119 x86 ones,
+about 9.5 minutes, where ten were about sound. The order:
+- **T1, dependencies derived**: for C, the `.d` files the build already
+  writes (`-MMD`) say which sources and headers each image is made of;
+  for Lua, an application's `use(...)` lines, followed through. A suite
+  stands on what its images and programs are made of. The kernel, `arch/`,
+  `hal/`, init, the runtime and the shared kit pieces (`ui.lua`, the window
+  manager, `gfx`, the console) still run everything; an application's file
+  that no suite tests runs the smoke tier alone, and the gate says that
+  nothing tests it.
+- **T2, core and app**: each suite tagged as one or the other - kernel,
+  `arch/`, `hal/`, servers, drivers, kits, runtime, init, the window
+  manager and the UI kit are core.
+- **T3, a smoke tier**: one boot, about two minutes, run on every change -
+  the desktop up, a window drawn, sound, disk and the network answering -
+  the net under a dependency missed.
+- **T4, `make test` says why** each suite ran, the file that reached it.
+- `make prepush` stays every suite (decided 23 November). A suite past
+  five minutes is split, as `x86-usb-2` was into `x86-usb-3`.
+
 **A gate that runs what a change reaches - AGREED and BUILT on 14 November
 2026.** Diego, after a 20-minute gate for W5f: "why do we run the entire
 gate and rebuild all every time? cant we just be smart on what needs to be

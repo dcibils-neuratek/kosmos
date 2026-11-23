@@ -325,7 +325,15 @@ and the gate says each suite's processor (`cpu.json`). **An ordinary `make
 test` - every whole-tree suite, 127 - is 571 s; `make test ALL=1`, which
 `make prepush` runs, is 870 s** (1,167 before), 6,473 s of processor, so no
 packing gets it under 647. The ten minutes are `make test`'s (Diego, 23
-November): prepush stays every suite. **Next**: U10c, a stream's own format; then the rest of U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
+November): prepush stays every suite. **U10c built in 0.12.89**
+(18.1010): a stream opens with its own rate, size and channels and the
+server converts it into the mix - 96/24, 48/32 mono and 22.05/16 tones heard
+at their pitch on QEMU's speaker - and the ends of a sound are no longer cut
+by a filter's carry, the speaker's included. **Next: the tests in two tiers**
+(Diego, 23 November: "we need to move faster", "paralellize as much work as
+possible"; `roadmap.md`, *Core and apps*, T1-T4): each suite's files derived
+from what it exercises, being built as two lanes (`tools/suitedeps.py`,
+`tools/suite_subjects.py`) and folded into `gate.py` here; then U10d-U10f; then the new Music (`docs/player.md`, agreed,
 the old Music retired at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for
