@@ -4823,8 +4823,9 @@ def usb_audio_play(image, check):
     which a conversion at the wrong rate (44.1 heard as 48 is 8.8% sharp)
     is far outside - with no gap in it.
 
-    Its control, `USBAUDIO_HDA=1`, boots without the word: the beep goes to
-    HD Audio, the WAV stays silent, and every check must fail.
+    Its control, `USBAUDIO_HDA=1`, boots with `opt/kosmos/audio=machine`:
+    the beep goes to HD Audio, the WAV stays silent, and every check must
+    fail. Since U4 no word chooses the speaker: the newest device plays.
     """
     import struct
 
@@ -4842,8 +4843,8 @@ def usb_audio_play(image, check):
                           "out.channels=2,out.format=s16" % wav,
              "-device", "usb-audio,bus=usb0.0,audiodev=ua0")
 
-    if os.environ.get("USBAUDIO_HDA") is None:
-        extra += ("-fw_cfg", "name=opt/kosmos/audio,string=usb")
+    if os.environ.get("USBAUDIO_HDA") is not None:
+        extra += ("-fw_cfg", "name=opt/kosmos/audio,string=machine")
 
     out = boot(image, None, 150.0, typed=("beep 1000 2000",), extra=extra,
                after="xhci: watching for devices plugged in and out",
@@ -4859,7 +4860,7 @@ def usb_audio_play(image, check):
     playing = re.search(r"port \d+: speaker: playing the mix on 1\.1 at 48000 Hz",
                         out)
 
-    check(playing is not None,
+    check(playing is not None and "beep: 1000 Hz" in out,
           "the driver did not say it plays the mix on 1.1 at 48 kHz:\n    " + said)
 
     samples = []
@@ -4899,6 +4900,188 @@ def usb_audio_play(image, check):
     check(abs(hz - 1000) <= 5,
           "the beep reached the speaker at %.1f Hz, not 1000: converted at the "
           "wrong rate" % hz)
+
+
+def lua_string(text):
+    """`text` as a Lua long string, its level past any `]=*]` inside it."""
+    level = 0
+
+    while ("]" + "=" * level + "]") in text:
+        level += 1
+
+    return "[" + "=" * level + "[" + text + "]" + "=" * level + "]"
+
+
+def wav_tone(path, after=44):
+    """The longest run of sound in QEMU's WAV past byte `after`, a gap of
+    2 ms of quiet ending it: its seconds and its pitch, from the left
+    channel's rising crossings."""
+    import struct
+
+    samples = []
+
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            f.seek(max(44, after))
+            data = f.read()
+        n = len(data) // 4
+        samples = list(struct.unpack("<%dh" % (2 * n), data[:4 * n]))[0::2]
+
+    best, start, quiet, crossings, last = (0, 0, 0), None, 0, 0, 0
+
+    for i, v in enumerate(samples + [0] * 200):
+        if abs(v) > 64:
+            if start is None:
+                start, crossings, last = i, 0, v
+            quiet = 0
+        elif start is not None:
+            quiet += 1
+            if quiet > 96:
+                end = i - quiet
+                if end - start > best[1] - best[0]:
+                    best = (start, end, crossings)
+                start = None
+        if start is not None:
+            if last < 0 <= v:
+                crossings += 1
+            last = v
+
+    seconds = (best[1] - best[0]) / 48000.0
+    return seconds, (best[2] / seconds if seconds > 0 else 0)
+
+
+def usb_audio_choose(image, check):
+    """**Which device plays, and a speaker pulled out mid-song** -
+    `docs/usbaudio.md` U4.
+
+    HD Audio and QEMU's USB speaker, the speaker plugged in through QEMU's
+    monitor so it can be pulled out the same way. At the prompt:
+
+      * `audio.devices()` lists both, the speaker playing - the newest -
+        named by its product string, with what it offers;
+      * a door given to `audio.watch` is pulsed when the machine's own is
+        chosen, and `beep` then sends nothing to the speaker's WAV;
+      * choosing "" again, the newest, a beep reaches the WAV;
+      * a beep of three seconds with the speaker pulled out after one
+        still ends in its three, the rest on HD Audio, the program never
+        told; the list then has only the machine's, playing;
+      * plugged in again, the speaker plays again with nothing chosen.
+
+    Its control, `USBAUDIO_STUCK=1`, boots with `opt/kosmos/audio=machine`
+    and never chooses: the speaker is never the one playing, and the checks
+    that hear it fail.
+    """
+    wav = os.path.join(os.path.dirname(image), "usb-audio-choose.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    extra = ("-device", "ich9-intel-hda",
+             "-device", "hda-output,audiodev=a0",
+             "-audiodev", "none,id=a0",
+             "-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav)
+    stuck = os.environ.get("USBAUDIO_STUCK") is not None
+
+    if stuck:
+        extra += ("-fw_cfg", "name=opt/kosmos/audio,string=machine")
+
+    machine = PluggedMachine(image, extra)
+    # The shell has no `use`; a program does. Each step is a program in
+    # /Temporary, as `run_bluetooth.py`'s are.
+    head = 'local A = use("/Kosmos/Libraries/audio.lua") '
+    programs = {
+        "devs": head + ('local d, c = A.devices() for _, x in ipairs(d or {}) do '
+                        'print("DEV " .. x.name .. " " .. x.kind .. " " .. tostring(x.playing) .. " " '
+                        '.. x.rate .. " " .. table.concat(x.offers.bits, "/")) end '
+                        'print("CHOSEN [" .. tostring(c) .. "]")'),
+        "watched": head + ('local W = sys.endpoint() print("WATCH " .. tostring(A.watch(4242, W))) '
+                           'A.choose("Built-in") local m = sys.receive(W, false, 500) '
+                           'print("TOLD " .. tostring(m and m.pulse and m.code))'),
+        "newest": head + ('A.choose(%s) print("CHOSE")' % ('"Built-in"' if stuck else '""')),
+    }
+    show = "run /Temporary/devs.lua"
+
+    def speaker_playing(text):
+        return re.search(r"DEV \S.* usb true 48000 16", text) is not None
+
+    try:
+        if not machine.wait_for(0, r"kosmos> ", 90) or \
+           not machine.wait_for(0, r"xhci: watching for devices plugged in and out", 60):
+            check(False, "the machine did not reach a prompt with its USB driver watching")
+            return
+
+        mark = machine.mark()
+        machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
+        plugged = machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30)
+        check(plugged, "the speaker plugged in was not streamed: %r"
+              % [l for l in machine.since(mark).splitlines() if "speaker" in l][-3:])
+
+        for name, text in programs.items():
+            machine.typed('fs.write("/Temporary/%s.lua", %s) print("WROTE")'
+                          % (name, lua_string(text)), r"WROTE", 10)
+
+        _, listed = machine.typed(show, r"CHOSEN \[", 20)
+        check(speaker_playing(listed)
+              and re.search(r"DEV Built-in machine false 44100 16", listed) is not None
+              and "CHOSEN []" in listed,
+              "the list was not the machine's and the speaker's, the speaker playing: %r"
+              % [l for l in listed.splitlines() if l.startswith(("DEV", "CHOSEN"))])
+
+        # A door, watched: pulsed when the machine's own is chosen.
+        _, chose = machine.typed("run /Temporary/watched.lua", r"TOLD ", 20)
+        check("TOLD 4242" in chose, "the watching door was not pulsed with its code "
+              "when the machine's own was chosen: %r" % chose[-200:])
+
+        size = os.path.getsize(wav) if os.path.exists(wav) else 44
+        machine.typed("beep 1000 800", r"beep: 1000 Hz", 30)
+        quiet, _ = wav_tone(wav, size)
+        check(quiet < 0.1, "with the machine's own chosen the beep still reached the "
+              "speaker: %.3f s of it" % quiet)
+
+        machine.typed("run /Temporary/newest.lua", r"CHOSE", 20)
+        size = os.path.getsize(wav) if os.path.exists(wav) else 44
+        machine.typed("beep 1000 800", r"beep: 1000 Hz", 30)
+        heard, hz = wav_tone(wav, size)
+        check(heard >= 0.7 and abs(hz - 1000) <= 5,
+              "chosen again, the speaker did not play the beep: %.3f s at %.1f Hz"
+              % (heard, hz))
+
+        # Pulled out mid-beep.
+        mark = machine.mark()
+        size = os.path.getsize(wav) if os.path.exists(wav) else 44
+        machine.proc.stdin.write(b"beep 1000 3000\n")
+        machine.proc.stdin.flush()
+        started = time.time()
+        deadline = started + 10
+
+        while time.time() < deadline and wav_tone(wav, size)[0] < 0.5:
+            time.sleep(0.1)
+
+        machine.monitor.ask("device_del spk", quiet=0.3)
+        ended = machine.wait_for(mark, r"beep: 1000 Hz[\s\S]*kosmos>", 30)
+        took = time.time() - started
+        check(ended and took < 8.0,
+              "a beep with the speaker pulled out mid-way did not end (%.1f s): %r"
+              % (took, machine.since(mark)[-300:]))
+
+        _, after = machine.typed(show, r"CHOSEN \[", 20)
+        check(re.search(r"DEV Built-in machine true 44100 16", after) is not None
+              and " usb " not in after,
+              "pulled out, the list was not the machine's alone, playing: %r"
+              % [l for l in after.splitlines() if l.startswith(("DEV", "CHOSEN"))])
+
+        mark = machine.mark()
+        machine.monitor.ask("device_add usb-audio,id=spk2,bus=usb0.0,audiodev=ua0", quiet=0.3)
+        machine.wait_for(mark, r"speaker: playing the mix", 30)
+        _, again = machine.typed(show, r"CHOSEN \[", 20)
+        check(speaker_playing(again),
+              "plugged in again with nothing chosen, the speaker did not play: %r"
+              % [l for l in again.splitlines() if l.startswith(("DEV", "CHOSEN"))])
+    finally:
+        machine.close()
 
 
 def usb_list(image, check):
@@ -6081,7 +6264,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6197,6 +6380,8 @@ def main():
         usb_audio_tone(image, check)
     if 'usb_audio_play' in wanted:
         usb_audio_play(image, check)
+    if 'usb_audio_choose' in wanted:
+        usb_audio_choose(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

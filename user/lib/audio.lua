@@ -15,6 +15,7 @@
 local audio = {}
 
 local OP_OPEN, OP_CLOSE, OP_SET, OP_STREAMS = 1, 2, 3, 4
+local OP_DEVICES, OP_CHOOSE, OP_WATCH, OP_UNWATCH = 5, 6, 7, 8
 
 --
 -- The format, asked rather than assumed.
@@ -262,9 +263,10 @@ end
 -- A check stands where the shared implementation used to.
 --------------------------------------------------------------------------
 
--- struct audio_request: op, stream, gain, balance, muted, master, name[24]
-local REQUEST  = "<I4I4i4i4i4i4i4c24"   -- ..., master, master_muted, name
-local REQ_SIZE = 52
+-- struct audio_request: op, stream, gain, balance, muted, master, name[24],
+-- device[32]
+local REQUEST  = "<I4I4i4i4i4i4i4c24c32"   -- ..., master_muted, name, device
+local REQ_SIZE = 84
 
 -- struct audio_stream_info: stream, gain, balance, muted, peak, queued, name
 local INFO      = "<I4I4i4I4I4I4c24"
@@ -274,7 +276,17 @@ local INFO_SIZE = 48
 local REPLY      = "<I4I4I4I4I4I4I4I4I4I4I4I4"   -- ..., late, kept, device_dry, count
 local REPLY_HEAD = 48
 
-assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, "") == REQ_SIZE,
+-- And after the list, `devices`: their count, the name chosen, and each
+-- struct audio_device_info - id, playing, rate, bits, channels,
+-- bits_offered, vendor, product, rates[6], name[32].
+local DEVICES_AT   = REPLY_HEAD + 8 * 48
+local DEVICES_HEAD = "<I4c32"
+local DEVICE       = "<I4I4I4I4I4I4I4I4I4I4I4I4I4I4c32"
+local DEVICE_SIZE  = 88
+
+assert(#string.pack(DEVICE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "") == DEVICE_SIZE,
+       "audio: the device layout does not match audioproto.h")
+assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, "", "") == REQ_SIZE,
        "audio: the request layout does not match audioproto.h")
 assert(#string.pack(INFO, 0, 0, 0, 0, 0, 0, "") == INFO_SIZE,
        "audio: the stream layout does not match audioproto.h")
@@ -305,6 +317,7 @@ function request(op, fields, pass)
   -- would be kept. `init.lua` cuts a window's `/Running` name the same way.
   --
   local name = tostring(fields.name or ""):sub(1, 23)
+  local device = tostring(fields.device or ""):sub(1, 31)
 
   local bytes = string.pack(REQUEST, op,
                             fields.stream or 0,
@@ -313,7 +326,7 @@ function request(op, fields, pass)
                             fields.muted or -1,
                             fields.master or -1,
                             fields.master_muted or -1,
-                            name)
+                            name, device)
 
   local reply, why = fs.raw("/Devices/audio", bytes, pass, "audio")
 
@@ -460,6 +473,93 @@ function audio.held_off_since()
 
     return most / hz * 1000
   end
+end
+
+--
+-- **Which device plays** (`docs/usbaudio.md` U4).
+--
+--   audio.devices()         every output, the one playing marked, and the
+--                           name chosen ("" for the newest)
+--   audio.choose(name)      that device whenever it is present, the
+--                           machine's own otherwise; "" for the newest.
+--                           Kept in /Home/Preferences/audio, and sent again
+--                           by `audio.restore()` when the Deskbar starts
+--   audio.watch(code, door) the server pulses `door` with `code` when the
+--                           list or the one playing changes - the window
+--                           manager's code and door, as a folder's watch;
+--                           `audio.unwatch(code)` stops it
+--
+-- Each device: `{ id, kind = "machine" | "usb", playing, rate, bits,
+-- channels, offers = { bits = {16, 24}, rates = {48000, 96000} }, vendor,
+-- product, name }`.
+--
+audio.MACHINE = "Built-in"
+
+local function devices_of(r)
+  local count, chosen = string.unpack(DEVICES_HEAD, r.bytes, DEVICES_AT + 1)
+  local out = {}
+
+  for i = 1, count do
+    local at = DEVICES_AT + #string.pack(DEVICES_HEAD, 0, "") + (i - 1) * DEVICE_SIZE + 1
+    local v = { string.unpack(DEVICE, r.bytes, at) }
+    local d = { id = v[1], kind = v[1] == 2 and "usb" or "machine", playing = v[2] ~= 0,
+                rate = v[3], bits = v[4], channels = v[5], vendor = v[7], product = v[8],
+                name = (v[15]:gsub("%z.*$", "")), offers = { bits = {}, rates = {} } }
+
+    for bit, size in ipairs({ 16, 24, 32 }) do
+      if v[6] & (1 << (bit - 1)) ~= 0 then d.offers.bits[#d.offers.bits + 1] = size end
+    end
+
+    for k = 9, 14 do
+      if v[k] ~= 0 then d.offers.rates[#d.offers.rates + 1] = v[k] end
+    end
+
+    out[i] = d
+  end
+
+  return out, (chosen:gsub("%z.*$", ""))
+end
+
+function audio.devices()
+  local r, why = request(OP_DEVICES, {})
+
+  if not r then return nil, why end
+
+  return devices_of(r)
+end
+
+function audio.choose(name)
+  name = tostring(name or "")
+
+  local r, why = request(OP_CHOOSE, { device = name })
+
+  if not r then return nil, why end
+
+  pcall(function() use("/Kosmos/Libraries/prefs.lua").write("audio", { output = name }) end)
+  return devices_of(r)
+end
+
+-- The choice kept, sent again: the server starts knowing none.
+function audio.restore()
+  local ok, kept = pcall(function() return use("/Kosmos/Libraries/prefs.lua").read("audio") end)
+
+  if ok and type(kept) == "table" and type(kept.output) == "string" then
+    return request(OP_CHOOSE, { device = kept.output }) ~= nil
+  end
+
+  return false
+end
+
+function audio.watch(code, door)
+  local r, why = request(OP_WATCH, { stream = code }, door)
+
+  if not r then return nil, why end
+
+  return true
+end
+
+function audio.unwatch(code)
+  return request(OP_UNWATCH, { stream = code }) ~= nil
 end
 
 return audio

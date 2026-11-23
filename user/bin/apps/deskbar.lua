@@ -307,6 +307,12 @@ local W = sw
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 local appearance = prefs.read("appearance")
 
+-- **Which device plays, as it was chosen** (`docs/usbaudio.md` U4): the
+-- audio server starts knowing no choice and has no namespace to keep one
+-- in, so the one Mixer kept is sent again here, once, by the one program
+-- every session has. With none kept, a speaker plugged in plays.
+pcall(function() use("/Kosmos/Libraries/audio.lua").restore() end)
+
 local asked_bar = tostring(args or ""):match("%-%-bar%s+(%a+)")
 
 -- **And the machine's own default**, from its command line -

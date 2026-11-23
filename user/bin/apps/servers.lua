@@ -848,7 +848,25 @@ function win:on_frame()
 
   sharing_state(true)
 
-  local state = states() .. said
+  -- **And who is connected, on File sharing's page**: a visitor is listed
+  -- the moment it signs in, before it has opened a share, and the count in
+  -- the state above does not change when it then opens one - so without
+  -- this its row said "nothing" until something else moved (testing.md
+  -- 18.1001). Its minutes are left out, or the page would be made again
+  -- every second.
+  local visitors = ""
+
+  if showing == "sharing" and running(BY_ID.sharing) then
+    local seen = {}
+
+    for _, v in ipairs(fs.sharing_connections() or {}) do
+      seen[#seen + 1] = ("%s/%s/%s/%s"):format(v.id, v.address, v.account, v.share)
+    end
+
+    visitors = "|" .. table.concat(seen, ",")
+  end
+
+  local state = states() .. said .. visitors
   local changed = false
 
   if state ~= shown_cards then

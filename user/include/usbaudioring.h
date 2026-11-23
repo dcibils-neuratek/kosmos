@@ -33,6 +33,11 @@
  * **Where a stream has got to**: `played` is what the speaker has had, by
  * the TDs that came back; `write - played` is what is between the mix and
  * the ear - this ring and the TDs on the controller's.
+ *
+ * **And who the speaker is** (U4): its product string, its vendor and
+ * product numbers, and what its settings offer - written by `xhci` with the
+ * format, before `present` - so the server lists it for Mixer, and keeps a
+ * choice by its name, from this region alone.
  */
 
 #include <stdint.h>
@@ -41,9 +46,12 @@
 
 #define USB_AUDIO_MAGIC         0x55414331u     /* "UAC1" */
 #define USB_AUDIO_RING_PAGES    9u
-#define USB_AUDIO_RING_HEADER   64u
+#define USB_AUDIO_RING_HEADER   128u
 #define USB_AUDIO_RING_BYTES    (USB_AUDIO_RING_PAGES * 4096u \
                                  - USB_AUDIO_RING_HEADER)
+
+#define USB_AUDIO_RATES         6u
+#define USB_AUDIO_NAME          32u
 
 /* The pulse `xhci` sends `/Devices/audio`: look at the ring. */
 #define AUDIO_PULSE_USB         0x55534231u     /* "USB1" */
@@ -64,10 +72,16 @@ struct usb_audio_ring {
     uint64_t write;             /* the server's: frames written, ever */
     uint64_t read;              /* xhci's: frames taken into TDs */
     uint64_t played;            /* xhci's: frames the speaker has had */
-    uint8_t  pad[USB_AUDIO_RING_HEADER - 56];
+    uint32_t vendor, product;   /* USB's numbers */
+    uint32_t bits_offered;      /* AUDIO_BITS_* of audioproto.h */
+    uint32_t rates[USB_AUDIO_RATES];  /* offered, 0 past the last */
+    char     name[USB_AUDIO_NAME];    /* its product string, ended */
+    uint8_t  pad[USB_AUDIO_RING_HEADER - 124];
     uint8_t  data[USB_AUDIO_RING_BYTES];
 };
 
+_Static_assert(__builtin_offsetof(struct usb_audio_ring, pad) == 124,
+               "the USB audio ring's header is as written");
 _Static_assert(sizeof(struct usb_audio_ring) == USB_AUDIO_RING_PAGES * 4096u,
                "the USB audio ring is its pages exactly");
 

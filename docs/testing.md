@@ -42392,3 +42392,69 @@ brought; and its kept manifest, edited to name other protocols, is brought
 again though its files are the server's. **The control**, `differs`
 answering that nothing differs, fails 3 of 19: both brings, and a later
 check that reads the file Hello was brought with.
+
+## 18.1001 Which device plays, and a speaker pulled out mid-song (USB audio, U4)
+
+`docs/usbaudio.md` U4. What was built:
+
+- **The ring says who is there** (`usbaudioring.h`): its header is 128
+  bytes, adding the speaker's product string, its vendor and product, and
+  what its settings offer - the sizes as a bit set, the rates each once.
+  `xhci` writes them with the format, before `present`.
+- **Any speaker plugged in streams**, not only under a boot word: silence
+  until the server writes. `opt/kosmos/audio=usb` is gone;
+  `opt/kosmos/audio=machine` starts with the machine's own chosen.
+- **The protocol** (`audioproto.h`): `AUDIO_OP_DEVICES` (every output, the
+  one playing marked, the name chosen), `_CHOOSE` (a name; "" for the
+  newest), `_WATCH` and `_UNWATCH` (a door and a code, pulsed when the list
+  or the one playing changes, as a folder's watch is).
+- **The server** (`audio.c`): the choice is a name. "" plays a speaker
+  while one is in; a name plays that device whenever it is present and the
+  machine's otherwise. Every door is pulsed on a change, and one whose
+  pulse fails is let go. The list of doors grows as asked.
+- **Lua** (`audio.lua`): `audio.devices()`, `audio.choose(name)` (kept in
+  `/Home/Preferences/audio`), `audio.restore()` (the Deskbar sends the kept
+  choice when it starts), `audio.watch(code, door)` and `audio.unwatch`.
+
+**Held by** `usb_audio_choose` in `x86-usb-2`, 8 checks. QEMU's speaker
+is plugged in through the monitor and streamed. The list has "Built-in" and
+"QEMU USB Audio", the speaker playing, nothing chosen. A door given to
+`watch` is pulsed with its code when "Built-in" is chosen, and a beep then
+leaves no tone in the speaker's WAV. Chosen "" again, a beep reaches it at
+1000 Hz. A beep of three seconds with the speaker pulled out after half a
+second ends in its three, and the list is then "Built-in" alone, playing.
+Plugged in again, the speaker plays with nothing chosen. **Its control**,
+`USBAUDIO_STUCK=1` (the machine's own chosen at boot, and chosen again
+instead of ""), fails 4 of 8: the three that hear the speaker, and the
+unplugging one, which waits for a tone that never comes.
+
+`usb_audio_play` no longer needs a word: the speaker is the newest. Its
+control, `USBAUDIO_HDA=1`, is now `opt/kosmos/audio=machine`, and fails 2
+of 3.
+
+**And a kernel fault found on the way** (`arch/x86_64/trap.c`). Under the
+whole gate `x86-kernel` panicked once: a fault the kernel expects - a copy
+from a process's memory that may miss - unwinds to `longjmp`, and the unwind
+kept the stack pointer of the instruction that faulted. Near the guard page
+an interrupt taken before `longjmp` ran pushed its frame onto the guard page.
+The unwind now runs on the stack `setjmp` saw (its slot 6), 64 bytes below
+and aligned. `x86-kernel` passed alone before and after, 220 of 220; **a
+check that makes the fault happen every time is owed**, and is on the
+roadmap.
+
+**And `x86-smbd`'s fourth flake, read at last** (`roadmap.md` named it the
+fourth: "the guest never the visitor on the page within 120s"). It failed
+alone this time, and its log said why. The Servers window had caught the
+visitor between signing in and opening its share, and printed it as "in
+nothing". It never printed it again, because the window makes its cards
+again only when a server's one-line state changes - "sharing 1 folder · 1
+connected" - and opening a share does not change that. The test was waiting
+for "in Projects" from a page that would show it only if something else
+moved. **Fixed in `servers.lua`**: on File sharing's page the list of
+visitors - each one's id, address, account and share, not its minutes -
+is part of what the window compares. It was a fault of the window, not of
+the test: a person looking at it saw "nothing" too. The race decides
+whether it shows, so no control makes it fail every time.
+
+**Next**: U5, Mixer's chooser, and the notification when a speaker is
+plugged in.

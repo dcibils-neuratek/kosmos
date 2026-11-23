@@ -6716,6 +6716,58 @@ static void speaker_gone(struct controller *c, unsigned slot)
 }
 
 /*
+ * **Who the speaker is, in the ring** (U4, `usbaudioring.h`): its product
+ * string - "USB speaker" where it says none - its numbers, and what every
+ * setting that plays offers: the sizes as a bit set, and the rates, each
+ * once, the first six. A continuous range says its two ends.
+ */
+static void speaker_named(const struct controller *c, const struct device *d,
+                          const struct uac_device *info,
+                          struct usb_audio_ring *r)
+{
+    unsigned i, k, n = 0, at;
+
+    memset(r->name, 0, sizeof(r->name));
+    memset(r->rates, 0, sizeof(r->rates));
+    r->bits_offered = 0;
+
+    for (at = 0; at + 1u < sizeof(r->name) && c->name[d->slot][at] != 0; at++) {
+        r->name[at] = c->name[d->slot][at];
+    }
+
+    if (at == 0) {
+        memcpy(r->name, "USB speaker", sizeof("USB speaker"));
+    }
+
+    r->vendor = c->vendor[d->slot];
+    r->product = c->product[d->slot];
+
+    for (i = 0; i < info->nalts; i++) {
+        const struct uac_alt *a = &info->alts[i];
+
+        if (a->in) {
+            continue;
+        }
+
+        r->bits_offered |= a->subframe == 2 ? 0x1u : a->subframe == 3 ? 0x2u
+                         : a->subframe == 4 ? 0x4u : 0u;
+
+        for (k = 0; k < a->nrates; k++) {
+            unsigned j;
+            bool seen = false;
+
+            for (j = 0; j < n; j++) {
+                seen = seen || r->rates[j] == a->rates[k];
+            }
+
+            if (!seen && n < USB_AUDIO_RATES) {
+                r->rates[n++] = a->rates[k];
+            }
+        }
+    }
+}
+
+/*
  * **The stream started** (xHCI 4.6.6, UAC1 5.2.3.2.3.1): the setting's
  * configuration, the endpoint's context by Configure Endpoint, then
  * SET_INTERFACE - the order 4.6.6.1 gives, as the camera's - then its rate
@@ -6858,6 +6910,7 @@ static bool speaker_start(struct controller *c, struct device *d,
 
         r->present = 0;
         RING_BARRIER();
+        speaker_named(c, d, info, r);
         r->rate = rate;
         r->channels = s->alt.channels;
         r->subframe = s->alt.subframe;
@@ -7020,16 +7073,10 @@ static void use_audio(struct controller *c, struct device *d,
                                        sizeof(option)) == 4
                     && memcmp(option, "tone", 4) == 0;
 
-        /* The mix, where `opt/kosmos/audio=usb` says so (U3); Mixer's
-         * choice from U4. Otherwise it is named and left. */
-        memset(option, 0, sizeof(option));
-
-        if (!tone && (kosmos_boot_option("opt/kosmos/audio", option,
-                                         sizeof(option)) != 3
-                      || memcmp(option, "usb", 3) != 0)) {
-            return;
-        }
-
+        /* **Any speaker plugged in streams** (U4): silence until the audio
+         * server writes, which it does when the speaker is the one chosen
+         * (`audio.c`). One with nothing written pulses nobody, so an
+         * unchosen speaker costs a TD's copy a millisecond and no more. */
         which = uac_pick(info, false, SPEAKER_MIX_RATE, &rate);
 
         if (which < 0 || rate == 0) {

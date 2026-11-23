@@ -24,6 +24,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "kosmos.h"
@@ -90,8 +91,8 @@ static uint32_t      mixes, starved, late;
 /*
  * **A USB speaker, the other place the mix can go** (`docs/usbaudio.md`
  * U3, `usbaudioring.h`). init hands this server and the USB driver one
- * region; while a speaker is present in it, and `opt/kosmos/audio=usb`
- * says it is the one (Mixer's choice from U4), each period mixed here is
+ * region; while a speaker is present in it, and it is the one chosen
+ * (`chosen`, below), each period mixed here is
  * converted to the speaker's rate, size and channels - `pcm_convert_to`,
  * the resampler `sys.pcm` and the Playback Kit share - and written into the
  * ring rather than to the machine's own device. The speaker's clock drains
@@ -99,7 +100,6 @@ static uint32_t      mixes, starved, late;
  * the next period goes to the machine's own device again.
  */
 static struct usb_audio_ring *usb;
-static bool          usb_wanted;
 static bool          usb_active;
 static uint32_t      usb_generation;
 static uint32_t      usb_keep;          /* frames of the speaker's to hold */
@@ -108,6 +108,33 @@ static double        usb_phase;
 static unsigned char usb_carry[(HAL_SND_PERIOD_BYTES_MAX / 4u + 2u) * 4u];
 static size_t        usb_have;          /* bytes of the mix not yet converted */
 static uint32_t      usb_periods;       /* written into the ring, ever */
+
+/*
+ * **Which device plays** (`docs/usbaudio.md` U4): a name, "" for the
+ * newest - a speaker while one is plugged in, the machine's own otherwise.
+ * A name is that device whenever it is present and the machine's while it
+ * is not, so a chosen speaker plugged in again has the sound back by
+ * itself (decision 3). `opt/kosmos/audio=machine` starts with the
+ * machine's; the person's choice is kept by `audio.lua` and sent again by
+ * the Deskbar, since this server has no namespace to keep it in.
+ */
+static char          chosen[AUDIO_DEVICE_NAME_MAX];
+
+/*
+ * **Who is told when that changes** (AUDIO_OP_WATCH): a capability and the
+ * code to pulse it with, as a folder's watch is. Grown as asked; a door
+ * whose pulse fails is let go.
+ */
+struct watcher {
+    long     cap;
+    uint32_t code;
+};
+
+static struct watcher *watchers;
+static unsigned      watchers_count, watchers_room;
+static bool          tell_pending;
+static uint32_t      told_generation;
+static int           told_present = -1, told_active = -1;
 
 static struct stream *find(uint32_t id)
 {
@@ -269,10 +296,38 @@ static bool refill(void)
  * when it is a speaker not seen before: the conversion's phase and what it
  * carried belong to the last one.
  */
+static bool usb_present(void)
+{
+    bool here = usb != NULL && usb->magic == USB_AUDIO_MAGIC && usb->present != 0;
+
+    RING_BARRIER();
+    return here;
+}
+
+static bool machine_present(void)
+{
+    return period_bytes != 0;
+}
+
+static bool chosen_is(const char *name)
+{
+    return strncmp(chosen, name, AUDIO_DEVICE_NAME_MAX) == 0;
+}
+
+/* The speaker plays when it is chosen, when nothing is, or when there is
+ * no other device to play on. */
+static bool usb_wanted(void)
+{
+    if (!usb_present()) {
+        return false;
+    }
+
+    return chosen[0] == 0 || !machine_present() || chosen_is(usb->name);
+}
+
 static void usb_check(void)
 {
-    bool here = usb_wanted && usb != NULL && usb->magic == USB_AUDIO_MAGIC
-                && usb->present != 0;
+    bool here = usb_wanted();
     uint32_t generation;
 
     RING_BARRIER();
@@ -548,6 +603,136 @@ static void do_streams(struct audio_reply *rep)
     }
 }
 
+/*
+ * **Every output, and the one playing** (U4): the machine's own first, as
+ * Mixer lists it, then a speaker in the ring.
+ */
+static void do_devices(struct audio_reply *rep)
+{
+    struct audio_device_info *d;
+
+    rep->error = AUDIO_OK;
+    rep->devices_count = 0;
+    memcpy(rep->chosen, chosen, sizeof(rep->chosen));
+
+    if (machine_present()) {
+        d = &rep->devices[rep->devices_count++];
+        d->id = AUDIO_DEVICE_MACHINE;
+        d->playing = usb_active ? 0u : 1u;
+        d->rate = mix_rate;
+        d->bits = 16;
+        d->channels = period_frames != 0 ? period_bytes / (2u * period_frames) : 2u;
+        d->bits_offered = AUDIO_BITS_16;
+        d->rates[0] = mix_rate;
+        memcpy(d->name, AUDIO_MACHINE_NAME, sizeof(AUDIO_MACHINE_NAME));
+    }
+
+    if (usb_present()) {
+        unsigned i;
+
+        d = &rep->devices[rep->devices_count++];
+        d->id = AUDIO_DEVICE_USB;
+        d->playing = usb_active ? 1u : 0u;
+        d->rate = usb->rate;
+        d->bits = usb->subframe * 8u;
+        d->channels = usb->channels;
+        d->bits_offered = usb->bits_offered;
+        d->vendor = usb->vendor;
+        d->product = usb->product;
+
+        for (i = 0; i < AUDIO_RATES_MAX && i < USB_AUDIO_RATES; i++) {
+            d->rates[i] = usb->rates[i];
+        }
+
+        memcpy(d->name, usb->name, sizeof(d->name));
+        d->name[sizeof(d->name) - 1] = 0;
+    }
+}
+
+static void do_choose(const struct audio_request *req, struct audio_reply *rep)
+{
+    memcpy(chosen, req->device, sizeof(chosen));
+    chosen[sizeof(chosen) - 1] = 0;
+    tell_pending = true;
+    do_devices(rep);
+}
+
+static void do_watch(const struct audio_request *req, long cap,
+                     struct audio_reply *rep)
+{
+    if (cap < 0) {
+        rep->error = AUDIO_ERR_BAD_OP;
+        return;
+    }
+
+    if (watchers_count == watchers_room) {
+        unsigned room = watchers_room ? watchers_room * 2u : 8u;
+        struct watcher *more = realloc(watchers, room * sizeof(*more));
+
+        if (more == NULL) {
+            (void)kosmos_cap_drop(cap);
+            rep->error = AUDIO_ERR_FULL;
+            return;
+        }
+
+        watchers = more;
+        watchers_room = room;
+    }
+
+    watchers[watchers_count].cap = cap;
+    watchers[watchers_count].code = req->stream;
+    watchers_count++;
+    rep->error = AUDIO_OK;
+}
+
+static void unwatch_at(unsigned i)
+{
+    (void)kosmos_cap_drop(watchers[i].cap);
+    watchers[i] = watchers[--watchers_count];
+}
+
+static void do_unwatch(const struct audio_request *req, struct audio_reply *rep)
+{
+    unsigned i;
+
+    for (i = 0; i < watchers_count; i++) {
+        if (watchers[i].code == req->stream) {
+            unwatch_at(i);
+            break;
+        }
+    }
+
+    rep->error = AUDIO_OK;
+}
+
+/* Every watcher pulsed when a speaker came or went, or the one playing
+ * changed, or a choice was made. */
+static void tell(void)
+{
+    int present = usb_present() ? 1 : 0;
+    int active = usb_active ? 1 : 0;
+    uint32_t generation = present ? usb->generation : told_generation;
+    unsigned i = 0;
+
+    if (!tell_pending && present == told_present && active == told_active
+        && generation == told_generation) {
+        return;
+    }
+
+    tell_pending = false;
+    told_present = present;
+    told_active = active;
+    told_generation = generation;
+
+    while (i < watchers_count) {
+        if (kosmos_pulse(watchers[i].cap, watchers[i].code, 0) < 0) {
+            unwatch_at(i);
+        } else {
+            i++;
+        }
+    }
+}
+
 static void answer(const struct message *in, uint64_t sender, long cap)
 {
     /* A pulse - the USB driver's "look at the ring", or anybody's - has
@@ -577,6 +762,10 @@ static void answer(const struct message *in, uint64_t sender, long cap)
     case AUDIO_OP_CLOSE:   do_close(req, rep);     break;
     case AUDIO_OP_SET:     do_set(req, rep);       break;
     case AUDIO_OP_STREAMS: do_streams(rep);        break;
+    case AUDIO_OP_DEVICES: do_devices(rep);        break;
+    case AUDIO_OP_CHOOSE:  do_choose(req, rep);    break;
+    case AUDIO_OP_WATCH:   do_watch(req, cap, rep); break;
+    case AUDIO_OP_UNWATCH: do_unwatch(req, rep);   break;
     default:               rep->error = AUDIO_ERR_BAD_OP; break;
     }
 
@@ -657,9 +846,12 @@ void audio_server(long endpoint, long usb_ring)
         long at = usb_ring < 0 ? -1 : kosmos_mem_map(usb_ring);
 
         usb = at < 0 ? NULL : (struct usb_audio_ring *)(uintptr_t)at;
-        usb_wanted = kosmos_boot_option("opt/kosmos/audio", option,
-                                        sizeof(option)) == 3
-                     && memcmp(option, "usb", 3) == 0;
+
+        /* The machine's own from the start, where the boot says so. */
+        if (kosmos_boot_option("opt/kosmos/audio", option, sizeof(option)) == 7
+            && memcmp(option, "machine", 7) == 0) {
+            memcpy(chosen, AUDIO_MACHINE_NAME, sizeof(AUDIO_MACHINE_NAME));
+        }
     }
 
 
@@ -692,6 +884,7 @@ void audio_server(long endpoint, long usb_ring)
         }
 
         usb_check();
+        tell();
         publish_positions();
 
         if (usb_active ? refill_usb() : refill()) {

@@ -7,7 +7,7 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-22, at 0.12.80. Pushed to 0.11.507; 0.11.508 to
+Last updated: 2026-11-22, at 0.12.82. Pushed to 0.11.507; 0.11.508 to
 0.12.8 are committed on `main`, and go out with `make prepush`.
 
 ---
@@ -304,10 +304,20 @@ said. The Edifier M60 read on the M700 (0.12.78): UAC1, synchronous,
 `opt/kosmos/usbaudio=tone` the M60 played ten 440 Hz beeps, 480,000
 frames, none missed. **U3 built in 0.12.80** (18.999): the audio
 server's mix to the M60 through a ring init makes, 44.1 to 48 kHz, chosen
-by `opt/kosmos/audio=usb`; Diego heard Basket Case on it. **Next**: hi-res
-(asked the same day - 96/24 and FLAC at full resolution, `roadmap.md`) and
-U4, the choice in Mixer. **A new Music**, iTunes's ground and hi-res,
-designed by a lane (`docs/player.md`, nine decisions) for Diego to agree. **Qwen2.5-3B** held to
+by `opt/kosmos/audio=usb`; Diego heard Basket Case on it. **U4 built in
+0.12.82** (18.1001): the device list, a choice by name ("" the newest, so a
+speaker plugged in plays), a door pulsed on a change, the choice kept in
+`/Home/Preferences/audio` and sent again by the Deskbar; any speaker
+plugged in streams, and pulling it out mid-song moves the sound to
+HD Audio. **Next**: U5, Mixer's chooser and the plugged-in notification;
+then U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
+the old Music retired at its P5). **Packages P5 built in 0.12.81**
+(18.1000): installed packages brought up to the server's at login - Quake
+III and Flight had stopped starting on the M700, their copies made for
+other protocols. **Drawn for Diego**: the window when an application does
+not start (`docs/launchfail.html`, agreed in principle, the drawing his to
+change). **Held**: what the protocol stamp should compare (`packages.md`,
+*The stamp*) - Diego, "lets discuss this later". **Qwen2.5-3B** held to
 llama.cpp in the same revision (18.997; Diego asked for Inkling-2-Mini,
 then DeepSeek V4 - neither fits 8 GB); to measure on the M700. **A video
 editor**, Kosmos Cut, designed by a lane the same day and agreed, every

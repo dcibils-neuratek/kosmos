@@ -40,6 +40,21 @@
 #define AUDIO_OP_SET      3u
 #define AUDIO_OP_STREAMS  4u
 
+/*
+ * **Which device plays** (`docs/usbaudio.md` U4). DEVICES fills `devices`
+ * with every output there is, the one playing marked, and `chosen` with
+ * the name chosen, "" for the newest. CHOOSE takes `device`: that device
+ * whenever it is present, the machine's own otherwise; "" for the newest -
+ * a speaker while one is plugged in. WATCH passes a capability, with the
+ * code in `stream`, and the server pulses it with that code whenever the
+ * list or the one playing changes; UNWATCH, the same code, takes it back.
+ * A folder's watch is the same shape (`diskproto.h`, DISK_OP_WATCH).
+ */
+#define AUDIO_OP_DEVICES  5u
+#define AUDIO_OP_CHOOSE   6u
+#define AUDIO_OP_WATCH    7u    /* a capability travels with this one too */
+#define AUDIO_OP_UNWATCH  8u
+
 /* Errors are numbers. The words belong to whoever shows them to a person. */
 #define AUDIO_OK              0u
 #define AUDIO_ERR_NO_DEVICE   1u
@@ -50,6 +65,21 @@
 
 #define AUDIO_NAME_MAX   24u
 #define AUDIO_LIST_MAX    8u    /* streams one `streams` reply can carry */
+
+#define AUDIO_DEVICE_NAME_MAX  32u
+#define AUDIO_DEVICES_MAX       4u    /* outputs one `devices` reply carries */
+#define AUDIO_RATES_MAX         6u
+
+#define AUDIO_DEVICE_MACHINE    1u    /* the kernel's: HD Audio, virtio-sound */
+#define AUDIO_DEVICE_USB        2u    /* a speaker, through `usbaudioring.h` */
+
+/* Sample sizes as a bit set. */
+#define AUDIO_BITS_16           0x1u
+#define AUDIO_BITS_24           0x2u
+#define AUDIO_BITS_32           0x4u
+
+/* The machine's own device, by the name a choice keeps. */
+#define AUDIO_MACHINE_NAME      "Built-in"
 
 /*
  * `gain`, `balance` and `muted` are signed so that -1 can mean "leave this
@@ -66,6 +96,7 @@ struct audio_request {
     int32_t  master;            /* 0..256; -1 leaves it */
     int32_t  master_muted;      /* 0 or 1; -1 leaves it */
     char     name[AUDIO_NAME_MAX];
+    char     device[AUDIO_DEVICE_NAME_MAX];     /* choose: whose */
 };
 
 struct audio_stream_info {
@@ -76,6 +107,18 @@ struct audio_stream_info {
     uint32_t peak;              /* before gain: who is making a noise */
     uint32_t queued;            /* periods waiting in its ring */
     char     name[AUDIO_NAME_MAX];
+};
+
+struct audio_device_info {
+    uint32_t id;                /* AUDIO_DEVICE_* */
+    uint32_t playing;           /* 1 for the one the mix goes to */
+    uint32_t rate;              /* what it runs at now */
+    uint32_t bits;              /* 16, 24 or 32 */
+    uint32_t channels;
+    uint32_t bits_offered;      /* AUDIO_BITS_*, every setting's */
+    uint32_t vendor, product;   /* USB's numbers; 0 for the machine's */
+    uint32_t rates[AUDIO_RATES_MAX];    /* offered, 0 past the last */
+    char     name[AUDIO_DEVICE_NAME_MAX];
 };
 
 struct audio_reply {
@@ -97,6 +140,11 @@ struct audio_reply {
     uint32_t count;             /* how many entries in `list` are filled */
 
     struct audio_stream_info list[AUDIO_LIST_MAX];
+
+    /* devices */
+    uint32_t devices_count;
+    char     chosen[AUDIO_DEVICE_NAME_MAX];
+    struct audio_device_info devices[AUDIO_DEVICES_MAX];
 };
 
 /*

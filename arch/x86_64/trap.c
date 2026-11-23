@@ -467,6 +467,21 @@ void trap_handle(struct trapframe *f)
         f->rdi = (uint64_t)(uintptr_t)expected.unwind_to;
         f->rsi = 1;
         f->rip = (uint64_t)(uintptr_t)&longjmp;
+
+        /*
+         * **And on the stack setjmp saw, not the one that faulted.** After
+         * a stack overflow the faulting rsp is in the guard page, and
+         * longjmp runs a few instructions before it loads the saved one. A
+         * timer interrupt in that moment pushes its frame onto the guard
+         * page - a second fault, unexpected, and a panic; under the gate's
+         * load it happened (`testing.md` 18.1001). Below the saved stack
+         * pointer is the caller's free stack, so an interrupt there lands
+         * on memory that exists. Slot 6 is where `setjmp-x86_64.S` keeps it.
+         */
+        if (expected.unwind_to != NULL) {
+            f->rsp = (expected.unwind_to[6] - 64u) & ~(uint64_t)15u;
+        }
+
         return;
     }
 

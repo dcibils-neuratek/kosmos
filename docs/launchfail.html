@@ -1,0 +1,181 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The window Astra shows when an application does not start, before it is
+  built. Drawn on 22 November 2026 from Diego's ask the same evening, after
+  Quake III and Flight would not open on the M700 and only the log said
+  why: "and also it does not say why", "we should show a window with the
+  error message for me to understand why is not working". The design is in
+  roadmap.md, under Packages.
+-->
+<title>When an App Won't Start</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as Mixer and Bluetooth are drawn. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-blue: #4f8df7; --a-ok: #4cc27a;
+  --a-warn: #f2b233; --a-bad: #e05a52;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 72ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 12px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 780px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+.stage { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+
+.win { width: 460px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; }
+.head { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 13.5px; flex: 1; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.body { padding: 18px 18px 16px; display: grid; grid-template-columns: 56px 1fr; gap: 16px; }
+.app { width: 56px; height: 56px; border-radius: 12px; background: #323a4b; display: grid; place-items: center; position: relative; }
+.app svg { width: 34px; height: 34px; stroke: var(--a-ink); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.app .badge { position: absolute; right: -5px; bottom: -5px; width: 22px; height: 22px; border-radius: 50%;
+              background: var(--a-warn); color: #1f2430; font: 700 14px/22px var(--body); text-align: center; border: 2px solid var(--a-win); }
+.app .badge.bad { background: var(--a-bad); color: #fff; }
+.title { font-family: var(--display); font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+.why { color: var(--a-ink); margin: 0 0 8px; font-size: 13.5px; line-height: 1.5; }
+.said { font: 11.5px/1.5 var(--mono); color: var(--a-dim); background: #191d27; border: 1px solid var(--a-line);
+        border-radius: 7px; padding: 7px 9px; margin: 8px 0 0; word-break: break-word; }
+.said small { display: block; color: var(--a-faint); font-family: var(--body); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2px; }
+.foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+.foot .left { margin-right: auto; }
+.btn { border: 1px solid #4a5468; background: #323a4b; color: var(--a-ink); border-radius: 7px; padding: 6px 14px; font-size: 13px; font-weight: 500; font-family: var(--body); }
+.btn.go { background: var(--a-blue); border-color: var(--a-blue); color: #fff; }
+.btn.off { opacity: .45; }
+.bar { height: 6px; border-radius: 3px; background: #3a4253; overflow: hidden; margin: 10px 0 4px; }
+.bar i { display: block; height: 100%; width: 62%; background: var(--a-blue); }
+.prog { color: var(--a-dim); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+td, th { text-align: left; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--display); font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>When an application does not start</h1>
+<p class="sub">The window Astra shows in place of the application that could not open: what went wrong in a person's words, the system's own words beneath them, and what to do about it as a button where there is one. Drawn on 22 November 2026, before any of it is built. For Diego to change until it is right.</p>
+
+<div class="q"><b>Diego, 22 November</b>, after Quake III and Flight would not open on the M700: "and also it does not say why", "we should show a window with the error message for me to understand why is not working".</div>
+
+<h2>Made for another Kosmos</h2>
+<div class="scroller"><div class="stage">
+  <div class="win" id="w1"></div>
+  <div class="win" id="w2"></div>
+</div></div>
+<p class="cap">The case that happened tonight. <b>Update</b> installs the server's copy (the same as <code>pkg install quake3</code>) and opens it when that is done; the window shows the download as it goes, and closes itself when the application's own window appears. The protocol numbers are kept for a report, in the system's words, beneath the person's.</p>
+
+<h2>Made for another Kosmos, with nowhere to update from</h2>
+<div class="scroller"><div class="stage"><div class="win" id="w3"></div></div></div>
+<p class="cap">A machine booted from a stick has no package server. Update is not offered; the sentence says what will fix it instead.</p>
+
+<h2>Anything else</h2>
+<div class="scroller"><div class="stage">
+  <div class="win" id="w4"></div>
+  <div class="win" id="w5"></div>
+</div></div>
+<p class="cap">Every other reason a start fails gets the same window, with the reason it was given. One that stops in its first moments (a crash before its window opened) offers <b>Show the log</b>, which opens Log View at that program's lines. The left window: a program whose file is gone. The right: one that stopped by itself before it drew.</p>
+
+<h2>What each reason says</h2>
+<div class="tablewrap"><table>
+<tr><th>What the system said</th><th>What the window says</th><th>Its button</th></tr>
+<tr><td><code>built for another Kosmos (protocols …)</code></td><td>It was made for an older (or newer) Kosmos, and has to be updated to run on this one.</td><td>Update</td></tr>
+<tr><td><code>no such program</code></td><td>Its program is not on this machine any more.</td><td>Show in Tracker, where its folder was</td></tr>
+<tr><td>a stop before its window (code, fault)</td><td>It stopped while starting, before it opened a window.</td><td>Show the log</td></tr>
+<tr><td><code>needs …</code> it was not given</td><td>It needs something this machine does not have: the sound device, the network.</td><td>OK</td></tr>
+<tr><td>anything else</td><td>The system's sentence, as it is.</td><td>OK</td></tr>
+</table></div>
+
+<h2>Left out, on purpose</h2>
+<ul>
+  <li><b>A window for every failure in the background.</b> Only a start a person asked for, from the Deskbar, the dock, the launcher pad, Tracker or <code>open</code>. A program a script starts says its failure to the script.</li>
+  <li><b>Updating without asking.</b> At boot that is P5's job, and it says what it did. Here the person asked to open something, and is asked before a download.</li>
+</ul>
+</div>
+
+<script>
+const CONTROLLER = '<svg viewBox="0 0 24 24"><path d="M6.5 8h11a4 4 0 0 1 3.9 4.9l-1 4.2a2.4 2.4 0 0 1-4.1 1.1L14.5 16h-5l-1.8 2.2a2.4 2.4 0 0 1-4.1-1.1l-1-4.2A4 4 0 0 1 6.5 8z"/><path d="M8 10.5v3M6.5 12h3M15.5 11.5h.01M17.5 13h.01"/></svg>';
+const PLANE = '<svg viewBox="0 0 24 24"><path d="M10.5 21l1.5-1.2 1.5 1.2V18l-1.5-1v-4l8 2v-2l-8-4.5V4.5a1.5 1.5 0 0 0-3 0V8.5L2 13v2l8-2v4l-1.5 1z"/></svg>';
+const FILE = '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 16h4"/></svg>';
+const head = (t) => `<div class="head"><span class="lights"><i style="background:#ee5048"></i><i style="background:#5a6170"></i><i style="background:#5a6170"></i></span><span class="t">${t}</span></div>`;
+
+function win(o) {
+  return head(o.head) + `<div class="body">
+    <div class="app">${o.icon}<span class="badge${o.bad ? " bad" : ""}">${o.bad ? "&times;" : "!"}</span></div>
+    <div>
+      <p class="title">${o.title}</p>
+      <p class="why">${o.why}</p>
+      ${o.extra || ""}
+      <div class="said"><small>The system said</small>${o.said}</div>
+    </div></div>
+    <div class="foot">${o.buttons}</div>`;
+}
+
+document.getElementById("w1").innerHTML = win({
+  head: "Quake III Arena", icon: CONTROLLER,
+  title: "Quake III Arena did not start",
+  why: "It was made for an older Kosmos, and has to be updated to run on this one. The package server has a copy for this one, 98 MB.",
+  said: "quake3 was built for another Kosmos (protocols 321fc6c40cb14c40, and this system's 3d276f54b10042e1)",
+  buttons: '<span class="btn">Cancel</span><span class="btn go">Update and open</span>'
+});
+
+document.getElementById("w2").innerHTML = win({
+  head: "Quake III Arena", icon: CONTROLLER,
+  title: "Updating Quake III Arena",
+  why: "From the package server at 192.168.1.34. It opens when this is done.",
+  extra: '<div class="bar"><i></i></div><div class="prog">61 of 98 MB &middot; 3 s left</div>',
+  said: "pkg: quake3 - 0.12.66 -&gt; 0.12.81 in /Home/Apps/Quake3",
+  buttons: '<span class="btn">Stop</span>'
+});
+
+document.getElementById("w3").innerHTML = win({
+  head: "Flight", icon: PLANE,
+  title: "Flight did not start",
+  why: "It was made for an older Kosmos, and this machine has no package server to update it from. Write the stick again from this build, or boot the machine from the Mac.",
+  said: "flight was built for another Kosmos (protocols 321fc6c40cb14c40, and this system's 3d276f54b10042e1)",
+  buttons: '<span class="btn go">OK</span>'
+});
+
+document.getElementById("w4").innerHTML = win({
+  head: "Notes", icon: FILE, bad: true,
+  title: "Notes did not start",
+  why: "Its program is not on this machine any more.",
+  said: "/Home/Apps/Notes/notes.lua: no such program",
+  buttons: '<span class="btn left">Show in Tracker</span><span class="btn go">OK</span>'
+});
+
+document.getElementById("w5").innerHTML = win({
+  head: "Flight", icon: PLANE, bad: true,
+  title: "Flight stopped while starting",
+  why: "It stopped before it opened a window. The log has what it said last.",
+  said: "process 61 (flight) ended, code 1: flight.lua:212: attempt to index a nil value (field 'terrain')",
+  buttons: '<span class="btn left">Show the log</span><span class="btn go">OK</span>'
+});
+</script>
+</body>
+</html>

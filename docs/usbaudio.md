@@ -306,6 +306,12 @@ Each is small enough to be checked by itself:
     the program writing it never knew). Then the machine's device is
     chosen while the speaker is in, and the WAV stops growing. Each check
     has its control.
+  **Built in 0.12.82** (`testing.md` 18.1001), as written above but for
+  two things learned building it. The machine's own device is named
+  "Built-in", since the kernel says no codec's name to a program yet. And
+  the WAV never stops growing: an unchosen speaker is fed silence, so the
+  check looks for the tone in what was written after the choice, not for
+  the file's size.
 - **U5, Mixer.** The Output chooser, each device's format and what it can
   do, as `docs/usbaudio.html` draws it; the notification when one is
   plugged in.
