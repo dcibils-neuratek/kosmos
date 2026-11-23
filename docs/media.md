@@ -324,3 +324,81 @@ lacks is M4's sound, and on real cores how fast AV1 decodes at 1080p.
 appended film's tone heard from the sound card in `x86-jetski`, with a
 silent track and a muted film as its controls. Next, by Diego's order of
 the same day: M6, Video on the Media Kit, then M5.
+
+## M6, written before it is built: Video on the Media Kit, in `media.elf`
+
+**Why now.** `media.elf` is the image the media family shares (Cut's
+decision 3, `videoedit.md`; Paint's, `photoedit.md`), and the new Music
+cannot start without it (`player.md` P0). M6 is what makes it, with Video
+as its first application.
+
+**What it is today.** Video is an application in the system's image. Its
+kit is `video.lua`, which reads MP4 with `mp4.lua` and decodes with the
+vendored FFmpeg closure (`runtime/upstream/ffmpeg/`, `user/kits/ffmpeg/`,
+`/Kosmos/Kits/h264`). Its sound goes through the Playback Kit, whose AAC is
+that closure's too (`aac_core.h`). Three things call it: the Video app, the
+`listen` program (which `x86-film` and `x86-film-load` play through), and
+the old Music's `media.lua`, for an M4A's sound.
+
+**What M6 does**, as recommended below:
+
+1. **`media.elf`, a system image beside `webkit.elf`.** It lives in
+   `/Home/System/Media`, is seen read only as `/Kosmos/Media`, is named by
+   `-- kosmos: image media` (`IMAGES.SYSTEM` in `init.lua`), is a `system`
+   package of its own, and is built by `make apps` (`tools/installed.py`).
+   It carries the runtime, `gfx`, the UI kit, the Playback Kit, and **the
+   Media Kit** - the whole FFmpeg with its assembly, dav1d, and the POSIX
+   layer it stands on, which is why it is an image of its own and never the
+   system's (`CLAUDE.md`, *Compatibility inside a process*).
+2. **The Media Kit's Lua door**, `/Kosmos/Kits/media`, present only inside
+   `media.elf`: a container opened from a file in the namespace, its tracks,
+   packets in and frames out, a picture written into a surface (never a Lua
+   string, `gfx.md` §19.1), and sound as PCM for the Playback Kit. It is
+   C, as the decoders are.
+3. **`video.lua` on that door.** It stays the kit applications call -
+   `video.open(path)`, `film:draw`, `film:tick`, every call site the same -
+   with the container and the decoders from the Media Kit. That means every
+   format the kit reads (MP4, WebM, Matroska; H.264, VP9, AV1; AAC, Opus,
+   Vorbis, FLAC) rather than MP4's H.264 and Motion JPEG. Asked from an
+   image without the kit, `video.open` refuses, and says which image it
+   needs. Its sound goes to the Playback Kit as PCM from the Media Kit (as
+   M4's does for JetSki), so the Playback Kit's own AAC has no caller in
+   `media.elf`.
+4. **Video and `listen` move into it.** Video becomes a system application
+   in `/Home/System/Apps/Video`, as JetSki is (`ns.SYSTEM_APPS`), and its
+   header names `-- kosmos: image media`; `listen` names the image too.
+   Tracker opens a film with Video, as it does now.
+5. **Big Buck Bunny first** (`roadmap.md`, *A media machine*): a 1080p
+   H.264 and AV1 copy, fetched as test data, played in the window.
+
+6. **The closure and `mp4.lua` leave the tree** (decision 2, Diego's (b)):
+   `runtime/upstream/ffmpeg/`, `user/kits/ffmpeg/`, `/Kosmos/Kits/h264`,
+   `tools/ffmpeg_vendor.py`, `mp4.lua` and the Playback Kit's own AAC. Its
+   other caller, the old Music's M4A sound, stops: `media.lua` refuses an
+   M4A and says the new Music will play it, until the new Music's P5
+   retires the old one. MP3, WAV and FLAC play in the old Music as before.
+   One FFmpeg in the tree from then on.
+
+**Tests**: `x86-film` and `x86-film-load` play through `listen` in
+`media.elf`; Video's display check opens a WebM (VP9 and Opus) as well as
+an MP4; each with the controls they have, and a new one - `video.open`
+from the system's image must refuse, and say `media`.
+
+### Decided (M6)
+
+**Diego, 23 November 2026**: (1) **(a)**, `media.elf` a system image
+beside WebKit's, as recommended; (2) **(b)**, the closure and `mp4.lua` out
+at M6 rather than kept until P5, the old Music without M4A in between.
+
+### The decisions as they were asked (M6)
+
+1. **Where `media.elf` lives.** (a) A system image in `/Home/System/Media`,
+   seen as `/Kosmos/Media`, as WebKit is *(recommended)*: Video, Music,
+   Cut and Paint are the system's applications, and one image serves them.
+   (b) An installed application's image in `/Home/Apps`, as Doom's is.
+2. **The old Music's M4A sound until the new Music's P5.** (a) Keep the
+   closure and `mp4.lua` in the system's image until P5 retires the old
+   Music *(recommended)*: no work on code that is going. (b) Take them out
+   at M6, and the old Music stops playing M4A until P5. (c) Move the old
+   Music into `media.elf` at M6 too.
+

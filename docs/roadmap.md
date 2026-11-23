@@ -12221,6 +12221,11 @@ spend a day here; a laptop cannot.
 **2. A media machine**
 - **Video**: M6, the Video application on the Media Kit, every format,
   Big Buck Bunny first (`docs/media.md`).
+  **M6 written and decided, 23 November** (`media.md`, *M6*): `media.elf`
+  a system image in `/Home/System/Media`, seen as `/Kosmos/Media`; the
+  Media Kit's Lua door; `video.lua` on it; Video and `listen` in it; the
+  vendored closure and `mp4.lua` out of the tree, and the old Music
+  without M4A until the new Music's P5. Next to be built.
 - **Low-latency audio, in and out**: a microphone, USB audio interfaces,
   and the audio band for a web process (M4's owed pieces).
 - **Video calls**: WebRTC in JetSki - the camera that exists, the
@@ -13193,7 +13198,11 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   and the mix past 16 bits, streams in formats of their own, the speaker's
   setting following the best stream, its switch drained, timed and said,
   and each stream said exact or why not (rate, volume, mixed, narrowed).
-  U10f (the bit-for-bit proof, then 96/24 on the M60) is next.
+  **U10f's QEMU half built** (0.12.93, `testing.md` 18.1014): noise found
+  bit for bit at the speaker when `exact`, and not when each reason is
+  introduced, with QEMU's speaker set to its top (`usbaudio=full`), the
+  only level of its own that is unity. Left: 96/24 on the M60, and Diego's
+  word on whether Kosmos sets a speaker's own volume to 0 dB.
   **The speaker's suite under the gate's load** (found 23 November,
   `testing.md` 18.1012): `x86-usb-3` fails one gate in two or three. A
   stream stops being taken, or a beep takes 41 s, because the guest is

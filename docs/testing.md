@@ -42989,3 +42989,47 @@ What it does not prove: that `exact` matches what reaches the speaker.
 That is U10f's - a FLAC of noise found bit for bit in QEMU's WAV when
 `exact`, and not when each reason is introduced.
 
+
+## 18.1014 Bit for bit when the server says exact (USB audio, U10f, under QEMU)
+
+**What it proves.** U10e's `exact` is held to what reaches the speaker.
+QEMU's speaker is at 48/16 and its sound is written to a WAV. A program
+writes 0.8 s of noise at 48/16 from a known seed (a 31-bit LCG; the
+harness makes the same). The WAV must hold the first 32,768 frames
+unchanged, found by their first four frames and then compared whole, while
+the server says `exact []`. The noise must *not* be found when it is played
+at a gain of 253, beside a 700 Hz tone, or at 44.1 kHz, and the server must
+say `volume`, `mixed` and `rate` respectively. The part is
+`usb_audio_exact_bits`, in `x86-usb-3`.
+
+**QEMU's speaker is not unity at 0 dB, and it took a finding to see it.**
+The first run said exact and the WAV did not hold the noise. Every sample
+was 0.941 of what was written, which is 240/255. QEMU's `usb-audio`
+(`hw/usb/dev-audio.c`) maps its volume control linearly onto 0-255, with
+-128 dB at 0 and +8 dB at 255, and starts at 240, which it calls 0 dB. Its
+mixing engine scales samples by that over 255 (`audio/mixeng.c`,
+`mixeng_volume`). So only its top passes samples untouched. A new word,
+`opt/kosmos/usbaudio=full`, has `xhci` ask each channel's maximum on the
+first feature unit (GET_MAX) and set it (SET_CUR), and say so: "speaker:
+its own volume at its top, +8 dB, on 2 channels". With it, **the noise
+arrives bit for bit: 32,768 frames, from frame 10,731 of that run's WAV**,
+and the part passes 14 checks.
+
+**A real speaker is left as it was.** Its unity is 0 dB, and setting its
+own volume changes how loud it plays, so what the M60's should be is for
+Diego to say. `exact` speaks for the server's path, not for the device's
+own volume stage.
+
+**Controls, both failing as they should:**
+
+* `USBAUDIO_NOFULL=1` boots without the word: **2 of 14 fail** - the
+  volume was not said, and the unity case is not found bit for bit (0.941
+  of itself).
+* The server's mix with its least 16-bit bit flipped (`out[k] ^ 65536`):
+  **1 of 14 fails**, the WAV comparison, while the server still says
+  `exact []`. So the comparison sees a single bit, and the words alone
+  would not have.
+
+Restored, the server was rebuilt and the part passed again before the
+gate.
+

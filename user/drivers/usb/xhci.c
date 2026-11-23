@@ -6333,6 +6333,9 @@ static bool read_configuration(struct controller *c, struct device *d,
 #define EP_TYPE_ISOCH_OUT   1u
 #define UAC1_SET_CUR_EP     (0x22u | (0x01u << 8))
 #define UAC1_SAM_FREQ       0x0100u     /* SAMPLING_FREQ_CONTROL << 8 */
+#define UAC1_SET_CUR_IF     (0x21u | (0x01u << 8))
+#define UAC1_GET_MAX_IF     (0xA1u | (0x83u << 8))
+#define UAC1_VOLUME         0x0200u     /* VOLUME_CONTROL << 8, a channel */
 
 #define SPEAKERS_MAX        2u
 #define SPEAKER_TDS         16u         /* 16 ms in flight at full speed */
@@ -6789,6 +6792,74 @@ static void speaker_named(const struct controller *c, const struct device *d,
 static bool speaker_open(struct speaker *s, int which, uint32_t rate,
                          struct say_line *line);
 
+/*
+ * **`opt/kosmos/usbaudio`, read once**: `tone` (U2), `switch` (U10d) or
+ * `full` (U10f), or nothing - which is every real machine.
+ */
+static bool speaker_option_is(const char *word)
+{
+    static char option[8];
+    static int read = -1;
+    size_t n = strlen(word);
+
+    if (read < 0) {
+        read = (int)kosmos_boot_option("opt/kosmos/usbaudio", option,
+                                       sizeof(option) - 1u);
+    }
+
+    return read == (int)n && memcmp(option, word, n) == 0;
+}
+
+/*
+ * **The speaker's own volume at its top** (U10f), under
+ * `opt/kosmos/usbaudio=full` only. QEMU's speaker scales what it is sent by
+ * its volume over 255 and calls 240 of 255 nought decibels, so a stream the
+ * server says is exact arrives at 0.941 of itself; only its top, +8 dB, is
+ * 255, and passes samples untouched (`hw/usb/dev-audio.c`, `mixeng.c`).
+ * The proof that `exact` is true needs that, so the part asks for it. A
+ * real speaker's unity is 0 dB, and its own volume is left as it was: what
+ * it should be set to on the M60 is Diego's to say (`usbaudio.md` U10f).
+ * Each channel's maximum is asked (GET_MAX) and set (SET_CUR) on the first
+ * feature unit; a speaker without one is left alone, and said.
+ */
+static void speaker_full(struct speaker *s, struct say_line *line)
+{
+    struct controller *c = s->c;
+    struct device *d = &s->dev;
+    unsigned ch, set = 0;
+    uint8_t top[2];
+    int16_t db = 0;
+
+    for (ch = 1; s->info.feature != 0 && ch <= s->alt.channels; ch++) {
+        uint16_t index = (uint16_t)((s->info.feature << 8) | s->info.control);
+
+        if (control_in(c, d, UAC1_GET_MAX_IF, (uint16_t)(UAC1_VOLUME | ch), index, 2u)
+            && (memcpy(top, d->buffer, 2u), true)
+            && control_out(c, d, UAC1_SET_CUR_IF, (uint16_t)(UAC1_VOLUME | ch), index,
+                           top, 2u)) {
+            db = (int16_t)(top[0] | (top[1] << 8));
+            set++;
+        }
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+
+    if (set == 0) {
+        say_text(line, ": speaker: no volume of its own to set");
+    } else {
+        say_text(line, ": speaker: its own volume at its top, ");
+        say_text(line, db < 0 ? "-" : "+");
+        say_dec(line, (unsigned)((db < 0 ? -db : db) / 256));
+        say_text(line, " dB, on ");
+        say_dec(line, set);
+        say_text(line, set == 1 ? " channel" : " channels");
+    }
+
+    say_send(console, line);
+}
+
 static bool speaker_start(struct controller *c, struct device *d,
                           const struct uac_device *info, int which,
                           uint32_t rate, bool tone, struct say_line *line)
@@ -6936,6 +7007,10 @@ static bool speaker_open(struct speaker *s, int which, uint32_t rate,
         say_failure(c, d->port, "SET_CUR of the speaker's rate",
                     "; it plays nothing", line);
         return false;
+    }
+
+    if (!tone && speaker_option_is("full")) {
+        speaker_full(s, line);
     }
 
     uac_clock_init(&s->clock, rate, s->uframes);
@@ -7104,16 +7179,8 @@ static void speaker_switch(struct speaker *s, struct say_line *line)
  */
 static void serve_speakers(struct say_line *line)
 {
-    static int always = -1;
+    bool always = speaker_option_is("switch");
     unsigned i;
-
-    if (always < 0) {
-        char option[8] = { 0 };
-
-        always = kosmos_boot_option("opt/kosmos/usbaudio", option,
-                                    sizeof(option)) == 6
-                 && memcmp(option, "switch", 6) == 0;
-    }
 
     for (i = 0; i < SPEAKERS_MAX; i++) {
         struct speaker *s = &speakers[i];
@@ -7272,12 +7339,9 @@ static void use_audio(struct controller *c, struct device *d,
     }
 
     {
-        char option[16] = { 0 };
         uint32_t rate = 0;
         int which;
-        bool tone = kosmos_boot_option("opt/kosmos/usbaudio", option,
-                                       sizeof(option)) == 4
-                    && memcmp(option, "tone", 4) == 0;
+        bool tone = speaker_option_is("tone");
 
         /* **Any speaker plugged in streams** (U4): silence until the audio
          * server writes, which it does when the speaker is the one chosen

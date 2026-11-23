@@ -5336,6 +5336,189 @@ print("EX done")
         machine.close()
 
 
+def noise_frames(seed, frames):
+    """The noise the bit-for-bit part's program writes, made the same way:
+    a 31-bit LCG, each step's top 16 bits a sample, left then right."""
+    out, x = [], seed
+
+    for _ in range(2 * frames):
+        x = (x * 1103515245 + 12345) & 0x7fffffff
+        out.append((x >> 15) - 32768)
+
+    return out
+
+
+def wav_holds(path, after, want):
+    """Whether QEMU's WAV, past byte `after`, holds `want` - interleaved
+    16-bit samples - bit for bit: its first four frames found, then every
+    sample from there compared. The offset in frames, or None."""
+    import struct
+
+    if not os.path.exists(path):
+        return None
+
+    with open(path, "rb") as f:
+        f.seek(max(44, after))
+        data = f.read()
+
+    body = struct.pack("<%dh" % len(want), *want)
+    at = data.find(body[:16])
+
+    while at >= 0:
+        if at % 4 == 0 and data[at:at + len(body)] == body:
+            return at // 4
+        at = data.find(body[:16], at + 1)
+
+    return None
+
+
+def usb_audio_exact_bits(image, check):
+    """**Bit for bit, when the server says exact** - `docs/usbaudio.md`
+    U10f, under QEMU.
+
+    HD Audio for the machine's clock and QEMU's USB speaker at 48 kHz and 16
+    bits, its sound written to a WAV. A program writes 0.8 s of noise from a
+    known seed at 48/16 - a 31-bit LCG, the same here - and, half way, reads
+    its stream's `exact` and `why`:
+
+      * at unity and alone, the WAV must hold the first 32,768 frames
+        unchanged, and the server must say exact;
+      * at a gain of 253 of 256, beside a 700 Hz tone, and at 44.1 kHz,
+        the noise must not be found, and the server must say "volume",
+        "mixed" and "rate".
+
+    So `exact` (U10e) is held to what the speaker was sent, both ways.
+
+    **Under `opt/kosmos/usbaudio=full`**, which sets the speaker's own
+    volume at its top: QEMU's speaker scales samples by its volume over
+    255 and its 0 dB is 240, so only its top, +8 dB, passes them untouched
+    (`testing.md` 18.1014). `USBAUDIO_NOFULL=1` boots without it - the
+    noise arrives at 0.941 of itself, and the first case fails - and that
+    is one control. The other is the server's mix built a least bit off at
+    unity: the first case fails the WAV, with the server still saying
+    exact.
+    """
+    wav = os.path.join(os.path.dirname(image), "usb-audio-bits.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    extra = ["-device", "ich9-intel-hda",
+             "-device", "hda-output,audiodev=a0",
+             "-audiodev", "none,id=a0",
+             "-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav]
+
+    if os.environ.get("USBAUDIO_NOFULL") != "1":
+        extra += ["-fw_cfg", "name=opt/kosmos/usbaudio,string=full"]
+
+    machine = PluggedMachine(image, extra)
+    seed, frames, compared = 12345, 38400, 32768
+    program = r"""
+local A = use("/Kosmos/Libraries/audio.lua")
+local rate, gain, two = %d, %d, %d
+local s, why = A.open("bits", 8, { rate = rate, bits = 16, channels = 2 })
+if not s then print("BB refused " .. tostring(why)) return end
+if gain ~= 256 then A.set({ stream = s.id, gain = gain }) end
+local x, buf = %d, {}
+for i = 1, 2 * %d do
+  x = (x * 1103515245 + 12345) & 0x7fffffff
+  buf[i] = string.pack("<i2", (x >> 15) - 32768)
+end
+local mine = table.concat(buf)
+local t, other = nil, nil
+if two == 1 then
+  t = A.open("beep", 8, { rate = 48000, bits = 16, channels = 2 })
+  local cyc = {}
+  for i = 0, 47 do
+    local one = string.pack("<i2", math.floor(math.sin(2 * math.pi * i / 48) * 8000))
+    cyc[#cyc + 1] = one .. one
+  end
+  other = table.concat(cyc):rep(800)
+end
+local said = false
+for at = 1, #mine, s.period do
+  s:write(mine:sub(at, at + s.period - 1))
+  if t then t:write(other:sub(at, at + t.period - 1)) end
+  if not said and at > #mine // 2 then
+    said = true
+    for _, e in ipairs(A.streams()) do
+      if e.stream == s.id then
+        print("BB " .. (e.exact and "exact" or "inexact") .. " [" .. e.why .. "]")
+      end
+    end
+  end
+end
+for _ = 1, 2000 do
+  if s:position() >= %d then break end
+  sys.sleep(1)
+end
+s:close()
+if t then t:close() end
+print("BB done")
+"""
+    cases = [(48000, 256, 0, True, "exact []"),
+             (48000, 253, 0, False, "inexact [volume]"),
+             (48000, 256, 1, False, "inexact [mixed]"),
+             (44100, 256, 0, False, "inexact [rate]")]
+    want = noise_frames(seed, compared)
+
+    try:
+        if not machine.wait_for(0, r"kosmos> ", 90) or \
+           not machine.wait_for(0, r"xhci: watching for devices plugged in and out", 60):
+            check(False, "the machine did not reach a prompt with its USB driver watching")
+            return
+
+        mark = machine.mark()
+        machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
+        check(machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30),
+              "the speaker plugged in was not streamed")
+        check(re.search(r"speaker: its own volume at its top, \+8 dB, on 2 channels",
+                        machine.since(mark)) is not None,
+              "the speaker's own volume was not set at its top: %r"
+              % [l for l in machine.since(mark).splitlines() if "speaker" in l][-4:])
+
+        for n, (rate, gain, two, _, _) in enumerate(cases):
+            text = " ".join(l.strip() for l in
+                            (program % (rate, gain, two, seed, frames, frames)).splitlines()
+                            if l.strip())
+            machine.typed('BB_T = ""', r"", 10)
+
+            for at in range(0, len(text), 300):
+                machine.typed('BB_T = BB_T .. %s' % lua_string(text[at:at + 300]), r"", 10)
+
+            wrote, said = machine.typed('fs.write("/Temporary/bb%d.lua", BB_T) print("WROTE")'
+                                        % n, r"WROTE", 10)
+            check(wrote, "the program for case %d was not written: %r" % (n, said[-300:]))
+
+        for n, (rate, gain, two, whole, words) in enumerate(cases):
+            label = "%d/16, gain %d%s" % (rate, gain, ", beside a tone" if two else "")
+            size = os.path.getsize(wav) if os.path.exists(wav) else 44
+            _, out = machine.typed("run /Temporary/bb%d.lua" % n,
+                                   r"BB (?:done|refused)[^\n]*\n", 120)
+            got = re.search(r"BB (\w+ \[[a-z, ]*\])", out)
+            check(got is not None and got.group(1) == words,
+                  "%s: the server did not say %s: %r"
+                  % (label, words, [l for l in out.splitlines() if l.startswith("BB")]
+                     or out[-400:]))
+            at = wav_holds(wav, size, want)
+
+            if whole:
+                check(at is not None,
+                      "%s: the speaker was not sent the noise bit for bit" % label)
+                if at is not None:
+                    print("usb_audio_exact_bits: %s - %d frames bit for bit, from frame %d"
+                          % (label, compared, at))
+            else:
+                check(at is None,
+                      "%s: the noise was found bit for bit, and it should not have been"
+                      % label)
+    finally:
+        machine.close()
+
+
 def usb_audio_switch(image, check):
     """**The speaker's setting follows the best stream** -
     `docs/usbaudio.md` U10d.
@@ -6723,7 +6906,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_audio_format', 'usb_audio_switch', 'usb_audio_exact', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_audio_format', 'usb_audio_switch', 'usb_audio_exact', 'usb_audio_exact_bits', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6849,6 +7032,8 @@ def main():
         usb_audio_switch(image, check)
     if 'usb_audio_exact' in wanted:
         usb_audio_exact(image, check)
+    if 'usb_audio_exact_bits' in wanted:
+        usb_audio_exact_bits(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

@@ -342,8 +342,13 @@ the mix runs at the speaker's rate, so a stream in its format is not
 resampled. 1.1 to 1.2 at 96/24 is the M60's to show. **U10e built in 0.12.92**
 (18.1013): each stream in `AUDIO_OP_STREAMS` carries its format and
 `inexact` - rate, volume, mixed, narrowed - and `audio.streams()` gives
-`exact` and `why` for the player's badge. **Next**: U10f (bit for bit
-under QEMU, then 96/24 on the M60); then the new Music (`docs/player.md`, agreed,
+`exact` and `why` for the player's badge. **U10f's QEMU half built in
+0.12.93** (18.1014): seeded noise found bit for bit in QEMU's WAV when the
+server says exact, and not at a gain of 253, beside a tone or at 44.1 kHz.
+QEMU's speaker calls 240/255 nought decibels, so `usbaudio=full` sets its
+own volume at its top for the proof. **For Diego**: whether Kosmos sets a
+real speaker's own volume to 0 dB (the M60's). **Next**: the M60 at 96/24
+when Diego has it plugged in; then the new Music (`docs/player.md`, agreed,
 the old Music retired at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for

@@ -446,6 +446,20 @@ adaptive; U6 and U7 if they are not. U1 says which.
   - **U10f, the proof.** QEMU's speaker at 48/16: a FLAC of noise at 48/16
     found bit for bit in QEMU's WAV, and broken, each said, by a volume of
     99%, a beep over it, or a 44.1 kHz file. Then 96/24 on the M60.
+    **QEMU's half built in 0.12.93** (`testing.md` 18.1014): noise from a
+    known seed, written at 48/16 by a program rather than decoded from a
+    FLAC - the FLAC through the Playback Kit is the player's P6, which needs
+    the kit to open its stream at the source's format (P3) - found bit for
+    bit in QEMU's WAV, 32,768 frames, with `exact` said; and not found, with
+    `volume`, `mixed` and `rate` said, at a gain of 253, beside a tone and
+    at 44.1 kHz. QEMU's speaker calls 240 of 255 nought decibels and scales
+    by it, so `opt/kosmos/usbaudio=full` sets its own volume at its top
+    (GET_MAX, SET_CUR on the feature unit), the one level that passes
+    samples untouched. A real speaker's own volume is left alone. **For
+    Diego**: whether Kosmos should set the M60's own volume to 0 dB, its
+    unity, when it opens it - bit for bit at the speaker needs it, and it
+    would make it as loud as the server's master allows. The M60 at 96/24
+    is the other half, read over Telnet.
 
 ---
 
