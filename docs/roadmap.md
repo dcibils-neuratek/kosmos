@@ -12227,8 +12227,10 @@ spend a day here; a laptop cannot.
   vendored closure and `mp4.lua` out of the tree, and the old Music
   without M4A until the new Music's P5. **M6a built** (0.12.94,
   `testing.md` 18.1015): `media.elf` in `/Home/System/Media`, seen as
-  `/Kosmos/Media`, and the Lua door's demuxing, held to `mediatest`. Next:
-  M6b, decoding from the door; M6c, `video.lua` on it with Video and
+  `/Kosmos/Media`, and the Lua door's demuxing, held to `mediatest`.
+  **M6b built** (0.12.95, 18.1016): decoders from the door, pictures onto
+  a surface and sound as an address, every stream's frames and times held
+  to `mediatest`'s. Next: M6c, `video.lua` on it with Video and
   `listen` moved; M6d, the closure and `mp4.lua` out; M6e, Big Buck
   Bunny.
 - **Low-latency audio, in and out**: a microphone, USB audio interfaces,

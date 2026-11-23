@@ -398,8 +398,35 @@ door is `media.version()`, `media.open(path)`, and a source's `streams()`,
 `read()`, `seek(us)` and `close()`. A packet is a userdata over the kit's
 own, freed by `free` or the collector, and its bytes never become a Lua
 string. The file comes through the Storage Kit, so a source reaches what
-its program's `fs` does. Next: M6b, a decoder from the door - a picture
-into a surface, sound into the Playback Kit.
+its program's `fs` does.
+
+### M6b built: decoding from the door
+
+**0.12.95** (`testing.md` 18.1016). `src:decoder(i [, threads])` gives a
+decoder for one stream. It holds its source, so the source lives as long
+as the decoder.
+
+* `dec:send(packet)` takes the next packet, and `dec:send()` with none, at
+  the end, makes the decoder give up the frames it still holds. It
+  answers false when its frames must come out first; the caller takes
+  them out and sends the same packet again.
+* `dec:picture(surface)` draws the next picture straight onto a surface,
+  from the decoder's planes, with `gfx_draw_i420`, and returns its time.
+  10- and 12-bit pictures are narrowed to 8 bits in buffers the decoder
+  keeps. 4:2:2, 4:4:4 and NV12 are refused with a sentence until
+  something plays one. Pictures 720 lines or taller are taken as BT.709,
+  smaller ones as BT.601, studio range.
+* `dec:sound()` turns the next sound into 16-bit interleaved PCM, rounded
+  and clipped, in a buffer of the decoder's own. It returns that buffer's
+  address and length, the sound's time and its frames. That is the shape
+  `player:frame(at, n)` takes, so a sound reaches the Playback Kit without
+  becoming a Lua string.
+* A time is `math.mininteger` where the film says none. Both `picture` and
+  `sound` return false when the decoder wants another packet, nil when
+  everything has come out, and nil with a reason on a fault.
+
+Next: M6c, `video.lua` on the door, with Video and `listen` in
+`media.elf`.
 
 ### Decided (M6)
 

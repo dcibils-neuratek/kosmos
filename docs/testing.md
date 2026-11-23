@@ -43063,3 +43063,43 @@ here, 17 there" and names the missing ones. Restored, it passed.
   program it started has printed. The door's phase waits for its last line,
   `door: done`, or a `run:` refusal.
 
+## 18.1016 Decoding through the Media Kit's Lua door (M6b)
+
+**What is checked.** `x86-mediakit` goes on past 18.1015 in the same boot.
+The program in `media.elf` opens every film again and gives each picture
+and sound stream a decoder from the door (`src:decoder(i, 2)`, two
+threads, as `mediatest` uses). Every packet goes to its stream's decoder.
+A picture is drawn onto a surface of the stream's size with `dec:picture`,
+and a sound comes back from `dec:sound` as an address and a length.
+Frames and samples are counted, and every frame's time is hashed as
+`mediatest` hashes it: FNV-1a over the pts's eight bytes, in order. The
+harness holds each stream to the same stream in `mediatest`'s report:
+
+* a 4:2:0 picture stream must give the same number of frames with the
+  same hash, and its surface must have changed under five probes;
+* a sound must give the same number of samples with the same hash, and
+  every sound's length must be its frames times its channels times two
+  bytes;
+* a picture stream in another layout (`vp9-444.webm`) must be refused
+  with "not 4:2:0".
+
+The 10-bit AV1 is narrowed to eight bits before it is drawn, and counted
+like the rest.
+
+**Result**: PASS. All 17 streams decoded as `mediatest` decoded them: 8
+picture streams (one of them refused as 4:4:4) and 9 sounds. The suite
+took 50 s.
+
+**Controls**, each built, run and then restored:
+
+* a picture's time returned one microsecond late: every picture stream
+  fails, its hash not `mediatest`'s;
+* the picture decoded but never drawn (`gfx_draw_i420` skipped): every
+  picture stream fails as "not painted".
+
+**What it does not check**: the colours of what was drawn. `framemd5`
+already holds the decoder's planes to FFmpeg's own tool (18.1015 and
+before), and `gfx_draw_i420` is the H.264 kit's conversion, held by
+`tools/test_yuv.c`. A wrong matrix would show only in M6c's picture of a
+film.
+

@@ -348,8 +348,15 @@ server says exact, and not at a gain of 253, beside a tone or at 44.1 kHz.
 QEMU's speaker calls 240/255 nought decibels, so `usbaudio=full` sets its
 own volume at its top for the proof. **For Diego**: whether Kosmos sets a
 real speaker's own volume to 0 dB (the M60's). **Next**: the M60 at 96/24
-when Diego has it plugged in; then the new Music (`docs/player.md`, agreed,
-the old Music retired at its P5). **Packages P5 built in 0.12.81**
+when Diego has it plugged in. **Media M6, being built** (`media.md`, *M6*;
+Diego decided on 23 November: `media.elf` a system image, and the old FFmpeg
+out at M6): **M6a in 0.12.94** (18.1015), `media.elf` in
+`/Home/System/Media`, seen as `/Kosmos/Media`, and the Media Kit's Lua door
+demuxing; **M6b in 0.12.95** (18.1016), decoders from the door, held stream
+by stream to `mediatest`. Next: M6c, `video.lua` on the door with Video and
+`listen` in `media.elf`; M6d, the closure and `mp4.lua` out; M6e, Big Buck
+Bunny. Then the new Music (`docs/player.md`, agreed, the old Music retired
+at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for
 other protocols. **Drawn for Diego**: the window when an application does

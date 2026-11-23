@@ -27,6 +27,7 @@ disagree with both.
 import hashlib
 import fcntl
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -76,6 +77,97 @@ DOOR = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 local media = use("/Kosmos/Kits/media")
 print("door: FFmpeg " .. media.version())
 local folder = "/Home/apps/media/films/"
+-- M6b: every stream decoded through the door, its frames counted and their
+-- times hashed as `mediatest` hashes them (FNV-1a over each pts's eight
+-- bytes), a picture drawn onto a surface and a sound handed over as an
+-- address - the counts and hashes held to mediatest's by the harness.
+local function fnv(h, v)
+  for k = 0, 7 do
+    h = (h ~ ((v >> (8 * k)) & 0xff)) * 0x100000001b3
+  end
+  return h
+end
+local function drain(t)
+  for _ = 1, 100000 do
+    if t.refused then return end
+    if t.kind == "video" then
+      local at, why = t.dec:picture(t.surface)
+      if at == false then return end
+      if at == nil then t.refused = why; return end
+      t.n = t.n + 1
+      t.times = fnv(t.times, at)
+      for _, xy in ipairs(t.probes) do
+        if t.surface:get(xy[1], xy[2]) ~= xy[3] then t.painted = true end
+      end
+    else
+      local at, len, pts, frames = t.dec:sound()
+      if at == false then return end
+      if at == nil then t.refused = len; return end
+      t.n = t.n + 1
+      t.times = fnv(t.times, pts)
+      t.samples = t.samples + frames
+      if at == 0 or len ~= frames * t.channels * 2 then t.wrong = true end
+    end
+  end
+end
+local function decode(name)
+  local src = media.open(folder .. name)
+  local tracks, order = {}, {}
+  for i, st in ipairs(src:streams()) do
+    if st.kind == "video" or st.kind == "audio" then
+      local dec, why = src:decoder(i - 1, 2)
+      if not dec then
+        print(("door %s #%d: %s"):format(name, i - 1, why))
+      else
+        local t = { dec = dec, kind = st.kind, n = 0, samples = 0, i = i - 1,
+                    times = 0xcbf29ce484222325, channels = st.channels }
+        if st.kind == "video" then
+          t.surface = gfx.surface{ w = st.width, h = st.height }
+          t.probes = {}
+          for _, f in ipairs({ { 1, 1 }, { 2, 2 }, { 1, 3 }, { 3, 1 }, { 3, 3 } }) do
+            local x, y = st.width * f[1] // 4, st.height * f[2] // 4
+            t.probes[#t.probes + 1] = { x, y, t.surface:get(x, y) }
+          end
+        end
+        tracks[i - 1] = t
+        order[#order + 1] = t
+      end
+    end
+  end
+  while true do
+    local p = src:read()
+    if not p then break end
+    local t = tracks[p.stream]
+    if t and not t.refused then
+      local ok = t.dec:send(p)
+      for _ = 1, 3 do
+        if ok ~= false then break end
+        drain(t)
+        ok = t.dec:send(p)
+      end
+      drain(t)
+    end
+    p:free()
+  end
+  for _, t in ipairs(order) do
+    if not t.refused then
+      t.dec:send()
+      drain(t)
+    end
+    if t.refused then
+      print(("door %s #%d: %s"):format(name, t.i, t.refused))
+    elseif t.kind == "video" then
+      print(("door %s #%d: %d frames, times %016x, %s"):format(name, t.i, t.n, t.times,
+            t.painted and "painted" or "not painted"))
+    else
+      print(("door %s #%d: %d samples, times %016x, %s"):format(name, t.i, t.samples,
+            t.times, t.wrong and "its bytes wrong" or "its bytes right"))
+    end
+    t.dec:close()
+    if t.surface then t.surface:free() end
+  end
+  src:close()
+end
 for name in fs.read(folder .. "manifest.txt"):gmatch("%S+") do
   local src, why = media.open(folder .. name)
   if not src then
@@ -104,6 +196,7 @@ for name in fs.read(folder .. "manifest.txt"):gmatch("%S+") do
     end
     src:close()
     print(("door %s: %d packets, %d keys, %d bytes"):format(name, packets, keys, bytes))
+    decode(name)
   end
 end
 print("door: done")
@@ -386,6 +479,39 @@ def main():
     if door_refused != want_refused:
         problems.append("its refusals are not mediatest's: %s against %s"
                         % (door_refused, want_refused))
+    # M6b: each stream decoded through the door, its frames and their times
+    # as mediatest's; 4:2:0 pictures drawn, and everything else refused.
+    decoded = {}
+    for ln in said:
+        m = re.match(r"stream (\S+) #(\d+) (video|audio) .*?(?: bits (\w+))?: "
+                     r"(\d+) (?:frames|samples), times ([0-9a-f]{16})", ln)
+        if not m:
+            continue
+        key = "%s #%s" % (m.group(1), m.group(2))
+        if m.group(3) == "video" and m.group(4) != "yuv420":
+            decoded[key] = "REFUSED"
+        elif m.group(3) == "video":
+            decoded[key] = "%s frames, times %s, painted" % (m.group(5), m.group(6))
+        else:
+            decoded[key] = "%s samples, times %s, its bytes right" % (m.group(5), m.group(6))
+    door_decoded = {}
+    for ln in door_said:
+        m = re.match(r"door (\S+ #\d+): (.*)$", ln)
+        if m:
+            door_decoded[m.group(1)] = m.group(2)
+    wrong = []
+    for key, w in sorted(decoded.items()):
+        got = door_decoded.get(key)
+        if w == "REFUSED":
+            if got is None or "not 4:2:0" not in got:
+                wrong.append("%s: %r, where a refusal was wanted" % (key, got))
+        elif got != w:
+            wrong.append("%s: %r, where mediatest says %r" % (key, got, w))
+    if not decoded:
+        wrong.append("mediatest decoded nothing to hold the door to")
+    if wrong:
+        problems.append("its decoding is not mediatest's: " + "; ".join(wrong[:4])
+                        + (" and %d more" % (len(wrong) - 4) if len(wrong) > 4 else ""))
     if problems:
         print("FAIL: the Media Kit's Lua door in media.elf: " + "; ".join(problems))
         return 1
@@ -393,10 +519,12 @@ def main():
     print("PASS: the Media Kit read %d files on Kosmos - %d streams decoded, every line "
           "as on this Mac, and %d pictures in %d films as `ffmpeg -f framemd5` says them; "
           "%d refused, as they should be; in %.1f s (%s); and through the Lua door in "
-          "media.elf, %d streams said the same and %d packets read"
+          "media.elf, %d streams said the same, %d packets read and %d streams decoded "
+          "as mediatest decoded them (%d refused as not 4:2:0)"
           % (len(found), streams, pictures, len(tool), len(refused), took,
              want[0].split(": ", 1)[1] if want else "?", len(door_streams),
-             sum(counted.values())))
+             sum(counted.values()), len(decoded),
+             sum(1 for w in decoded.values() if w == "REFUSED")))
     return 0
 
 

@@ -4087,7 +4087,7 @@ $(UBUILD)/apps/mediatest.elf: $(USER_OBJS) $(MEDIA_OBJS) $(MEDIATEST_OBJS) $(POS
 #
 MEDIAKIT_OBJS := $(MEDIA_OBJS) $(UBUILD)/user/kits/media/media_kosmos.c.o
 
-$(UBUILD)/user/kits/media/media_kosmos.c.o: UCFLAGS += -Iuser/kits/media
+$(UBUILD)/user/kits/media/media_kosmos.c.o: UCFLAGS += -Iuser/kits/media -Iuser/kits/gfx
 
 $(UBUILD)/apps/media.elf: $(USER_OBJS) $(MEDIAKIT_OBJS) $(POSIX_OBJS) $(FFMPEG_W5_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
