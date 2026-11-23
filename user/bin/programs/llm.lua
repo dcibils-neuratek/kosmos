@@ -21,6 +21,10 @@
 
 local llm = use("/Kosmos/Libraries/llm.lua")
 
+-- The shares below - the GPU's rows of a step's, a layer's neurons that
+-- fired - are `meters.share`, as the monitors' are.
+local share = use("/Kosmos/Libraries/meters.lua").share
+
 local NAMES = { plain = "plain (the reference)", base = "base (SSE2 or NEON)", avx2 = "AVX2" }
 
 local function usage()
@@ -106,7 +110,7 @@ local function token_line(r)
   print(("%-8s %4d %-14s %s, %.1f ms, GPU %d%%; stream %.1f to %.1f%s")
         :format(r.reading and "read" or "written", r.pos, quoted(r.text),
                 r.batch > 1 and (r.batch .. " together") or "alone", r.us / 1000,
-                r.rows_all > 0 and r.rows_gpu * 100 // r.rows_all or 0,
+                share(r.rows_gpu, r.rows_all) or 0,
                 first and first.stream or 0, last and last.stream or 0,
                 #next_words > 0 and ("; next " .. table.concat(next_words, ", ")) or ""))
 end
@@ -142,7 +146,7 @@ local function layer_lines(r, text_at)
     end
 
     print(("  %2d  stream %7.2f  fired %5d (%2d%%)  head %2d looks %s, %d back, %.0f%%; weighed %s; first %.0f%%")
-          :format(l, L.stream, L.fired, r.n_ff > 0 and L.fired * 100 // r.n_ff or 0, best,
+          :format(l, L.stream, L.fired, share(L.fired, r.n_ff) or 0, best,
                   L.back[best] == 0 and "at itself" or ("at " .. quoted(text_at[at] or "?")),
                   L.back[best], L.share[best] * 100,
                   #weighed > 0 and table.concat(weighed, ", ") or "nothing", L.sink * 100))

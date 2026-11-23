@@ -12,7 +12,9 @@
 -- each had a loop of byte rates by a key, GPU Monitor its watts, LLM
 -- Monitor its tokens a second, Processes its totals. Each moved here as it
 -- was, and each window reads it (*Kits supply, applications orchestrate*).
--- System Monitor's pages are its next readers.
+-- System Monitor's pages are its next readers, and the prompt's `htop`,
+-- `monitor`, `gpustat` and `llm`, which said the same numbers in text from
+-- arithmetic of their own, read it too.
 --
 -- **The window asks; this subtracts.** Nothing here calls a server: a meter
 -- is handed the reading the window took, and the counter's time it took it
@@ -60,12 +62,19 @@ end
 
 meters.grew = grew
 
+-- How much of `whole` `part` is, in whole per cent, rounded down: memory
+-- used of all there is, the GPU's rows of every row, a layer's neurons
+-- that fired. nil when the whole is nought, which says nothing.
+function meters.share(part, whole)
+  if whole <= 0 then return nil end
+
+  return (part * 100) // whole
+end
+
 -- How much of a period was busy, in whole per cent: the busy ticks over
 -- every tick, idle ones included. nil when no tick passed.
 function meters.busy_share(idle, busy)
-  if idle + busy <= 0 then return nil end
-
-  return (busy * 100) // (idle + busy)
+  return meters.share(busy, idle + busy)
 end
 
 -- Every meter is a table of its results with these methods; `into`, where

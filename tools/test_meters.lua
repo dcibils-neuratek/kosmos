@@ -202,6 +202,15 @@ do
   -- Counters that went backwards (a reading from somewhere else): nought,
   -- never a share below zero.
   check(busy:take({ idle_ticks = 100, busy_ticks = 100 }) == nil, "counters gone backwards gave a share")
+
+  -- A share of a whole, which the prompt's programs take: memory used of
+  -- all there is (`htop`), the GPU's rows of a step's and a layer's
+  -- neurons that fired (`llm`). Rounded down; nothing of a whole of nought.
+  check(meters.share(1464, 16384) == 8, "1464 MB of 16384 was not 8%")
+  check(meters.share(2559, 10240) == 24 and meters.share(10240, 10240) == 100,
+        "2559 of 10240 rows was not 24%, or all of them not 100%")
+  check(meters.share(0, 0) == nil and meters.share(5, 0) == nil, "a whole of nought gave a share")
+  check(meters.busy_share(750, 250) == meters.share(250, 1000), "busy is not busy's share of every tick")
 end
 
 --------------------------------------------------------------------------

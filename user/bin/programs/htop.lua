@@ -61,15 +61,19 @@ local meter = use("/Kosmos/Libraries/text.lua").meter
 -- which on a machine that has been sitting at a prompt is a number that
 -- never moves. Every run of this program is a fresh process with no memory
 -- of the last one, so it takes both samples itself.
+--
+-- The differences are `meters.lua`'s, as the Deskbar's meters and
+-- Processes take them: the machine's busy, and each process's share of
+-- every tick that passed (`procshare.lua`'s rows), the process's own
+-- table in each. A sample answers both: the busy, and the rows.
+local meters = use("/Kosmos/Libraries/meters.lua")
+local busy, procs = meters.busy(), meters.processes()
+
 local function sample()
   local k = fs.read("/Devices/kernel")
-  local by_pid = {}
+  local list = sys.processes()
 
-  for _, p in ipairs(sys.processes()) do
-    by_pid[p.id] = p.ticks
-  end
-
-  return { idle = k.idle_ticks, busy = k.busy_ticks, procs = by_pid }
+  return busy:take(k), procs:take(list, k)
 end
 
 -- Asleep for `ticks` scheduler ticks, rather than yielding until the
@@ -81,16 +85,16 @@ local function pause(ticks)
   return not interrupted()
 end
 
-local function report(before, after)
+-- `pct` the machine's busy since the first sample (nil when no tick
+-- passed), `rows` each process's share of it.
+local function report(pct, rows)
   local cpu = fs.read("/Devices/cpu")
   local mem = fs.read("/Devices/memory")
   local k   = fs.read("/Devices/kernel")
 
-  local elapsed = (after.idle + after.busy) - (before.idle + before.busy)
-  local busy = after.busy - before.busy
-  local pct = elapsed > 0 and (busy * 100) // elapsed or 0
+  pct = pct or 0
 
-  local used = mem.total_mb - mem.free_mb
+  local used, total = meters.memory(mem)
 
   print("")
   print(("KOSMOS%sup %ds"):format((" "):rep(52), sys.ticks() // cpu.counter_hz))
@@ -98,7 +102,7 @@ local function report(before, after)
   print(("  CPU  %s %3d%%    %s %s x%d"):format(
         meter(pct, 22), pct, cpu.implementer, cpu.part, cpu.cores))
   print(("  MEM  %s %d / %d MB"):format(
-        meter((used * 100) // mem.total_mb, 22), used, mem.total_mb))
+        meter(meters.share(used, total) or 0, 22), used, total))
   print(("  POOLS  threads %d/%d  processes %d/%d  spaces %d/%d  endpoints %d/%d"):format(
         k.threads, k.threads_max, k.processes, k.processes_max,
         k.spaces, k.spaces_max, k.endpoints, k.endpoints_max))
@@ -115,20 +119,23 @@ local function report(before, after)
   print("")
   print("   PID  NAME       KIND        BAND      CPU%  CAPS  OWNS            STATE")
 
-  for _, p in ipairs(sys.processes()) do
-    local was = before.procs[p.id] or p.ticks
-    local share = elapsed > 0 and ((p.ticks - was) * 100) // elapsed or 0
+  -- Every process's row; the kernel's own, which Processes shows, is the
+  -- KERNEL box above rather than a line in this list.
+  for _, row in ipairs(rows) do
+    if not row.kernel then
+      local p, share = row.process, row.pct
 
-    local owns = {}
-    if p.owns & 1 ~= 0 then owns[#owns + 1] = "console" end
-    if p.owns & 2 ~= 0 then owns[#owns + 1] = "screen" end
+      local owns = {}
+      if p.owns & 1 ~= 0 then owns[#owns + 1] = "console" end
+      if p.owns & 2 ~= 0 then owns[#owns + 1] = "screen" end
 
-    print(("  %4d  %-10s %-11s %-8s %3d%%  %4d  %-15s %s"):format(
-          p.id, p.name, prockind.of(p, declared),
-          BANDS[p.priority] or tostring(p.priority),
-          share, p.caps,
-          #owns > 0 and table.concat(owns, "+") or "-",
-          p.exited and ("exited " .. p.exit_code) or (STATE[p.state] or "?")))
+      print(("  %4d  %-10s %-11s %-8s %3d%%  %4d  %-15s %s"):format(
+            p.id, p.name, prockind.of(p, declared),
+            BANDS[p.priority] or tostring(p.priority),
+            share, p.caps,
+            #owns > 0 and table.concat(owns, "+") or "-",
+            p.exited and ("exited " .. p.exit_code) or (STATE[p.state] or "?")))
+    end
   end
 end
 
@@ -139,10 +146,10 @@ local rounds = tonumber(args) or 1
 local half = math.max(1, (fs.read("/Devices/kernel").tick_hz or 250) // 2)
 
 for i = 1, rounds do
-  local before = sample()
+  sample()                    -- measured from here: what it says is since the last
 
   if not pause(half) then break end
-  report(before, sample())
+  report(sample())
 
   if i < rounds and not pause(half) then break end
 end

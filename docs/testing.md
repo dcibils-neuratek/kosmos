@@ -43508,3 +43508,25 @@ its span went on telling, and the pace is held to the rest: 10 samples in
 **Result**: `x86-sysmon` 46 of 46 and `x86-sysmon-io` 20 of 20, side by
 side; `x86-gpumon`, `x86-diskmon`, `x86-netmon`, `x86-platinum`,
 `x86-display-1` and `x86-display-4` pass on the shells and the pages.
+
+## 18.1025 The prompt's monitors on `meters.lua`, folded from a lane
+
+**What was built.** What S2 left (`docs/sysmonitor.md` step 2): `htop`,
+`monitor`, `gpustat` and `llm` at the prompt kept their own arithmetic, and
+now read `meters.lua` for it - the machine's busy, each process's share,
+memory, the GPU's rates and watts. `meters.share(part, whole)` is new, a
+whole percentage rounded down or nil over nought, and `busy_share` is built
+on it with the same numbers for its callers. `llm` prints the server's
+running totals, so only its two percentages moved. Every line the four
+print is unchanged: the lane ran the old and new copies side by side under
+fake sources and compared them byte for byte. One change in `htop`'s
+behaviour, not its words: a process's share is taken against the same
+kernel reading as the CPU figure, and capped at 100%, as Processes does.
+
+**What is checked.** `test_meters.lua` gains four checks for `share` (88,
+with its three controls failing as they should). No suite runs `htop`; that
+is left as a gap, said here.
+
+**Result**: host, `x86-gpumon`, `x86-llm`, `x86-llmmon`, `x86-servers`
+(`monitor 1`), `x86-display-1`, `x86-virtio-gpu`, `x86-sysmon` and
+`x86-sysmon-io`, 9 of 9.

@@ -50,8 +50,11 @@ local meter = use("/Kosmos/Libraries/text.lua").meter
 
 -- Usage is the difference between two readings, never one: a single
 -- reading says what fraction of all time since boot was busy, which after
--- a minute at a prompt is a number that never moves again.
-local last_idle, last_busy
+-- a minute at a prompt is a number that never moves again. The difference
+-- is `meters.lua`'s, as the Deskbar's meters take it: nothing on the first
+-- pass, which this draws as 0%.
+local meters = use("/Kosmos/Libraries/meters.lua")
+local busy = meters.busy()
 
 local until_ = sys.ticks() + hz * seconds
 
@@ -60,18 +63,13 @@ while sys.ticks() < until_ do
   local m = fs.read("/Devices/memory")
   local c = fs.read("/Devices/cpu")
 
-  local pct = 0
-  if last_idle then
-    local di = k.idle_ticks - last_idle
-    local db = k.busy_ticks - last_busy
-    if di + db > 0 then pct = (db * 100) // (di + db) end
-  end
-  last_idle, last_busy = k.idle_ticks, k.busy_ticks
+  local pct = busy:take(k) or 0
+  local used, total = meters.memory(m)
 
   local text = (" %s x%d  cpu %s %3d%%   %d/%d thr   %d/%d proc   %d/%d MB   up %ds"):
     format(c.part, c.cores, meter(pct, 10), pct,
            k.threads, k.threads_max, k.processes, k.processes_max,
-           m.total_mb - m.free_mb, m.total_mb, sys.ticks() // hz)
+           used, total, sys.ticks() // hz)
 
   screen:fill(0, top, w, h - top, 0xff161b22)
   screen:fill(0, top, w, 1, 0xff30363d)

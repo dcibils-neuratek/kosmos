@@ -957,8 +957,8 @@ C (`user/kits/series/`, `seriesring.h`), `ui.history` its door, and the
 five monitors drawing through it unchanged - held pixel for pixel to the
 old Lua by `test_series`. **S2 built** (0.12.98, 18.1019), by a lane:
 `meters.lua`, every monitor's differences in one library, seven copies
-gone. Left from S2: the prompt's `htop`, `monitor`, `gpustat` and `llm`
-keep their own arithmetic, and should read it too. **S3 built** (0.12.99,
+gone. What S2 left - the prompt's `htop`, `monitor`, `gpustat` and `llm`
+on their own arithmetic - is done (0.12.104, 18.1025); no suite runs `htop`. **S3 built** (0.12.99,
 18.1020), by a lane: `sysmon.lua` is System Monitor - the sidebar, the
 Overview's tiles and the CPU page, the Deskbar's meters opening it, and
 `x86-sysmon` holding rows 1-18 of the inventory. Pages not built yet open

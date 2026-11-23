@@ -25,11 +25,19 @@ if not a then
   return
 end
 
+-- The rates and the watts are `meters.lua`'s, as GPU Monitor takes them:
+-- two snapshots, each beside `sys.info()` for the graphics plane's energy.
+local measured = use("/Kosmos/Libraries/meters.lua").gpu(hz)
 local e0 = sys.info()
+
+measured:take(a, e0)
 sys.sleep(math.max(1, seconds) * (e0.tick_hz or 250))   -- scheduler ticks
+
 local b = gpu.stats() or a
-local e1 = sys.info()
-local r = gpu.since(a, b, hz)
+
+measured:take(b, sys.info())
+
+local r = measured.rate
 
 print(("%s (8086:%04x)"):format(b.model, b.device))
 -- A clock of nought is the GPU asleep: RPSTAT1 reads 0 in RC6.
@@ -40,10 +48,8 @@ if r then
   print(("  asleep     %.0f%% of %.1f s in RC6"):format(r.asleep * 100, r.seconds))
 end
 
-if e0.gpu_energy_uj and e1.gpu_energy_uj and r then
-  local uj = (e1.gpu_energy_uj - e0.gpu_energy_uj) & 0xffffffff
-
-  print(("  power      %.2f W"):format(uj / 1e6 / r.seconds))
+if measured.watts then
+  print(("  power      %.2f W"):format(measured.watts))
 else
   print("  power      not known on this processor")
 end
