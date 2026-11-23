@@ -354,6 +354,13 @@ static void test_dac(void)
     i = uac_pick(&d, false, 44100, &rate);
     check(i == 0 && rate == 44100, "then a 44.1 kHz mix plays at 44.1 kHz");
 
+    i = uac_pick_for(&d, false, 96000, 24, &rate);
+    check(i == 1 && rate == 96000, "a 96/24 stream plays on 24 bits at 96 kHz");
+    i = uac_pick_for(&d, false, 192000, 32, &rate);
+    check(i == 2 && rate == 192000, "a 192/32 stream on 32 bits at 192 kHz");
+    i = uac_pick_for(&d, false, 88200, 16, &rate);
+    check(i == 0 && rate == 88200, "an 88.2/16 stream on 16 bits at 88.2 kHz");
+
     check(uac_rates_from_range(wide, sizeof wide, &d.alts[0])
           && d.alts[0].nrates == 10 && uac_takes(&d.alts[0], 44100)
           && uac_takes(&d.alts[0], 96000) && !uac_takes(&d.alts[0], 192000),
@@ -443,6 +450,20 @@ static void test_m60(void)
     i = uac_pick(&d, false, 44100, &rate);
     check(i == 0 && rate == 48000,
           "a 44.1 kHz mix plays on 1.1, 16 bits, at 48 kHz");
+
+    /* U10d: the setting follows the best stream playing. */
+    i = uac_pick_for(&d, false, 96000, 24, &rate);
+    check(i == 1 && rate == 96000, "a 96/24 stream moves it to 1.2 at 96 kHz");
+    i = uac_pick_for(&d, false, 48000, 16, &rate);
+    check(i == 0 && rate == 48000, "a 48/16 stream keeps 1.1 at 48 kHz");
+    i = uac_pick_for(&d, false, 96000, 16, &rate);
+    check(i == 0 && rate == 96000, "a 96/16 stream: 1.1, at 96 kHz");
+    i = uac_pick_for(&d, false, 44100, 24, &rate);
+    check(i == 1 && rate == 48000,
+          "a 44.1/24 stream: 1.2, at 48 kHz, the nearest above");
+    i = uac_pick_for(&d, false, 192000, 32, &rate);
+    check(i == 1 && rate == 96000,
+          "a 192/32 stream: the most it has, 24 bits at 96 kHz");
 }
 
 /*

@@ -439,35 +439,50 @@ static uint64_t rate_for(const struct uac_alt *a, uint32_t mix, uint32_t *r)
     return 3ull << 32;
 }
 
-int uac_pick(const struct uac_device *d, bool in, uint32_t mix_rate,
-             uint32_t *rate)
+int uac_pick_for(const struct uac_device *d, bool in, uint32_t want_rate,
+                 unsigned want_bits, uint32_t *rate)
 {
     int best = -1;
-    unsigned i, channels = 0, bits = 0;
-    unsigned best_channels = 0, best_bits = 0;
-    uint64_t score, best_score = 0;
+    unsigned i;
+    uint64_t key[4], best_key[4] = { 0, 0, 0, 0 };
     uint32_t r, best_rate = 0;
     const struct uac_alt *a;
 
     for (i = 0; i < d->nalts; i++) {
+        uint64_t score;
+        unsigned k;
+        bool better;
+
         a = &d->alts[i];
 
         if (a->in != in) {
             continue;
         }
 
-        channels = a->channels == 2 ? 0 : a->channels > 2 ? 1 : 2;
-        bits = a->bits >= 16 ? a->bits - 16u : 100u + (16u - a->bits);
-        score = rate_for(a, mix_rate, &r);
+        score = rate_for(a, want_rate, &r);
 
-        if (best < 0 || channels < best_channels
-            || (channels == best_channels && bits < best_bits)
-            || (channels == best_channels && bits == best_bits
-                && score < best_score)) {
+        /* Lower is better, in this order: two channels, then more, then
+         * one; no bits short of the stream's; the stream's own rate, then
+         * the nearest above, then below; the fewest bits past its; and
+         * the nearest rate of its kind. */
+        key[0] = a->channels == 2 ? 0 : a->channels > 2 ? 1 : 2;
+        key[1] = a->bits >= want_bits ? 0 : want_bits - a->bits;
+        key[2] = score >> 32;
+        key[3] = ((uint64_t)(a->bits >= want_bits ? a->bits - want_bits : 0) << 32)
+               | (score & 0xFFFFFFFFu);
+
+        better = best < 0;
+
+        for (k = 0; k < 4 && !better; k++) {
+            if (key[k] != best_key[k]) {
+                better = key[k] < best_key[k];
+                break;
+            }
+        }
+
+        if (better) {
             best = (int)i;
-            best_channels = channels;
-            best_bits = bits;
-            best_score = score;
+            memcpy(best_key, key, sizeof(key));
             best_rate = r;
         }
     }
@@ -477,6 +492,12 @@ int uac_pick(const struct uac_device *d, bool in, uint32_t mix_rate,
     }
 
     return best;
+}
+
+int uac_pick(const struct uac_device *d, bool in, uint32_t mix_rate,
+             uint32_t *rate)
+{
+    return uac_pick_for(d, in, mix_rate, 16u, rate);
 }
 
 /* The rates a wide subrange is offered at: those devices are built for. */

@@ -13189,6 +13189,17 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   code. **Written as U10 and AGREED on 22 November** with the player's
   decisions 5 to 7 (sinc resampler, software volume said honestly, other
   sounds shared and said).
+  **U10a-U10d built** (0.12.84, 0.12.89, 0.12.91): the converter and the
+  mix past 16 bits, streams in formats of their own, and the speaker's
+  setting following the best stream, its switch drained, timed and said.
+  U10e (`exact` per stream) and U10f (the bit-for-bit proof, then 96/24
+  on the M60) are next.
+  **The speaker's suite under the gate's load** (found 23 November,
+  `testing.md` 18.1012): `x86-usb-3` fails one gate in two or three. A
+  stream stops being taken, or a beep takes 41 s, because the guest is
+  starved when the host has every core busy. 0.12.90's audio code fails
+  the same way under the same load. To do: make the parts hold, or have
+  them say they were starved, as `x86-film` does.
 - **The best audio player, iTunes's ground, hi-res - ASKED 22 November
   2026** (Diego: "design and build a new audio player app inspired in
   itunes and will hires audio support with flac and mp4, m4a, mp3, wav,

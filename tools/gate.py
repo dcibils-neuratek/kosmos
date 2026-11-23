@@ -1289,10 +1289,11 @@ SUITES = [
           x86=True),
     # The USB speaker's parts, out of x86-usb-2 when U10c added a fifth
     # (testing.md 18.1010): what it plays, chosen, the Mixer, and streams
-    # in formats of their own.
+    # in formats of their own; and the speaker's setting following the best
+    # stream (U10d).
     Suite("x86-usb-3", ["python3", "tools/run_x86.py", X86, "--parts",
                         "usb_audio_tone,usb_audio_play,usb_audio_choose,usb_audio_mixer,"
-                        "usb_audio_format"],
+                        "usb_audio_format,usb_audio_switch"],
           x86=True),
     # The clocks a PC does not state, measured with QEMU stopped as they
     # are - what a Mac running this whole gate did by accident on 25

@@ -135,6 +135,16 @@ int uac_pick(const struct uac_device *d, bool in, uint32_t mix_rate,
              uint32_t *rate);
 
 /*
+ * The same for a stream of `want_bits` at `want_rate` (`usbaudio.md` U10d):
+ * two channels first, as above; then a setting with no fewer bits than
+ * the stream, since widening is exact and narrowing is not; then the
+ * stream's own rate, else the nearest above, else the highest below; then
+ * the fewest bits past the stream's. `uac_pick` is this for 16 bits.
+ */
+int uac_pick_for(const struct uac_device *d, bool in, uint32_t want_rate,
+                 unsigned want_bits, uint32_t *rate);
+
+/*
  * A UAC2 clock source's answer to GET RANGE for its sampling frequency
  * (UAC2 5.2.3.3): wNumSubRanges, then each its dMIN, dMAX and dRES. Into
  * `a->rates` the ones it takes: a subrange of one rate as itself, and a

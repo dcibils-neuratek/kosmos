@@ -334,7 +334,13 @@ by a filter's carry, the speaker's included. **The tests in two tiers built in
 much work as possible"; 18.1011): each suite runs for what it exercises,
 its files derived (`tools/suitedeps.py`, `tools/suite_subjects.py`, built as
 two lanes) - `audio.c` 33 suites rather than 119, a bump 5, `tools/gate.py
---plan` to see. **Next**: U10d-U10f; then the new Music (`docs/player.md`, agreed,
+--plan` to see. **U10d built in 0.12.91** (18.1012): the speaker's
+setting follows the best stream - the server asks in the ring
+(`want_rate`, `want_bits`), `xhci` picks with `uac_pick_for` and switches,
+drained (6 ms) and switched (2 ms) under QEMU, said on the console - and
+the mix runs at the speaker's rate, so a stream in its format is not
+resampled. 1.1 to 1.2 at 96/24 is the M60's to show. **Next**: U10e
+(`exact` per stream) and U10f (bit for bit, then 96/24 on the M60); then the new Music (`docs/player.md`, agreed,
 the old Music retired at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for

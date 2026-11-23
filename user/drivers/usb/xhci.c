@@ -6352,10 +6352,21 @@ struct speaker {
     struct controller *c;
     unsigned      slot;
     struct device dev;
+    struct uac_device info;             /* every setting it offers (U10d) */
+    int           which;                /* the one playing, in info.alts */
     struct uac_alt alt;
     uint32_t      rate;
     unsigned      dci;
     unsigned      frame_bytes;          /* channels x subframe */
+
+    /* **Following the best stream** (U10d): what the server last asked
+     * for, and a switch under way - the setting and rate it goes to, and
+     * when the drain began. */
+    uint32_t      want_rate, want_bits;
+    bool          draining;
+    int           to_which;
+    uint32_t      to_rate;
+    unsigned long drain_began;
     uint32_t      td_room;              /* the most one TD carries */
     unsigned      uframes;
 
@@ -6627,7 +6638,7 @@ static void take_audio(struct controller *c, const uint32_t *event)
     if (code == CC_RING_UNDERRUN || code == CC_RING_OVERRUN) {
         s->underruns++;
 
-        if (s->stopping && s->out == 0) {
+        if (s->tone && s->stopping && s->out == 0) {
             s->streaming = false;
             speaker_said(s, "the beeps played - ");
         }
@@ -6682,7 +6693,7 @@ static void take_audio(struct controller *c, const uint32_t *event)
 
     if (!s->stopping) {
         speaker_queue(s, s->td_of[place]);
-    } else if (s->out == 0) {
+    } else if (s->tone && s->out == 0) {
         s->streaming = false;
         speaker_said(s, "the beeps played - ");
     }
@@ -6704,6 +6715,8 @@ static void speaker_gone(struct controller *c, unsigned slot)
             usb_audio_store((volatile uint64_t *)(void *)&usb_ring->played,
                             usb_ring->played);
             usb_ring->present = 0;
+            RING_BARRIER();
+            usb_ring->switching = 0;    /* nor is it changing any more */
             RING_BARRIER();
 
             if (audio_door >= 0) {
@@ -6773,14 +6786,14 @@ static void speaker_named(const struct controller *c, const struct device *d,
  * SET_INTERFACE - the order 4.6.6.1 gives, as the camera's - then its rate
  * by SET_CUR to the endpoint where it takes one, and the ring full.
  */
+static bool speaker_open(struct speaker *s, int which, uint32_t rate,
+                         struct say_line *line);
+
 static bool speaker_start(struct controller *c, struct device *d,
                           const struct uac_device *info, int which,
                           uint32_t rate, bool tone, struct say_line *line)
 {
     struct speaker *s = NULL;
-    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
-    uint32_t done[4], *icc, *slot, *ep, esit;
-    uint8_t rate_bytes[3];
     unsigned i;
 
     for (i = 0; i < SPEAKERS_MAX; i++) {
@@ -6810,12 +6823,49 @@ static bool speaker_start(struct controller *c, struct device *d,
     s->c = c;
     s->slot = d->slot;
     s->dev = *d;
+    s->info = *info;
+
+    if (!control_nodata(c, &s->dev, SET_CONFIGURATION, info->configuration,
+                        0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION for the speaker",
+                    "; it plays nothing", line);
+        return false;
+    }
+
+    return speaker_open(s, which, rate, line);
+}
+
+/*
+ * One setting of the speaker's, at one rate, made to play: its TDs'
+ * memory, the endpoint's context, SET_INTERFACE, SET_CUR of the rate, the
+ * ring said to be this speaker's in this format, and every TD queued. What
+ * `speaker_start` does after it has a slot, and what a switch does again
+ * (U10d) once the last setting is stopped.
+ */
+static bool speaker_open(struct speaker *s, int which, uint32_t rate,
+                         struct say_line *line)
+{
+    struct controller *c = s->c;
+    struct device *d = &s->dev;
+    const struct uac_device *info = &s->info;
+    bool tone = s->tone;
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    uint32_t done[4], *icc, *slot, *ep, esit;
+    uint8_t rate_bytes[3];
+    unsigned i;
+
+    s->which = which;
     s->alt = info->alts[which];
     s->rate = rate;
     s->dci = 2u * s->alt.endpoint;
     s->frame_bytes = (unsigned)s->alt.channels * s->alt.subframe;
     s->uframes = 1u << iso_interval(d->speed, s->alt.interval);
     s->td_room = uac_clock_most(rate, s->uframes) * s->frame_bytes;
+    s->out = 0;
+    s->queued = 0;
+    s->stopping = false;
+    s->bell = false;
+    s->tds = 0;
     esit = (uint32_t)s->alt.packet * (s->alt.extra + 1u);
 
     if (s->frame_bytes == 0 || s->td_room > esit) {
@@ -6826,13 +6876,6 @@ static bool speaker_start(struct controller *c, struct device *d,
 
     s->tds_pages = ((unsigned long)SPEAKER_TDS * s->td_room + PAGE - 1u)
                    / PAGE;
-
-    if (!control_nodata(c, &s->dev, SET_CONFIGURATION, info->configuration,
-                        0)) {
-        say_failure(c, d->port, "SET_CONFIGURATION for the speaker",
-                    "; it plays nothing", line);
-        return false;
-    }
 
     if (!camera_region(c, s->tds_pages, true, &s->tds_cap, &s->tds,
                        &s->tds_bus)) {
@@ -6921,6 +6964,8 @@ static bool speaker_start(struct controller *c, struct device *d,
         r->generation++;
         RING_BARRIER();
         r->present = 1;
+        RING_BARRIER();
+        r->switching = 0;               /* a switch's last word (U10d) */
         usb_ring_owner = s;
         s->pulse = true;
     }
@@ -6958,6 +7003,167 @@ static bool speaker_start(struct controller *c, struct device *d,
     say_text(line, s->alt.sets_rate ? ", its rate set" : "");
     say_send(console, line);
     return true;
+}
+
+/*
+ * **The setting changed under a speaker that plays** (U10d): the endpoint
+ * stopped (4.6.9), the speaker told to send nothing (setting 0), the
+ * endpoint dropped from the controller's context and its TDs' memory given
+ * back - `camera_stop`'s order - and then the new setting opened as the
+ * first one was, which writes the new format and generation into the ring
+ * and clears `switching` last. Timed from the drain's start and said.
+ */
+static void speaker_switch(struct speaker *s, struct say_line *line)
+{
+    struct controller *c = s->c;
+    struct device *d = &s->dev;
+    uint32_t done[4], *icc;
+    uint32_t from_rate = s->rate;
+    unsigned from_alt = s->alt.alternate, from_bits = s->alt.bits;
+    unsigned long began = kosmos_ticks(), drained = began - s->drain_began;
+    unsigned slot = d->slot;
+
+    s->stopping = true;
+    s->draining = false;
+
+    (void)command(c, 0, 0, TRB_TYPE(TRB_STOP_ENDPOINT) | TRB_SLOT(d->slot)
+                           | TRB_ENDPOINT(s->dci), done);
+    (void)control_nodata(c, d, SET_INTERFACE, 0, s->alt.interface);
+
+    icc = context(c, d->input, 0);
+    icc[0] = 1u << s->dci;
+    icc[1] = 1u;
+    (void)command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                  TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done);
+
+    s->streaming = false;
+    s->bell = false;
+
+    if (s->tds != 0) {
+        (void)kosmos_share_unmap((unsigned long)s->tds, s->tds_pages);
+        (void)kosmos_cap_drop(s->tds_cap);
+        s->tds = 0;
+    }
+
+    if (!speaker_open(s, s->to_which, s->to_rate, line)) {
+        speaker_gone(c, slot);          /* the machine's own plays again */
+        return;
+    }
+
+    if (usb_ring != NULL) {
+        usb_ring->switches++;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": speaker: switched ");
+    say_dec(line, s->alt.interface);
+    say_text(line, ".");
+    say_dec(line, from_alt);
+    say_text(line, " ");
+    say_dec(line, from_rate);
+    say_text(line, "/");
+    say_dec(line, from_bits);
+    say_text(line, " to ");
+    say_dec(line, s->alt.interface);
+    say_text(line, ".");
+    say_dec(line, s->alt.alternate);
+    say_text(line, " ");
+    say_dec(line, s->rate);
+    say_text(line, "/");
+    say_dec(line, s->alt.bits);
+    say_text(line, " for ");
+    say_dec(line, s->want_rate);
+    say_text(line, "/");
+    say_dec(line, s->want_bits);
+    say_text(line, ": drained in ");
+    say_dec(line, (unsigned long)((uint64_t)drained * 1000u / counter_hz));
+    say_text(line, " ms, switched in ");
+    say_dec(line, (unsigned long)((uint64_t)(kosmos_ticks() - began) * 1000u
+                                  / counter_hz));
+    say_text(line, " ms");
+    say_send(console, line);
+}
+
+/* How long a drain may take before the switch goes ahead regardless: the
+ * ring's 23 ms and the controller's 16, and room to spare. */
+#define SPEAKER_DRAIN_MS    200u
+#define SPEAKER_DRAIN_LEAST_MS  6u
+
+/*
+ * **Each pass, whether a speaker should follow the server** (U10d). What it
+ * asks for is held to the settings the speaker offers (`uac_pick_for`);
+ * where that is not the setting and rate playing, `switching` is said, the
+ * server stops writing, and the switch waits for what the ring held to be
+ * heard - `played` up to `write` - before it stops anything, so a change of
+ * setting costs a moment's quiet rather than the end of a sound. Under
+ * `opt/kosmos/usbaudio=switch` a speaker switches even to the setting it
+ * has, which is how a speaker with one setting - QEMU's - exercises all of
+ * this (`tools/run_x86.py`, `usb_audio_switch`).
+ */
+static void serve_speakers(struct say_line *line)
+{
+    static int always = -1;
+    unsigned i;
+
+    if (always < 0) {
+        char option[8] = { 0 };
+
+        always = kosmos_boot_option("opt/kosmos/usbaudio", option,
+                                    sizeof(option)) == 6
+                 && memcmp(option, "switch", 6) == 0;
+    }
+
+    for (i = 0; i < SPEAKERS_MAX; i++) {
+        struct speaker *s = &speakers[i];
+        struct usb_audio_ring *r = usb_ring;
+
+        if (!s->used || !s->streaming || s->tone || r == NULL
+            || usb_ring_owner != s) {
+            continue;
+        }
+
+        if (!s->draining) {
+            uint32_t want_rate = r->want_rate, want_bits, rate = 0;
+            int which;
+
+            RING_BARRIER();
+            want_bits = r->want_bits;
+
+            if (want_rate == 0 || (want_rate == s->want_rate
+                                   && want_bits == s->want_bits)) {
+                continue;
+            }
+
+            s->want_rate = want_rate;
+            s->want_bits = want_bits;
+            which = uac_pick_for(&s->info, false, want_rate, want_bits, &rate);
+
+            if (which < 0 || rate == 0
+                || (!always && which == s->which && rate == s->rate)) {
+                continue;
+            }
+
+            s->to_which = which;
+            s->to_rate = rate;
+            s->draining = true;
+            s->drain_began = kosmos_ticks();
+            r->switching = 1;
+            RING_BARRIER();
+            continue;
+        }
+
+        /* A period at least, so a server that was mid-write when it was
+         * told has stored its last `write` before this reads it. */
+        if (kosmos_ticks() - s->drain_began < counter_for(SPEAKER_DRAIN_LEAST_MS)
+            || (usb_audio_load(&r->played) < r->write
+                && kosmos_ticks() - s->drain_began < counter_for(SPEAKER_DRAIN_MS))) {
+            continue;                   /* still being heard */
+        }
+
+        speaker_switch(s, line);
+    }
 }
 
 /*
@@ -7077,7 +7283,12 @@ static void use_audio(struct controller *c, struct device *d,
          * server writes, which it does when the speaker is the one chosen
          * (`audio.c`). One with nothing written pulses nobody, so an
          * unchosen speaker costs a TD's copy a millisecond and no more. */
-        which = uac_pick(info, false, SPEAKER_MIX_RATE, &rate);
+        /* What the server asks for, where it has asked (U10d): a speaker
+         * plugged in while a 96/24 stream plays starts at 96/24. */
+        which = usb_ring != NULL && usb_ring->want_rate != 0 && !tone
+                ? uac_pick_for(info, false, usb_ring->want_rate,
+                               usb_ring->want_bits, &rate)
+                : uac_pick(info, false, SPEAKER_MIX_RATE, &rate);
 
         if (which < 0 || rate == 0) {
             about(line, c);
@@ -10059,6 +10270,7 @@ static void watch(struct controller *list, unsigned count,
         serve_midi(line);
         serve_usb();
         serve_hci();
+        serve_speakers(line);
     }
 }
 

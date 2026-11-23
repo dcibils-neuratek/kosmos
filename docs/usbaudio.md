@@ -412,6 +412,28 @@ adaptive; U6 and U7 if they are not. U1 says which.
     highest-resolution stream playing, within what it offers, and the
     driver switches them (drain, SET_INTERFACE, SET_CUR of the rate,
     start), timed and said.
+    **Built in 0.12.91** (`testing.md` 18.1012). The server asks and the
+    driver decides: `want_rate` and `want_bits` in the ring's header
+    (`usbaudioring.h`, grown to 192 bytes) are the highest rate and the
+    most bits of the streams open, format 0 counting as 44.1/16, and left
+    as they were when nothing is open, so silence does not switch a
+    speaker back and forth. `xhci` holds them to the speaker's settings
+    with `uac_pick_for` - two channels, then no bits short of the stream's
+    (widening is exact, narrowing is not), then the stream's rate, then the
+    fewest bits past it - and where that is not what plays it says
+    `switching`, waits for `played` to reach `write` (6 ms at least, 200 at
+    most), and switches in `camera_stop`'s order and `speaker_start`'s,
+    which is now `speaker_open` for both. The new format and generation
+    come with `switching` cleared last; meanwhile the server mixes nothing
+    and sends nothing to the machine's device. **The mix runs at the
+    speaker's rate** once it plays one: a period stays as long as the
+    machine's, so every ring still lands on it, and each stream is tuned
+    again - a format-0 stream into a 48 kHz mix is converted from then on,
+    a 48/16 one no longer is, and its position is kept in the new frames.
+    A speaker plugged in while a stream plays starts at what it asked for.
+    QEMU's speaker has one setting, so `opt/kosmos/usbaudio=switch` makes
+    the driver switch to the same one, which is every step but the format;
+    the format itself is the M60's to prove, 1.1 to 1.2.
   - **U10e, `exact`.** Per stream in `AUDIO_OP_STREAMS`, with its reason
     (rate, volume, mixed, narrowed), for the player's badge.
   - **U10f, the proof.** QEMU's speaker at 48/16: a FLAC of noise at 48/16

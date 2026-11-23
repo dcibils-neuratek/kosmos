@@ -1673,6 +1673,16 @@ class PluggedMachine:
         self.proc.kill()
         self.proc.wait()
 
+        # The whole console, kept where asked: a failure seen only under the
+        # gate's load is read from here afterwards.
+        keep = os.environ.get("RUN_X86_CONSOLE")
+
+        if keep:
+            os.makedirs(keep, exist_ok=True)
+            with open(os.path.join(keep, "console-%d-%d.txt"
+                                   % (os.getpid(), int(time.time() * 1000))), "wb") as f:
+                f.write(self.heard)
+
 
 def usb_second_stick(image, check):
     """**USB step 5e: a stick plugged in while `/Home` is on another.**
@@ -5145,7 +5155,7 @@ local tone = table.concat(cyc):rep(hz * 8 // 10)
 print("FMT open " .. s.frames .. " frames, " .. s.period .. " bytes")
 for at = 1, #tone, s.period do
   local ok, w = s:write(tone:sub(at, at + s.period - 1))
-  if not ok then print("FMT stopped " .. tostring(w)) break end
+  if not ok then local st = A.stats() or {} print("FMT stopped " .. tostring(w) .. " mixes " .. tostring(st.mixes) .. " starved " .. tostring(st.starved) .. " late " .. tostring(st.late)) break end
 end
 local want = #tone // (ch * bits // 8)
 for _ = 1, 2000 do
@@ -5210,6 +5220,137 @@ s:close()
         check("FMT refused the audio server cannot take that format" in out,
               "20 bits was not refused as a format: %r"
               % [l for l in out.splitlines() if l.startswith("FMT")])
+    finally:
+        machine.close()
+
+
+def usb_audio_switch(image, check):
+    """**The speaker's setting follows the best stream** -
+    `docs/usbaudio.md` U10d.
+
+    HD Audio for the machine's clock, QEMU's USB speaker plugged in, its
+    sound written to a WAV at 48 kHz, and `opt/kosmos/usbaudio=switch`:
+    QEMU's speaker has one setting, 48 kHz of 16 bits, so the best it
+    offers for any stream is the one it has, and the option makes the
+    driver switch to it anyway - which is every step of a switch but the
+    format: the server asked, `switching` said, the ring drained, the
+    endpoint stopped and dropped, setting 0, the setting and rate again,
+    the TDs restarted, and the new generation taken up by the server.
+
+      * A 96 kHz, 24-bit stream asks for 96/24: the switch is said, timed,
+        and the tone is heard through it, 1.2 s of 1.5 at its pitch, and
+        its position comes back in its own frames;
+      * then a 44.1 kHz, 16-bit stream - format 0's - asks for 44.1/16,
+        and the speaker switches again and plays it.
+
+    The mix runs at the speaker's 48 kHz throughout (U10d), so the second
+    tone is converted per stream, not at the door.
+
+    Its control, `USBAUDIO_NOSWITCH=1`, boots without the option: QEMU's
+    speaker has nothing better, so nothing switches, and the two checks
+    that a switch was said fail while the tones still play.
+    """
+    wav = os.path.join(os.path.dirname(image), "usb-audio-switch.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    extra = ["-device", "ich9-intel-hda",
+             "-device", "hda-output,audiodev=a0",
+             "-audiodev", "none,id=a0",
+             "-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav]
+
+    if os.environ.get("USBAUDIO_NOSWITCH") != "1":
+        extra += ["-fw_cfg", "name=opt/kosmos/usbaudio,string=switch"]
+
+    machine = PluggedMachine(image, extra)
+    program = r"""
+local A = use("/Kosmos/Libraries/audio.lua")
+local rate, bits, ch, hz, tenths = %d, %d, %d, %d, %d
+local fmt = rate ~= 44100 and { rate = rate, bits = bits, channels = ch } or nil
+local s, why = A.open("switch", 8, fmt)
+if not s then print("SW refused " .. tostring(why)) return end
+local per = rate // hz
+local code = bits == 16 and "<i2" or bits == 24 and "<i3" or "<i4"
+local amp = (1 << (bits - 1)) // 2
+local cyc = {}
+for i = 0, per - 1 do
+  local one = string.pack(code, math.floor(math.sin(2 * math.pi * i / per) * amp))
+  cyc[#cyc + 1] = ch == 2 and one .. one or one
+end
+local tone = table.concat(cyc):rep(hz * tenths // 10)
+for at = 1, #tone, s.period do
+  local ok, w = s:write(tone:sub(at, at + s.period - 1))
+  if not ok then print("SW stopped " .. tostring(w)) break end
+end
+local want = #tone // (ch * bits // 8)
+for _ = 1, 3000 do
+  if s:position() >= want then break end
+  sys.sleep(1)
+end
+print("SW played " .. s:position() .. " of " .. want .. " frames " .. s.frames)
+s:close()
+"""
+    tones = [(96000, 24, 2, 1000, 15), (44100, 16, 2, 1050, 15)]
+    switched = (r"speaker: switched 1\.1 48000/16 to 1\.1 48000/16 for %d/%d: "
+                r"drained in (\d+) ms, switched in (\d+) ms")
+
+    try:
+        if not machine.wait_for(0, r"kosmos> ", 90) or \
+           not machine.wait_for(0, r"xhci: watching for devices plugged in and out", 60):
+            check(False, "the machine did not reach a prompt with its USB driver watching")
+            return
+
+        mark = machine.mark()
+        machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
+        check(machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30),
+              "the speaker plugged in was not streamed")
+
+        for rate, bits, ch, hz, tenths in tones:
+            name = "sw%d_%d" % (rate, bits)
+            text = " ".join(l.strip() for l in
+                            (program % (rate, bits, ch, hz, tenths)).splitlines()
+                            if l.strip())
+            machine.typed('SW_T = ""', r"", 10)
+
+            for at in range(0, len(text), 300):
+                machine.typed('SW_T = SW_T .. %s' % lua_string(text[at:at + 300]), r"", 10)
+
+            wrote, said = machine.typed('fs.write("/Temporary/%s.lua", SW_T) print("WROTE")'
+                                        % name, r"WROTE", 10)
+            check(wrote, "the program for %s was not written: %r" % (name, said[-300:]))
+
+        for rate, bits, ch, hz, tenths in tones:
+            label = "%d Hz, %d bits" % (rate, bits)
+            size = os.path.getsize(wav) if os.path.exists(wav) else 44
+            mark = machine.mark()
+            _, out = machine.typed("run /Temporary/sw%d_%d.lua" % (rate, bits),
+                                   r"SW (?:played|refused|stopped)[^\n]*\n", 120)
+            said = re.search(switched % (rate, bits), machine.since(mark))
+            check(said is not None,
+                  "%s: the speaker's switch for it was not said: %r"
+                  % (label, [l for l in machine.since(mark).splitlines()
+                             if "speaker" in l][-4:]))
+            if said:
+                print("usb_audio_switch: %s - drained in %s ms, switched in %s ms"
+                      % (label, said.group(1), said.group(2)))
+            played = re.search(r"SW played (\d+) of (\d+) frames (\d+)", out)
+            heard, pitch = wav_tone(wav, size)
+            check(heard >= tenths / 10.0 - 0.3 and abs(pitch - hz) <= 5,
+                  "%s: the speaker did not play %d Hz through the switch - %.3f s at "
+                  "%.1f Hz: %r" % (label, hz, heard, pitch,
+                                   [l for l in out.splitlines() if l.startswith("SW")]
+                                   or out[-400:]))
+            # Two periods: one as U10c's, and the part of one a converter
+            # held when the switch let it go.
+            check(played is not None
+                  and abs(int(played.group(1)) - int(played.group(2)))
+                  <= 2 * int(played.group(3)) + 64,
+                  "%s: the position was not the stream's frames, within two periods of "
+                  "all it wrote: %r" % (label, played and played.group(0)))
     finally:
         machine.close()
 
@@ -6470,7 +6611,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_audio_format', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_audio_choose', 'usb_audio_mixer', 'usb_audio_format', 'usb_audio_switch', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6592,6 +6733,8 @@ def main():
         usb_audio_mixer(image, check)
     if 'usb_audio_format' in wanted:
         usb_audio_format(image, check)
+    if 'usb_audio_switch' in wanted:
+        usb_audio_switch(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

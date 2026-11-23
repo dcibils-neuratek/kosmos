@@ -38,6 +38,16 @@
  * product numbers, and what its settings offer - written by `xhci` with the
  * format, before `present` - so the server lists it for Mixer, and keeps a
  * choice by its name, from this region alone.
+ *
+ * **And the format the server would like** (`docs/usbaudio.md` U10d):
+ * `want_rate` and `want_bits`, the server's, are the best of the streams
+ * open - the highest rate and the most bits any of them has. `xhci` holds
+ * them to the settings the speaker offers, and where one carries them
+ * better than the one playing, it says `switching`, lets what is in the
+ * ring be heard, changes the setting and its rate, and writes the new
+ * format and generation before it clears `switching`. While `switching`
+ * holds, the server writes nothing and sends the mix nowhere else: the
+ * speaker is still the one chosen, only quiet for the moment it takes.
  */
 
 #include <stdint.h>
@@ -46,7 +56,7 @@
 
 #define USB_AUDIO_MAGIC         0x55414331u     /* "UAC1" */
 #define USB_AUDIO_RING_PAGES    9u
-#define USB_AUDIO_RING_HEADER   128u
+#define USB_AUDIO_RING_HEADER   192u
 #define USB_AUDIO_RING_BYTES    (USB_AUDIO_RING_PAGES * 4096u \
                                  - USB_AUDIO_RING_HEADER)
 
@@ -76,11 +86,15 @@ struct usb_audio_ring {
     uint32_t bits_offered;      /* AUDIO_BITS_* of audioproto.h */
     uint32_t rates[USB_AUDIO_RATES];  /* offered, 0 past the last */
     char     name[USB_AUDIO_NAME];    /* its product string, ended */
-    uint8_t  pad[USB_AUDIO_RING_HEADER - 124];
+    uint32_t want_rate;         /* the server's: the best stream's rate, 0 none */
+    uint32_t want_bits;         /* the server's: its bits, 16, 24 or 32 */
+    uint32_t switching;         /* xhci's: 1 while the setting changes */
+    uint32_t switches;          /* xhci's: how many times it has, ever */
+    uint8_t  pad[USB_AUDIO_RING_HEADER - 140];
     uint8_t  data[USB_AUDIO_RING_BYTES];
 };
 
-_Static_assert(__builtin_offsetof(struct usb_audio_ring, pad) == 124,
+_Static_assert(__builtin_offsetof(struct usb_audio_ring, pad) == 140,
                "the USB audio ring's header is as written");
 _Static_assert(sizeof(struct usb_audio_ring) == USB_AUDIO_RING_PAGES * 4096u,
                "the USB audio ring is its pages exactly");

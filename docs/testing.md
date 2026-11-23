@@ -42856,3 +42856,89 @@ subjects' and `test_gatelibs` whenever the gate's tools change.
 **What it costs**, as agreed: a dependency the derivation misses lets a
 break through to `make prepush`, which still runs every suite. The 68
 application files no suite tests are named, and are where a test is owed.
+
+## 18.1012 The speaker's setting follows the best stream (USB audio, U10d)
+
+`docs/usbaudio.md` U10d. **The server asks; the driver decides.** The USB
+ring's header grows from 128 bytes to 192 (`usbaudioring.h`). In it the
+server writes `want_rate` and `want_bits`: the highest rate and the most
+bits of the streams open, with format 0 as 44.1/16. With nothing open it
+leaves them as they were. `xhci` holds them to the speaker's settings with
+`uac_pick_for`. Where that is not the setting playing, it says `switching`
+and waits for `played` to reach `write`: at least 6 ms, so a server
+mid-write has stored its last index, and at most 200. Then it switches:
+Stop Endpoint, setting 0, the endpoint dropped, its TDs' memory given
+back, and `speaker_open` - `speaker_start`'s second half, now shared - for
+the new setting and rate. That writes the format and a new generation and
+clears `switching` last. While `switching` holds, the server mixes nothing
+and sends nothing to the machine's device. **The mix runs at the speaker's
+rate**: a period stays as long as the machine's, every open stream is
+tuned again for the new rate, and each position is kept in the new frames.
+
+**`uac_pick_for`**, in `test_uacdecode` (119 checks, up from 111):
+
+* The M60's descriptors go to 1.2 at 96 kHz for 96/24, stay on 1.1 at
+  48 for 48/16, take 1.1 at 96 for 96/16 and 1.2 at 48 for 44.1/24, and
+  give 1.2 at 96 for 192/32, the most the M60 has.
+* The UAC2 DAC takes 24 bits at 96, 32 at 192 and 16 at 88.2.
+* `uac_pick` is its 16-bit case, and every earlier pick is unchanged.
+
+**`usb_audio_switch`**, in `x86-usb-3`: QEMU's speaker has one setting,
+48 kHz 16-bit, so `opt/kosmos/usbaudio=switch` makes the driver switch
+even to the setting it has. That runs every step of a switch except the
+change of format. A 1.5 s tone at 96/24 and then one at 44.1/16 each ask
+for a switch, and each is said and timed:
+
+| stream | drained | switched |
+|---|---|---|
+| 96 kHz, 24 bits, 1000 Hz | 6 ms | 2 ms |
+| 44.1 kHz, 16 bits, 1050 Hz | 7 ms | 1 ms |
+
+Both tones reach the speaker through the switch at their pitch, and each
+position comes back within two periods of what was written: one as in
+U10c, and part of one that a converter held when the rate changed.
+
+* **Its control**, `USBAUDIO_NOSWITCH=1`, boots without the option. It
+  fails the two checks that a switch was said and nothing else, which
+  shows the check sees the line.
+* **The control on the mechanism**, a driver that never clears
+  `switching`, fails 4 of 9. The server stays quiet: "the audio server
+  stopped taking periods", position 0 of 144000 and of 66150.
+
+The first run passed 7 of 9. The console cut the switch's line before
+"switched in", so the line was shortened to `switched 1.1 48000/16 to
+1.1 48000/16 for 96000/24: drained in 6 ms, switched in 2 ms`.
+
+**What QEMU cannot show is the format itself changing**: 1.1 to 1.2 at
+96 kHz, the endpoint's packet growing from 384 bytes to 576, and the M60
+following SET_CUR. That is for the M60, with U10f.
+
+**The speaker's parts are starved when the host is full, and that is
+older than U10d.** The first five gates at 0.12.91 failed `x86-usb-3` in
+three. Each time it was one of these:
+
+* a stream that "stopped taking periods" (two seconds with no room in its
+  ring);
+* a beep after the speaker was chosen again that took 41 s to write;
+* a beep with the speaker pulled out mid-way that did not end in time.
+
+Alone, and beside Flight, SQL and Cafesa3D, the suite passed every time.
+Four copies of it at once, beside the heavy suites - each copy in a folder
+of its own, since a part's WAV is named from the image's folder - failed
+on 0.12.90's audio code too: 6, 3, 2 and 2 checks of 35. A 44.1 kHz
+stream stopped there with the server's worst gap between turns at 223 ms.
+The tone part, eight copies at once, failed 4 of 4 on 0.12.90 and 3 of 4
+on 0.12.91. U10c's gates passed by the luck of where the suite fell in the
+gate, not because the suite was sound.
+
+So what fails is the guest starved by a host with every core taken, not
+U10d. U10d does make the suite longer by one part, which may land it in
+heavier moments of the gate. **Left as a roadmap item**: the speaker's
+parts should hold under the gate's load, or say plainly that they were
+starved, as `x86-film` says how long its sound thread was away. Two aids
+came out of the hunt and stay:
+
+* `RUN_X86_CONSOLE=<folder>` keeps the whole console of every
+  `PluggedMachine`;
+* the format part's "stopped" line carries the server's `mixes`,
+  `starved` and `late`.

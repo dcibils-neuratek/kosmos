@@ -36,6 +36,11 @@
 
 #define STREAM_MAX  8u          /* AUDIO_LIST_MAX, so `streams` shows them all */
 
+/* The most frames a period of the mix may be: what `acc`, `conv.out` and
+ * the device's buffers are sized for. 256 frames at 44.1 kHz are 1115 at
+ * 192, so any rate a speaker offers today fits. */
+#define MIX_FRAMES_MOST  (HAL_SND_PERIOD_BYTES_MAX / 4u)
+
 struct stream {
     bool               open;
     uint32_t           id;
@@ -121,10 +126,11 @@ static uint32_t      mixes, starved, late;
  * **A USB speaker, the other place the mix can go** (`docs/usbaudio.md`
  * U3, `usbaudioring.h`). init hands this server and the USB driver one
  * region; while a speaker is present in it, and it is the one chosen
- * (`chosen`, below), each period mixed here is
- * converted to the speaker's rate, size and channels - `pcm_convert_to`,
- * the resampler `sys.pcm` and the Playback Kit share - and written into the
- * ring rather than to the machine's own device. The speaker's clock drains
+ * (`chosen`, below), each period mixed here is narrowed to the speaker's
+ * size and channels and written into the ring rather than to the machine's
+ * own device. **The mix runs at the speaker's rate** (U10d), so what reaches
+ * it in that rate is not resampled at all; a rate the mix cannot run at is
+ * mixed at the machine's and converted at the door, as it was before. The speaker's clock drains
  * it; the driver's pulse says when there is room. When the speaker goes,
  * the next period goes to the machine's own device again.
  */
@@ -132,7 +138,10 @@ static struct usb_audio_ring *usb;
 static bool          usb_active;
 static uint32_t      usb_generation;
 static uint32_t      usb_keep;          /* frames of the speaker's to hold */
-static uint32_t      mix_rate;          /* the mix's: the device's, 44.1 kHz */
+static uint32_t      device_rate;       /* the machine's own, 44.1 kHz: format 0's */
+static uint32_t      mix_rate;          /* the mix's: the device's, or the speaker's */
+static unsigned      mix_frames;        /* a period of the mix, in its frames */
+static bool          usb_quiet;         /* the speaker's setting is changing */
 static double        usb_phase;
 /* The mix not yet converted, 32-bit stereo: a period, and the frames the
  * filter keeps behind its phase as taps. */
@@ -281,7 +290,7 @@ static bool mix(int32_t *out)
 {
     static int64_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
 
-    unsigned samples = period_bytes / 2;
+    unsigned samples = mix_frames * 2u;
     unsigned mixed = 0;
     unsigned i, k;
 
@@ -346,7 +355,7 @@ static bool mix(int32_t *out)
 
             s->peak = (uint32_t)peak;
             s->conv->got = 0;
-            s->consumed += period_frames;
+            s->consumed += mix_frames;
             mixed++;
             continue;
         }
@@ -373,7 +382,7 @@ static bool mix(int32_t *out)
         /* Taken, which is not yet heard: the device is holding some of what
          * was taken before this. `publish_positions` is where the two are
          * subtracted, and it is the only place that knows both. */
-        s->consumed += period_frames;
+        s->consumed += mix_frames;
         mixed++;
     }
 
@@ -449,13 +458,90 @@ static bool refill(void)
 }
 
 /*
+ * A stream made ready for the mix as it now runs: mixed sample for sample
+ * when it is the mix's own format - its rate, 16 bits, two channels, so its
+ * ring's period is a mix period exactly - and through its converter when it
+ * is anything else, the filter made for its rate to the mix's.
+ */
+static void tune(unsigned i)
+{
+    struct stream *s = &streams[i];
+    struct conv *c = &convs[i];
+
+    s->convert = !(s->rate == mix_rate && s->bits == 16 && s->channels == 2);
+    s->conv = NULL;
+
+    if (s->convert) {
+        c->have = 0;
+        c->phase = 0;
+        c->got = 0;
+
+        if (s->rate != mix_rate && (c->sinc.in_rate != (long)s->rate
+                                    || c->sinc.out_rate != (long)mix_rate)) {
+            pcm_sinc_prepare(&c->sinc, (long)s->rate, (long)mix_rate);
+        }
+
+        s->conv = c;
+    }
+}
+
+/*
+ * **The mix moved to another rate** (`docs/usbaudio.md` U10d): the
+ * speaker's, when it plays one the mix can run at, and the machine's again
+ * when it goes. A period of the mix stays as long as the machine's - its
+ * frames are that time at the new rate - so every ring, made once at the
+ * machine's, still lands on it. Each open stream is tuned again: a format-0
+ * stream into a 96 kHz mix is converted from then on, and a 96 kHz stream
+ * stops being. What a stream has been taken of is kept, in the new rate's
+ * frames, so its position does not jump.
+ *
+ * What a converter held when the rate changed is let go: the speaker has
+ * just been quiet for the switch anyway, and the held part is under a
+ * period.
+ */
+static void set_mix_rate(uint32_t rate)
+{
+    unsigned i;
+
+    if (rate == mix_rate || rate == 0 || period_frames == 0) {
+        return;
+    }
+
+    for (i = 0; i < STREAM_MAX; i++) {
+        if (streams[i].open) {
+            streams[i].consumed = streams[i].consumed * rate / mix_rate;
+        }
+    }
+
+    mix_rate = rate;
+    mix_frames = audio_period_frames(period_frames, device_rate, rate);
+
+    for (i = 0; i < STREAM_MAX; i++) {
+        if (streams[i].open) {
+            tune(i);
+        }
+    }
+}
+
+/* The fastest rate the mix can run at: a period of it fills what `mix`
+ * and a converter hold. */
+static uint32_t mix_rate_most(void)
+{
+    return period_frames == 0 ? 0
+         : (uint32_t)((uint64_t)MIX_FRAMES_MOST * device_rate / period_frames);
+}
+
+/*
  * Whether the mix goes to a USB speaker now, and the ring taken up afresh
  * when it is a speaker not seen before: the conversion's phase and what it
  * carried belong to the last one.
  */
 static bool usb_present(void)
 {
-    bool here = usb != NULL && usb->magic == USB_AUDIO_MAGIC && usb->present != 0;
+    /* Switching counts as there: `xhci` clears and sets `present` again
+     * inside a switch, and the sound is not the machine's meanwhile. */
+    bool here = usb != NULL && usb->magic == USB_AUDIO_MAGIC
+                && (usb->switching != 0 || usb->present != 0);
 
     RING_BARRIER();
     return here;
@@ -482,6 +568,38 @@ static bool usb_wanted(void)
     return chosen[0] == 0 || !machine_present() || chosen_is(usb->name);
 }
 
+/*
+ * **What the speaker is asked for** (U10d): the best of the streams open -
+ * the highest rate any has, and the most bits - written for `xhci`, which
+ * holds it to what the speaker offers. Format 0 is the machine's 44.1/16.
+ * With nothing open it is left as it was, so a speaker is not switched back
+ * and forth by silence; the next stream asks again.
+ */
+static void usb_ask(void)
+{
+    uint32_t rate = 0, bits = 0, most = mix_rate_most();
+    unsigned i;
+
+    for (i = 0; i < STREAM_MAX; i++) {
+        if (streams[i].open) {
+            rate = streams[i].rate > rate ? streams[i].rate : rate;
+            bits = streams[i].bits > bits ? streams[i].bits : bits;
+        }
+    }
+
+    if (rate == 0) {
+        return;
+    }
+
+    rate = rate > most ? most : rate;
+
+    if (usb->want_rate != rate || usb->want_bits != bits) {
+        usb->want_bits = bits;
+        RING_BARRIER();
+        usb->want_rate = rate;
+    }
+}
+
 static void usb_check(void)
 {
     bool here = usb_wanted();
@@ -491,9 +609,22 @@ static void usb_check(void)
 
     if (!here) {
         usb_active = false;
+        usb_quiet = false;
+        set_mix_rate(device_rate);
         return;
     }
 
+    /*
+     * **Quiet while its setting changes**: nothing mixed, nothing written,
+     * and the streams' rings hold what they are given until it is done.
+     * The new format comes with a new generation, below.
+     */
+    if (usb->switching != 0) {
+        usb_quiet = true;
+        return;
+    }
+
+    usb_quiet = false;
     generation = usb->generation;
 
     if (!usb_active || generation != usb_generation) {
@@ -501,8 +632,14 @@ static void usb_check(void)
         usb_phase = 0;
         usb_have = 0;
 
-        if (usb->rate != 0 && (usb_sinc.in_rate != (long)mix_rate
-                               || usb_sinc.out_rate != (long)usb->rate)) {
+        /* The mix at the speaker's rate, where it fits; at the machine's
+         * otherwise, converted at the door as before U10d. */
+        set_mix_rate(usb->rate != 0 && usb->rate <= mix_rate_most()
+                     ? usb->rate : device_rate);
+
+        if (usb->rate != 0 && usb->rate != mix_rate
+            && (usb_sinc.in_rate != (long)mix_rate
+                || usb_sinc.out_rate != (long)usb->rate)) {
             pcm_sinc_prepare(&usb_sinc, (long)mix_rate, (long)usb->rate);
         }
         usb_keep = usb->rate / 1000u * USB_AUDIO_KEEP_MS;
@@ -529,7 +666,7 @@ static bool refill_usb(void)
     static int32_t converted[(HAL_SND_PERIOD_BYTES_MAX / 4) * 3 * 2];
     uint64_t write = usb->write;
     uint64_t waiting = write - usb_audio_load(&usb->read);
-    unsigned bytes = period_bytes * 2u;         /* the mix, at 32 bits */
+    unsigned bytes = mix_frames * 8u;           /* the mix, 32-bit stereo */
     unsigned bits = usb->subframe * 8u;
     size_t used = 0;
     bool fresh;
@@ -675,7 +812,7 @@ static void do_open(const struct audio_request *req, long cap,
         bool zero = rate == 0 && bits == 0 && channels == 0;
 
         if (zero) {
-            rate = mix_rate;
+            rate = device_rate;
             bits = 16;
             channels = 2;
         }
@@ -694,13 +831,15 @@ static void do_open(const struct audio_request *req, long cap,
         }
 
         /*
-         * The ring is held to the format: a period as long as the mix's,
-         * in the stream's frames. One that is not would be converted at
+         * The ring is held to the format: a period as long as the
+         * machine's, in the stream's frames - the machine's whatever the mix
+         * is running at, since the mix follows a speaker and a ring is made
+         * once. One that is not would be converted at
          * the wrong length, and the sound would drift from its pictures by
          * the difference, quietly, for as long as it played.
          */
         if (((struct audio_ring *)(uintptr_t)at)->period_bytes
-            != audio_period_frames(period_frames, mix_rate, rate) * channels * (bits / 8u)) {
+            != audio_period_frames(period_frames, device_rate, rate) * channels * (bits / 8u)) {
             (void)kosmos_share_unmap((unsigned long)at,
                                      (AUDIO_RING_DATA
                                       + ((struct audio_ring *)(uintptr_t)at)->periods
@@ -714,23 +853,7 @@ static void do_open(const struct audio_request *req, long cap,
         streams[i].rate = rate;
         streams[i].bits = bits;
         streams[i].channels = channels;
-        streams[i].convert = !(rate == mix_rate && bits == 16 && channels == 2);
-        streams[i].conv = NULL;
-
-        if (streams[i].convert) {
-            struct conv *c = &convs[i];
-
-            c->have = 0;
-            c->phase = 0;
-            c->got = 0;
-
-            if (rate != mix_rate && (c->sinc.in_rate != (long)rate
-                                     || c->sinc.out_rate != (long)mix_rate)) {
-                pcm_sinc_prepare(&c->sinc, (long)rate, (long)mix_rate);
-            }
-
-            streams[i].conv = c;
-        }
+        tune(i);
     }
 
     streams[i].open = true;
@@ -874,11 +997,11 @@ static void do_devices(struct audio_reply *rep)
         d = &rep->devices[rep->devices_count++];
         d->id = AUDIO_DEVICE_MACHINE;
         d->playing = usb_active ? 0u : 1u;
-        d->rate = mix_rate;
+        d->rate = device_rate;
         d->bits = 16;
         d->channels = period_frames != 0 ? period_bytes / (2u * period_frames) : 2u;
         d->bits_offered = AUDIO_BITS_16;
-        d->rates[0] = mix_rate;
+        d->rates[0] = device_rate;
         memcpy(d->name, AUDIO_MACHINE_NAME, sizeof(AUDIO_MACHINE_NAME));
     }
 
@@ -1094,7 +1217,9 @@ void audio_server(long endpoint, long usb_ring)
         us = 1;
     }
 
-    mix_rate = info.audio_rate ? info.audio_rate : PCM_DEVICE_RATE;
+    device_rate = info.audio_rate ? info.audio_rate : PCM_DEVICE_RATE;
+    mix_rate = device_rate;
+    mix_frames = period_frames;
 
     {
         char option[8] = { 0 };
@@ -1139,15 +1264,20 @@ void audio_server(long endpoint, long usb_ring)
         }
 
         usb_check();
+
+        if (usb_active) {
+            usb_ask();
+        }
+
         tell();
         publish_positions();
 
-        if (usb_active ? refill_usb() : refill()) {
+        if (!usb_quiet && (usb_active ? refill_usb() : refill())) {
             continue;                   /* there may be room for another */
         }
 
-        if (usb_active ? usb->write - usb->read < usb_keep
-                       : (unsigned)kosmos_snd_queued() < device_depth) {
+        if (!usb_quiet && (usb_active ? usb->write - usb->read < usb_keep
+                                      : (unsigned)kosmos_snd_queued() < device_depth)) {
             starved++;                  /* room, and nothing to put in it */
         }
 
