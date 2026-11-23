@@ -29,7 +29,9 @@
 #include "kosmos.h"
 #include "audioring.h"
 #include "audioproto.h"
+#include "pcmconvert.h"
 #include "syscall.h"
+#include "usbaudioring.h"
 
 #define STREAM_MAX  8u          /* AUDIO_LIST_MAX, so `streams` shows them all */
 
@@ -85,6 +87,28 @@ static unsigned long counter_hz;
  * two halves of a missed deadline and nothing used to measure either. */
 static uint32_t      mixes, starved, late;
 
+/*
+ * **A USB speaker, the other place the mix can go** (`docs/usbaudio.md`
+ * U3, `usbaudioring.h`). init hands this server and the USB driver one
+ * region; while a speaker is present in it, and `opt/kosmos/audio=usb`
+ * says it is the one (Mixer's choice from U4), each period mixed here is
+ * converted to the speaker's rate, size and channels - `pcm_convert_to`,
+ * the resampler `sys.pcm` and the Playback Kit share - and written into the
+ * ring rather than to the machine's own device. The speaker's clock drains
+ * it; the driver's pulse says when there is room. When the speaker goes,
+ * the next period goes to the machine's own device again.
+ */
+static struct usb_audio_ring *usb;
+static bool          usb_wanted;
+static bool          usb_active;
+static uint32_t      usb_generation;
+static uint32_t      usb_keep;          /* frames of the speaker's to hold */
+static uint32_t      mix_rate;          /* the mix's: the device's, 44.1 kHz */
+static double        usb_phase;
+static unsigned char usb_carry[(HAL_SND_PERIOD_BYTES_MAX / 4u + 2u) * 4u];
+static size_t        usb_have;          /* bytes of the mix not yet converted */
+static uint32_t      usb_periods;       /* written into the ring, ever */
+
 static struct stream *find(uint32_t id)
 {
     unsigned i;
@@ -108,34 +132,19 @@ static struct stream *find(uint32_t id)
  * never blocked, span at the top priority band, and took the desktop with
  * it.
  */
-static bool refill(void)
+/*
+ * One period summed from whatever the rings hold, into `out`, as 16-bit
+ * stereo at the mix's rate: `period_bytes` of it. False when no ring had
+ * anything. Wherever it is going - the machine's own device or a USB
+ * speaker - this is the one mix.
+ */
+static bool mix(int16_t *out)
 {
     static int32_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
-    static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
 
     unsigned samples = period_bytes / 2;
     unsigned mixed = 0;
     unsigned i, k;
-
-    if (period_bytes == 0) {
-        return false;
-    }
-
-    unsigned queued = (unsigned)kosmos_snd_queued();
-
-    /* Filled once before it counts: a stream starts with an empty device,
-     * and that is not the device running dry. */
-    if (device_primed) {
-        if (queued == 0) {
-            device_dry++;
-        }
-    } else if (queued >= device_depth) {
-        device_primed = true;
-    }
-
-    if (queued >= device_depth) {
-        return false;                   /* the device has all it is to hold */
-    }
 
     if (samples > sizeof(acc) / sizeof(acc[0])) {
         samples = (unsigned)(sizeof(acc) / sizeof(acc[0]));
@@ -218,8 +227,124 @@ static bool refill(void)
         out[k] = (int16_t)v;
     }
 
-    kosmos_snd_write(out, (unsigned long)samples * 2);
     mixes++;
+    return true;
+}
+
+static bool refill(void)
+{
+    static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
+    unsigned queued;
+
+    if (period_bytes == 0) {
+        return false;
+    }
+
+    queued = (unsigned)kosmos_snd_queued();
+
+    /* Filled once before it counts: a stream starts with an empty device,
+     * and that is not the device running dry. */
+    if (device_primed) {
+        if (queued == 0) {
+            device_dry++;
+        }
+    } else if (queued >= device_depth) {
+        device_primed = true;
+    }
+
+    if (queued >= device_depth) {
+        return false;                   /* the device has all it is to hold */
+    }
+
+    if (!mix(out)) {
+        return false;
+    }
+
+    kosmos_snd_write(out, (unsigned long)period_bytes);
+    return true;
+}
+
+/*
+ * Whether the mix goes to a USB speaker now, and the ring taken up afresh
+ * when it is a speaker not seen before: the conversion's phase and what it
+ * carried belong to the last one.
+ */
+static void usb_check(void)
+{
+    bool here = usb_wanted && usb != NULL && usb->magic == USB_AUDIO_MAGIC
+                && usb->present != 0;
+    uint32_t generation;
+
+    RING_BARRIER();
+
+    if (!here) {
+        usb_active = false;
+        return;
+    }
+
+    generation = usb->generation;
+
+    if (!usb_active || generation != usb_generation) {
+        usb_generation = generation;
+        usb_phase = 0;
+        usb_have = 0;
+        usb_keep = usb->rate / 1000u * USB_AUDIO_KEEP_MS;
+
+        if (usb_keep > usb->frames / 2u) {
+            usb_keep = usb->frames / 2u;
+        }
+    }
+
+    usb_active = usb->rate != 0 && usb->frames != 0
+                 && usb->subframe >= 2 && usb->subframe <= 4
+                 && usb->channels != 0;
+}
+
+/*
+ * One period into the USB speaker's ring, converted, while it holds less
+ * than `usb_keep` of the speaker's time. False when it has enough or there
+ * was nothing to mix - as `refill`, so the loop sleeps.
+ */
+static bool refill_usb(void)
+{
+    static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
+    static int16_t converted[HAL_SND_PERIOD_BYTES_MAX];  /* to 2x the rate */
+    uint64_t write = usb->write;
+    uint64_t waiting = write - usb_audio_load(&usb->read);
+    unsigned frame_bytes = usb_audio_frame_bytes(usb);
+    size_t used = 0;
+    long n, i;
+
+    if (waiting >= usb_keep) {
+        return false;
+    }
+
+    if (period_bytes == 0 || !mix(out)) {
+        return false;
+    }
+
+    if (usb_have + period_bytes > sizeof(usb_carry)) {
+        usb_have = 0;                   /* cannot happen: one frame carries */
+    }
+
+    memcpy(usb_carry + usb_have, out, period_bytes);
+    usb_have += period_bytes;
+
+    n = pcm_convert_to(usb_carry, usb_have, (long)mix_rate, 2, 16, 0,
+                       &usb_phase, converted, (long)sizeof(converted), &used,
+                       (long)usb->rate);
+    memmove(usb_carry, usb_carry + used, usb_have - used);
+    usb_have -= used;
+
+    for (i = 0; i < n && waiting + (uint64_t)i < usb->frames; i++) {
+        usb_audio_put(usb_audio_at(usb, write + (uint64_t)i),
+                      converted[2 * i], converted[2 * i + 1],
+                      usb->channels, usb->subframe);
+    }
+
+    (void)frame_bytes;
+    usb_audio_store(&usb->write, write + (uint64_t)i);
+    usb_periods++;
     return true;
 }
 
@@ -243,6 +368,14 @@ static void publish_positions(void)
 {
     unsigned held = (unsigned)kosmos_snd_queued() * period_frames;
     unsigned i;
+
+    /* A USB speaker: what is in its ring and on the controller's, back in
+     * the mix's frames, and what waits to be converted. */
+    if (usb_active) {
+        uint64_t ahead = usb->write - usb_audio_load(&usb->played);
+
+        held = (unsigned)(ahead * mix_rate / usb->rate) + (unsigned)(usb_have / 4u);
+    }
 
     for (i = 0; i < STREAM_MAX; i++) {
         struct stream *s = &streams[i];
@@ -417,6 +550,12 @@ static void do_streams(struct audio_reply *rep)
 
 static void answer(const struct message *in, uint64_t sender, long cap)
 {
+    /* A pulse - the USB driver's "look at the ring", or anybody's - has
+     * nobody to answer, and the loop looks at the ring on every turn. */
+    if (in->tag == KOSMOS_PULSE_TAG) {
+        return;
+    }
+
     struct message out;
     struct audio_reply *rep = (struct audio_reply *)(void *)out.data;
     const struct audio_request *req =
@@ -474,7 +613,7 @@ static bool anyone_open(void)
  * spoke. Nothing can begin playing without an `open` first, and that *is* a
  * message, so an idle machine still blocks and an idle desktop is idle.
  */
-void audio_server(long endpoint)
+void audio_server(long endpoint, long usb_ring)
 {
     struct sysinfo info;
     unsigned long last_turn = 0;
@@ -511,6 +650,18 @@ void audio_server(long endpoint)
         us = 1;
     }
 
+    mix_rate = info.audio_rate ? info.audio_rate : PCM_DEVICE_RATE;
+
+    {
+        char option[8] = { 0 };
+        long at = usb_ring < 0 ? -1 : kosmos_mem_map(usb_ring);
+
+        usb = at < 0 ? NULL : (struct usb_audio_ring *)(uintptr_t)at;
+        usb_wanted = kosmos_boot_option("opt/kosmos/audio", option,
+                                        sizeof(option)) == 3
+                     && memcmp(option, "usb", 3) == 0;
+    }
+
 
     for (;;) {
         struct message msg;
@@ -540,13 +691,15 @@ void audio_server(long endpoint)
             device_primed = false;      /* the next stream fills it again */
         }
 
+        usb_check();
         publish_positions();
 
-        if (refill()) {
+        if (usb_active ? refill_usb() : refill()) {
             continue;                   /* there may be room for another */
         }
 
-        if ((unsigned)kosmos_snd_queued() < device_depth) {
+        if (usb_active ? usb->write - usb->read < usb_keep
+                       : (unsigned)kosmos_snd_queued() < device_depth) {
             starved++;                  /* room, and nothing to put in it */
         }
 

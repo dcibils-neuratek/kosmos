@@ -353,9 +353,19 @@ for folder, image in (("Doom", "doom.elf"), ("Quake", "quake.elf"), ("SNES", "sn
 
 files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "stale.lua",
          "apptest.elf", "broken.elf", "stranger.elf", "stale.elf"] + cxx_files + posix_files
-subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "224"]
-               + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files]
-               + installed + cxx_elsewhere,
+#
+# **The disk as large as what goes on it, and room for the tests' writes**:
+# it was 224 MB, fixed, and the images it carries grow with the runtime - on
+# 22 November, in 0.12.80, they filled it, and the Storage Kit's write of
+# 2.5 MB stopped at 2 with the disk full and nothing saying so. The writes
+# the programs make are a few megabytes; 64 is room to spare.
+#
+pairs = (["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files]
+         + installed + cxx_elsewhere)
+carried = sum(os.path.getsize(pair.split(":/Home/", 1)[0]) for pair in pairs)
+disk_mb = (carried + (1 << 20) - 1) // (1 << 20) + 64
+subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, str(disk_mb)]
+               + pairs,
                check=True, capture_output=True, cwd=ROOT)
 os.environ["KOSMOS_DISK"] = HOME_DISK
 

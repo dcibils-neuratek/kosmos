@@ -64,7 +64,7 @@ extern const unsigned long luabench_lua_len;
  * server that merely promises not to allocate is a server somebody adds a
  * `print` to next month.
  */
-void audio_server(long endpoint);
+void audio_server(long endpoint, long usb_ring);
 void devices_server(long endpoint);
 void binfs_server(long endpoint, int libraries);
 void appfs_server(long endpoint);
@@ -80,7 +80,7 @@ void intelgpu_server(long console, long endpoint);
 bool amdgpu_server(long console, long endpoint);   /* false: no AMD GPU */
 void xhci_server(long console, long blocks, long writes, long frames,
                  long camera, long midi, long notify, long usb, long hci,
-                 long bluetooth, long pads);
+                 long bluetooth, long pads, long audio, long audio_ring);
 
 /* The Bluetooth host stack (`bluetooth.md` B2): the console's endpoint,
  * its own - `/Devices/bluetooth`, which its transport pulses too - and the
@@ -1835,7 +1835,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_AUDIO) {
         named("audio");
-        audio_server(0);
+        audio_server(0, 1);
     }
 
     if (arg == ROLE_DEVICES) {
@@ -1895,7 +1895,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_XHCI) {
         named("xhci");
-        xhci_server(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+        xhci_server(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
     }
 
     if (arg == ROLE_BLUETOOTH) {

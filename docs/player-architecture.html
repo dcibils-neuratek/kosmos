@@ -1,0 +1,147 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Music, the next one: a library player at the file's own resolution - the
+  application over the Library kit, the tag reader, the Media Kit (grown:
+  ALAC, AIFF, integer samples), the Playback Kit (grown: PCM at any depth,
+  a queue joined gaplessly) and the audio server's hi-res path. The busiest
+  path - a 96 kHz / 24-bit FLAC from /Home to the EDIFIER M60 - drawn
+  through it (H). Drawn on 22 November 2026, before any of it is built;
+  `docs/player.md` is the argument and `docs/player.html` the window.
+
+  Rendered to docs/player-architecture.png by headless Chrome at twice its
+  size, as docs/videoedit-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Music player architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 1000px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box p b { display: inline; font-size: inherit; color: var(--ink); }
+  .box code, p code, li code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 42%; }
+</style>
+</head>
+<body>
+<h1>Music, the next one - what it stands on</h1>
+<p class="sub">A library player is the thinnest layer: the library's facts and the window in Lua, every sample in C. The Media Kit decodes, the Playback Kit plays a queue joined sample for sample, and the audio server mixes in 32 bits at the output's rate and reports whether every bit reached the speaker. Nothing here is a second sound path; the Library kit is new, and the rest grow.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new or grows</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits, in the image <code>media.elf</code></span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">H</span><span>a 96/24 FLAC from /Home to the M60</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Application</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Music - <code>user/installed/Music/</code></b><p>Songs, Albums, Artists, search, the column browser, playlists and smart playlists, Up Next, the signal path, the mini player. Says what to play; shows what the server reports. Replaces the VOX pilot (<code>music.lua</code>) and folds in <code>music.md</code> M1-M6 <span class="f">H1</span></p></div>
+        <div class="box"><b>Its neighbours</b><p>Tracker (<i>Open with</i>, the same facts), Mixer (the output), the Deskbar's replicant, Video after M6 on the same image</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in the player's process)</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1.2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>library.lua</code> - the Library kit</b><p>songs, albums (compilations grouped), artists, playlists, smart rules, ratings, plays, history; facts kept as attributes on the files, found by query (decision 3); refreshed by the folder's pulse</p></div>
+        <div class="box new"><span class="tag">GROWS</span><b><code>tags.lua</code> - the tag reader</b><p>as now: ID3v2/v1, WAV <code>LIST</code>. New: Vorbis comments, FLAC <code>PICTURE</code>, MP4 <code>ilst</code>/<code>covr</code>, <code>iTunSMPB</code>, LAME delay, ReplayGain, AIFF</p></div>
+        <div class="box"><b>ui, prefs, places, radio</b><p>the window, settings, USB drives, internet radio; covers by name to the window manager</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, linked into <code>media.elf</code> with the POSIX layer)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box new"><span class="tag">GROWS</span><b>The Media Kit - <code>media.h</code></b><p>as now: FLAC, MP3, AAC, Vorbis, Opus, PCM in FLAC, MP4/M4A, Ogg, WAV - FFmpeg 9.0.2. New: <code>alac</code>, <code>aiff</code>, the source's bit depth, <b>integer samples out</b> so 16/24/32-bit survive bit for bit <span class="f">H2</span></p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>The Playback Kit - <code>playback.h</code></b><p>as now: a thread in the audio band, its input ring. New: <b>the queue</b> - a feeder thread at NORMAL that decodes ahead, trims encoder delay, joins same-format songs with no gap, marks boundaries in the ring; PCM at any depth and rate; the ring sized in seconds (8 s) <span class="f">H3 H4</span></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">GROWS</span><b><code>pcmconvert.h</code> - the one converter</b><p>24 and 32 bits in and out; a windowed-sinc resampler (decision 5), shared by the kit and the server</p></div>
+        <div class="box later-box"><span class="tag later">TIER 2</span><b>ReplayGain, crossfade</b><p>in the feeder, with dither, only when asked; the badge says so</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1fr 1.5fr 1fr">
+        <div class="box"><b>/Home - diskfs</b><p>files read a megabyte at a time; attributes and <code>query</code> for the library; the folder's pulse</p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>audio - the server</b><p>the roadmap's hi-res step: a stream opened at its own format; the mix in 32 bits at the output's rate; the output following the highest-resolution stream; unity is unity; <b><code>exact</code> per stream, and why not</b>; the equaliser and L/R meter (<code>music.md</code> M3-M4) <span class="f">H5</span></p></div>
+        <div class="box"><b>xhci - USB audio</b><p><code>usbaudio.md</code> U3 and U7: the USB ring, 96 frames of 24 bits a millisecond into isochronous TDs <span class="f">H6</span></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>regions</b><p>the input ring, the stream's ring, the USB ring - one writer, one reader each</p></div>
+        <div class="box"><b>threads and bands</b><p>the window and the feeder at NORMAL, the Playback Kit and the server in AUDIO</p></div>
+        <div class="box"><b>pulses</b><p>"room in the ring", "a folder changed"; nothing waits on a server</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>H - a 96/24 FLAC, end to end</h3>
+      <ol><li><b>H1</b> The window hands the queue a list of paths and says <i>play</i>; it touches no sample.</li>
+          <li><b>H2</b> The feeder reads /Home, demuxes, decodes with FFmpeg's FLAC to <code>int32</code> - about 450 KB/s in, 768 KB/s out.</li>
+          <li><b>H3</b> Trimmed and joined; a boundary record between songs, so the title changes at the right sample.</li>
+          <li><b>H4</b> Eight seconds ahead in the input ring; the AUDIO thread copies a period into the stream opened at 96/24 - no conversion.</li>
+          <li><b>H5</b> One stream, gain and master at unity, no equaliser: the mix is the samples unchanged, <code>exact = 1</code>.</li>
+          <li><b>H6</b> 576 bytes a millisecond to the M60's setting 1.2. The badge reads <i>bit-perfect</i> because the server said so.</li></ol></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>Library kit</td><td>Video's films, Tracker's search and Info, the Open window, Automations</td></tr>
+        <tr><td>Playback queue</td><td>Video M6's sound, the radio, a podcast player</td></tr>
+        <tr><td>Tag reader, grown</td><td>Tracker's Info, the Open window's preview</td></tr>
+        <tr><td>Media Kit, ALAC and integers</td><td>Video, Kosmos Cut</td></tr>
+        <tr><td>Server's hi-res, <code>exact</code></td><td>every program; Mixer shows the formats</td></tr>
+        <tr><td>Sinc resampler</td><td>the server, the Playback Kit, Groove</td></tr>
+      </table></div>
+    <div class="card"><h3>Proved by</h3>
+      <table>
+        <tr><td>P1</td><td>decoded MD5 = <code>ffmpeg -f md5</code> and FLAC's own</td></tr>
+        <tr><td>P3</td><td>two songs joined = the uncut original</td></tr>
+        <tr><td>P6</td><td>QEMU's speaker WAV = the file, bit for bit; 99% volume must fail</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

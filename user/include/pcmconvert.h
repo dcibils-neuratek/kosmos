@@ -11,7 +11,10 @@
  * `tools/test_pcmconvert.c` holds it on the Mac.
  *
  * In: 8-bit unsigned or 16-bit signed little-endian, mono or stereo, any
- * rate. Out: always the device's - 16-bit stereo at `PCM_DEVICE_RATE`.
+ * rate. Out: 16-bit stereo at `PCM_DEVICE_RATE` (`pcm_convert`), or at any
+ * rate (`pcm_convert_to`) - the audio server's mix into a USB speaker's 48
+ * kHz (`docs/usbaudio.md` U3), through the same arithmetic rather than a
+ * second resampler.
  *
  * **Linear interpolation** between neighbouring frames: not nearest, which
  * is audibly wrong on anything bright, and not a windowed sinc, which is a
@@ -48,10 +51,11 @@ static inline int pcm_format_ok(long rate, long channels, long bits)
            && (bits == 8 || bits == 16);
 }
 
-static inline long pcm_convert(const unsigned char *in, size_t len,
-                               long rate, long channels, long bits, int last,
-                               double *phase_io, int16_t *out,
-                               long max_out_bytes, size_t *consumed_out)
+static inline long pcm_convert_to(const unsigned char *in, size_t len,
+                                  long rate, long channels, long bits,
+                                  int last, double *phase_io, int16_t *out,
+                                  long max_out_bytes, size_t *consumed_out,
+                                  long out_rate)
 {
     long in_frame_bytes = channels * (bits / 8);
     long in_frames = (long)(len / (size_t)in_frame_bytes);
@@ -65,7 +69,7 @@ static inline long pcm_convert(const unsigned char *in, size_t len,
         return 0;
     }
 
-    step = (double)rate / (double)PCM_DEVICE_RATE;
+    step = (double)rate / (double)(out_rate > 0 ? out_rate : PCM_DEVICE_RATE);
 
     while (out_frames * 4 + 4 <= max_out_bytes) {
         long at = (long)phase;
@@ -123,6 +127,15 @@ static inline long pcm_convert(const unsigned char *in, size_t len,
     }
 
     return out_frames;
+}
+
+static inline long pcm_convert(const unsigned char *in, size_t len,
+                               long rate, long channels, long bits, int last,
+                               double *phase_io, int16_t *out,
+                               long max_out_bytes, size_t *consumed_out)
+{
+    return pcm_convert_to(in, len, rate, channels, bits, last, phase_io, out,
+                          max_out_bytes, consumed_out, PCM_DEVICE_RATE);
 }
 
 #endif

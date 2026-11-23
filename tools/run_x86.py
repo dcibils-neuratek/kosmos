@@ -4810,6 +4810,97 @@ def usb_audio_tone(image, check):
           "the beeps were not 440 Hz at a level (peak %d): %s" % (peak, shown))
 
 
+def usb_audio_play(image, check):
+    """**The mix through a USB speaker** - `docs/usbaudio.md` U3.
+
+    The machine's own HD Audio and QEMU's USB speaker both present, as on
+    the M700, and `opt/kosmos/audio=usb` saying the mix goes to the
+    speaker. `beep 1000 2000` opens a stream like any program, its 44.1 kHz
+    periods mixed by the audio server, converted to the speaker's 48 kHz
+    (`pcm_convert_to`) and written into the ring init gave the server and
+    the driver (`usbaudioring.h`); the driver feeds the speaker from it.
+    QEMU's WAV must hold two seconds of 1 kHz - within half a per cent,
+    which a conversion at the wrong rate (44.1 heard as 48 is 8.8% sharp)
+    is far outside - with no gap in it.
+
+    Its control, `USBAUDIO_HDA=1`, boots without the word: the beep goes to
+    HD Audio, the WAV stays silent, and every check must fail.
+    """
+    import struct
+
+    wav = os.path.join(os.path.dirname(image), "usb-audio-play.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    extra = ("-device", "ich9-intel-hda",
+             "-device", "hda-output,audiodev=a0",
+             "-audiodev", "none,id=a0",
+             "-device", "qemu-xhci,id=usb0",
+             "-device", "usb-kbd,bus=usb0.0",
+             "-audiodev", "wav,id=ua0,path=%s,out.frequency=48000,"
+                          "out.channels=2,out.format=s16" % wav,
+             "-device", "usb-audio,bus=usb0.0,audiodev=ua0")
+
+    if os.environ.get("USBAUDIO_HDA") is None:
+        extra += ("-fw_cfg", "name=opt/kosmos/audio,string=usb")
+
+    out = boot(image, None, 150.0, typed=("beep 1000 2000",), extra=extra,
+               after="xhci: watching for devices plugged in and out",
+               until="beep: 1000 Hz")
+
+    if out is None:
+        check(False, "the machine would not boot with HD Audio and a USB speaker")
+        return
+
+    out = out.replace("\r", "")
+    said = "\n    ".join(l for l in out.splitlines()
+                         if "speaker" in l or "beep" in l) or "(nothing)"
+    playing = re.search(r"port \d+: speaker: playing the mix on 1\.1 at 48000 Hz",
+                        out)
+
+    check(playing is not None,
+          "the driver did not say it plays the mix on 1.1 at 48 kHz:\n    " + said)
+
+    samples = []
+
+    if os.path.exists(wav):
+        with open(wav, "rb") as f:
+            data = f.read()[44:]
+        n = len(data) // 4
+        samples = list(struct.unpack("<%dh" % (2 * n), data[:4 * n]))[0::2]
+
+    # The longest run of sound, a gap of 2 ms of quiet ending it.
+    best, start, quiet, crossings, last = (0, 0, 0), None, 0, 0, 0
+
+    for i, v in enumerate(samples + [0] * 200):
+        if abs(v) > 64:
+            if start is None:
+                start, crossings, last = i, 0, v
+            quiet = 0
+        elif start is not None:
+            quiet += 1
+            if quiet > 96:
+                end = i - quiet
+                if end - start > best[1] - best[0]:
+                    best = (start, end, crossings)
+                start = None
+        if start is not None:
+            if last < 0 <= v:
+                crossings += 1
+            last = v
+
+    seconds = (best[1] - best[0]) / 48000.0
+    hz = best[2] / seconds if seconds > 0 else 0
+
+    check(seconds >= 1.9,
+          "the WAV did not hold two seconds of sound without a gap (%d samples; "
+          "the longest run %.3f s)" % (len(samples), seconds))
+    check(abs(hz - 1000) <= 5,
+          "the beep reached the speaker at %.1f Hz, not 1000: converted at the "
+          "wrong rate" % hz)
+
+
 def usb_list(image, check):
     """**Every USB device, driven or not, said to a program** - `docs/
     machine.md` M1, `usbproto.h`.
@@ -5990,7 +6081,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'synth_start', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_audio', 'usb_audio_tone', 'usb_audio_play', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -6104,6 +6195,8 @@ def main():
         usb_audio(image, check)
     if 'usb_audio_tone' in wanted:
         usb_audio_tone(image, check)
+    if 'usb_audio_play' in wanted:
+        usb_audio_play(image, check)
 
     # And the list answering where there is no controller at all.
     if 'usb_list_none' in wanted:

@@ -6578,7 +6578,19 @@ if role == ROLE_INIT then
   -- program could write to the device the last writer would win, and per-
   -- application volume would have nothing to be a volume *of*.
   --
-  local audio = start("the audio server", ROLE_AUDIO, { AUDIO_EP },
+  --
+  -- **And the ring a USB speaker's sound goes through** (`usbaudioring.h`,
+  -- `docs/usbaudio.md` U3): nine pages, made here once and handed to the
+  -- audio server, which writes the mix into it, and to the USB driver,
+  -- which feeds the speaker from it. Nobody else is given it, so no other
+  -- program can play into a speaker past the mixer or pose as one.
+  --
+  local USB_AUDIO_REGION = sys.memory(9)
+
+  if not USB_AUDIO_REGION then line("init: no ring for a USB speaker") end
+
+  local audio = start("the audio server", ROLE_AUDIO,
+                      { AUDIO_EP, USB_AUDIO_REGION },
                       SPAWN_AUDIO_BAND | (may_pass_audio() and SPAWN_AUDIO or 0))
 
   --
@@ -6675,7 +6687,8 @@ if role == ROLE_INIT then
     local _, err = sys.spawn(ROLE_XHCI,
                              { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
                                FRAMES_EP, CAMERA_EP, MIDI_EP, NOTIFY_EP, USB_EP,
-                               HCI_EP, BLUETOOTH_EP, PAD_REGION },
+                               HCI_EP, BLUETOOTH_EP, PAD_REGION,
+                               AUDIO_EP, USB_AUDIO_REGION },
                              SPAWN_DEVICES)
 
     if err then

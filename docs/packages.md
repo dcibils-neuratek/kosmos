@@ -121,5 +121,71 @@ a second adds a fraction of that.
    action, following the report - nothing in the window waits on the server.
    **Done in 0.11.179** (`testing.md` 18.574).
 4. **P4 - powers asked for**, with Automations' consent step.
+5. **P5 - installed applications kept current at boot** (Diego, 22
+   November 2026, after Quake III would not start on the M700 because its
+   copy was 0.12.66's, made for other protocols: "yes, make it update apps
+   automatically at boot"). A boot whose command line names a package server
+   (`opt/kosmos/packages`, as every network boot does) already runs
+   `systemapps` at login: the window manager starts it, as it does `maild`,
+   and it waits for an address and brings Kosmos's own packages - JetSki,
+   WebKit - when the copy on the disk is another build's. **P5 is that, for
+   every installed package**, not a second program beside it: each package
+   `/Home/Packages` says is installed, of any kind, is installed again from
+   the server when its files differ from the ones offered. Then it says
+   what it brought in a notification. **"Differs" is the files, not the version**: a manifest
+   carries `sums`, one hash over every file's SHA-256, and two builds whose
+   files are the same are the same package. A new revision that changed
+   nothing in Doom does not fetch Doom again. An application built for other
+   protocols always differs, because its image carries the stamp. Nothing
+   waits for it: the desktop comes up as before, and an application opened
+   while it is being replaced runs the old copy or the new, never half of
+   one (the swap is by renames, above). Held by `x86-install`: a package
+   installed for other protocols, a boot naming the server, and the new one
+   in place without anybody typing; the control is a boot that names none.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).
+
+## The stamp - held, to discuss
+
+**Held on 22 November 2026** (Diego: "not sure, lets discuss this later and
+hold any changes for now"). Nothing below is to be built until then.
+
+**What it is now** (`tools/protostamp.py`). An installed application carries
+its own copy of the runtime, so it speaks the message layouts of the build
+that linked it. The stamp is one hash over the text of every protocol header
+(`user/include/*proto.h`, `*ring.h`) and `kernel/syscall.h`. A program
+whose stamp is not the system's is refused before it runs anything. That is
+what stopped Doom's crash of 4 October, deep in the UI kit with no reason
+given.
+
+**What it costs.** It is far stricter than the danger. A comment changed, a
+header added that the application never uses (0.12.80's `usbaudioring.h`),
+or a new operation number in a server it does use: each refuses every
+installed application, though none of them changes what Quake III sends or
+receives.
+
+**The options:**
+
+- **(a) A stamp of the layouts, not the text** *(recommended)*. Computed by
+  the compiler from what the bytes are: every struct's size and every
+  field's offset, and every operation's number. A comment never changes it.
+  A new header, a new struct or a new operation adds to it without
+  changing what was there. So the application records the layout of each
+  thing, and the system refuses only when something the two of them share
+  is laid out differently. Automatic, with no discipline asked of anybody,
+  and nearly every refusal so far would not have happened.
+- **(b) A version for each protocol, bumped by hand** when a change breaks
+  it, and servers that keep answering the old shape for a while: BeOS's and
+  Haiku's binary compatibility. Applications survive real changes too, but
+  every change asks somebody to decide whether it breaks and to keep the
+  old shape working. Worth it when there are applications nobody can
+  rebuild, and not before.
+- **(c) The runtime from the system, not the application**: linking it at
+  load time, so an application carries only its own code. Then nothing
+  installed goes stale when the system changes. But Kosmos links
+  everything statically by design, and this is the largest change of the
+  three.
+
+With P5, a machine that boots from the Mac rebuilds nothing by hand anyway.
+(a) is what makes a stick, or an application from somebody else, keep
+working across the revisions that change nothing it uses.

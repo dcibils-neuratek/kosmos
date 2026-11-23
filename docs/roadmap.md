@@ -1394,6 +1394,33 @@ October: "Mockup is perfect") - the application Packages and the program
 next after Disk Monitor (Diego: "Finish disk monitor and then packages"). The window over that: what there is, what is
 installed and at which build, Install and Update. A design first - feature
 set, mockup, architecture, diagram - when its turn comes.
+**And installed applications updated at boot - AGREED on 22 November 2026**
+(Diego: "yes, make it update apps automatically at boot", after Quake III
+would not start on the M700: its copy was 0.12.66's, built for other
+protocols, and nobody had run `install` after the netboot). `docs/packages.md`
+P5: a boot that names a package server runs `pkg update --at-boot` in the
+background. It waits for the server, then replaces every installed package
+whose files differ from the ones offered, and says so in a notification.
+Next, before U4.
+**And an application that does not start says why, in a window - AGREED on
+22 November 2026** (Diego, after Flight would not open on the M700 either:
+"and also it does not say why", "we should show a window with the error
+message for me to understand why is not working"). Today the Deskbar's
+button reads "did not start" for a moment, and the reason - "quake3 was
+built for another Kosmos ... build it again" - goes only to the log. Instead,
+a small window in Astra's look: the application's icon and name, what went
+wrong in a person's words, the system's own words beneath for a report, and
+what to do about it as a button where there is one. For an application made
+for other protocols the button is **Update**, which runs `pkg install` for
+it and opens it when that finishes. Drawn first (`docs/launchfail.html`).
+**And which protocols an installed application must match - ASKED on 22
+November** (Diego: "but what if the protocols that quake 3 arena uses,
+change in version but not in functionality? why we need to rebuild the
+quake 3 binary?"). Today the stamp is one hash over the text of every
+protocol header, so a comment, or a header the application never uses,
+refuses it. The options are in `docs/packages.md`, *The stamp*. **Held on
+22 November** (Diego: "not sure, lets discuss this later and hold any
+changes for now"): nothing about the stamp changes until it is discussed.
 
 **Applications keep their state when closed, as on a phone** - Diego, 12
 October 2026: "what if all apps in kosmos have a state like apps do on
@@ -13092,6 +13119,43 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   `docs/usbaudio.html` (Mixer with its choosers) and
   `docs/usbaudio-architecture.png`. U1 reads the Edifier speakers'
   descriptors on the M700.
+  **Hi-res, ASKED 22 November** (Diego, after the M60 played: "the edifier
+  speaker support hires audio", "can we do that as well", "so we can play
+  flac audio file sin full resolution", "in bitrate and all"). The M60's
+  setting 1.2 takes 24 bits at 48 or 96 kHz; its ceiling is 96/24. What it
+  takes, after U3: a stream opened at its own rate and depth
+  (`AUDIO_OP_OPEN` with a format, the Playback Kit's FLAC decoder handing
+  24-bit samples on rather than 16); the mix in 32 bits at the output's
+  rate; the output's setting and rate following the highest-resolution
+  stream playing, the others converted into it (`pcm_convert_to`, widened
+  past 16 bits); so a 96/24 FLAC played alone at full volume reaches the
+  speaker bit for bit, and one at 192 kHz is converted to 96. Mixer shows
+  the format the device runs at and the stream's own. To be written into
+  `docs/usbaudio.md` as a step of its own (beside U7) and agreed before
+  code. **Written as U10 and AGREED on 22 November** with the player's
+  decisions 5 to 7 (sinc resampler, software volume said honestly, other
+  sounds shared and said).
+- **The best audio player, iTunes's ground, hi-res - ASKED 22 November
+  2026** (Diego: "design and build a new audio player app inspired in
+  itunes and will hires audio support with flac and mp4, m4a, mp3, wav,
+  etc", "we want the best audio player"). A library by songs, albums and
+  artists with art, playlists and search; FLAC, ALAC and AAC in MP4/M4A,
+  MP3, WAV and the rest; and played at the file's own resolution through
+  the hi-res path above, the format shown as it reaches the speaker.
+  **Designed 22 November** by a lane: `docs/player.md` (tiers, the
+  architecture, steps P0-P12, nine decisions), `player.html` (nine
+  windows) and `player-architecture.png`. It recommends being Music's next
+  version - the October Music design was never built - with a Library kit
+  new, and the Media Kit, Playback Kit, `tags.lua` and `pcmconvert.h`
+  grown (ALAC and AIFF, any depth, a gapless queue, a sinc resampler). For
+  Diego to agree before any code; after U3/U4 and the hi-res step.
+  **AGREED on 22 November, every recommendation taken** (Diego: "agreed with your recommendations, go ahead"):
+  Music's next version, named Music; after U4 and the hi-res step (U10).
+  **The old Music retires when the new one lands** (Diego, 22 November:
+  "once the new audio player app si done, pleas retire the current one
+  which is old and irrelevant once we have the newone"): `music.lua`, the
+  VOX pilot, is removed at P5, with its pieces of `docs/music.md` marked
+  answered by `docs/player.md`.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
 - **Music, as VOX is**, Diego's, 14 September: "the music player is really

@@ -7,7 +7,7 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-22, at 0.12.79. Pushed to 0.11.507; 0.11.508 to
+Last updated: 2026-11-22, at 0.12.80. Pushed to 0.11.507; 0.11.508 to
 0.12.8 are committed on `main`, and go out with `make prepush`.
 
 ---
@@ -302,8 +302,12 @@ said. The Edifier M60 read on the M700 (0.12.78): UAC1, synchronous,
 48/96 kHz, 16 or 24 bits - a fixture now. **U2 built in 0.12.79**
 (18.998): the driver feeds a speaker's isochronous OUT endpoint, and under
 `opt/kosmos/usbaudio=tone` the M60 played ten 440 Hz beeps, 480,000
-frames, none missed. **U3 next**: the audio server's mix to a USB output
-through a ring, 44.1 to 48 kHz. **Qwen2.5-3B** held to
+frames, none missed. **U3 built in 0.12.80** (18.999): the audio
+server's mix to the M60 through a ring init makes, 44.1 to 48 kHz, chosen
+by `opt/kosmos/audio=usb`; Diego heard Basket Case on it. **Next**: hi-res
+(asked the same day - 96/24 and FLAC at full resolution, `roadmap.md`) and
+U4, the choice in Mixer. **A new Music**, iTunes's ground and hi-res,
+designed by a lane (`docs/player.md`, nine decisions) for Diego to agree. **Qwen2.5-3B** held to
 llama.cpp in the same revision (18.997; Diego asked for Inkling-2-Mini,
 then DeepSeek V4 - neither fits 8 GB); to measure on the M700. **A video
 editor**, Kosmos Cut, designed by a lane the same day and agreed, every

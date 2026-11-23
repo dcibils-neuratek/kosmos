@@ -260,8 +260,52 @@ Each is small enough to be checked by itself:
   outputs, takes a USB one when it arrives, and writes its mix there
   through the ring, converted. Chosen by `opt/kosmos/audio=usb` until U4.
   Groove plays through QEMU's USB speaker.
+  **Built in 0.12.80, and Basket Case played on the M60** (`testing.md`
+  18.999): one region from init for the ring, the server's mix converted
+  by `pcm_convert_to`, the driver's pulses.
 - **U4, the choice.** `AUDIO_OP_DEVICES`, `_CHOOSE` and `_WATCH`; switching
   mid-stream; unplugging; the choice kept by name in `/Home/Settings`.
+  As it is being built:
+  - **The ring says who is there.** Its header grows from 64 bytes to 128,
+    adding the speaker's product string, its vendor and product numbers, and
+    the formats its settings offer: their sample sizes as a bit set and up
+    to six rates. `xhci` writes these before it sets `present`, as it does
+    the format. So the server can list a speaker without a second channel
+    from the driver: the region it already has says everything.
+  - **`xhci` streams any speaker that is plugged in**, not only under the
+    boot word. With nothing written it sends silence and pulses nobody,
+    so an unchosen speaker costs the driver a TD's copy a millisecond and
+    the server nothing. It pulses the server when frames were taken *and*
+    the server is writing, and when a speaker arrives or leaves.
+  - **The choice is a name, held by the server.** An empty name, which is
+    how the server starts, means the newest output: a speaker while one is
+    plugged in, otherwise the machine's own (the mockup's "Plugged in.
+    Sound is playing here."). A name means that device whenever it is
+    present, and the machine's otherwise. So a chosen speaker pulled out
+    and plugged in again gets the sound back by itself (decision 3), and
+    choosing the machine's device while a speaker is in keeps it there.
+    `opt/kosmos/audio=machine` starts the server with that choice, which is
+    the controls' way of keeping HD Audio with a speaker plugged in.
+    `opt/kosmos/audio=usb` is no longer needed and goes.
+  - **Kept across a restart by the person's side.** The server has no
+    namespace and writes no file. `audio.lua`'s `choose` sends the name and
+    keeps it with the settings kit (`prefs.lua`, the file `audio` in
+    `/Home/Preferences`). The Deskbar sends it again when it starts, as it
+    reads its looks then: it is the one program every session has. (This
+    said `/Home/Settings`, and "as the Deskbar does its volume". The kit's
+    folder is `/Home/Preferences`, and nothing restores the volume yet.)
+  - **Watching** is a folder's watch, unchanged in shape (`pulses.md` P4):
+    a window asks the window manager for a code and a door, passes the door
+    with `AUDIO_OP_WATCH`, and the server pulses every door it holds when
+    the list or the one playing changes. `AUDIO_OP_UNWATCH` with the code
+    takes it back, and a door whose pulse fails is dropped. The list of
+    doors grows as asked; nothing caps it.
+  - **Held by** QEMU: a speaker plugged in mid-song with `device_add` (the
+    sound moves to it, and QEMU's WAV has the rest of the tone), pulled out
+    with `device_del` (the sound is back on HD Audio within a period, and
+    the program writing it never knew). Then the machine's device is
+    chosen while the speaker is in, and the WAV stops growing. Each check
+    has its control.
 - **U5, Mixer.** The Output chooser, each device's format and what it can
   do, as `docs/usbaudio.html` draws it; the notification when one is
   plugged in.
@@ -277,6 +321,35 @@ Each is small enough to be checked by itself:
 
 U1 to U5 are what plays the Edifier speakers if they are UAC1 and
 adaptive; U6 and U7 if they are not. U1 says which.
+
+- **U10, hi-res** (asked 22 November, after the M60 played: "so we can
+  play flac audio file sin full resolution", "in bitrate and all"; for
+  Diego to agree, with `docs/player.md`'s decisions 5 to 7, which are its
+  own). **AGREED on 22 November, as recommended** (Diego: "agreed with your recommendations, go ahead"): a
+  windowed-sinc resampler, the software volume with the badge honest, and
+  other sounds shared and said. The M60's setting 1.2 is 24 bits at 48 or 96 kHz, so a 96/24 FLAC
+  can reach it unchanged. What it takes, all in the audio server and its
+  protocol, the ring and the driver as they are:
+  1. `AUDIO_OP_OPEN` with a format - rate, 16, 24 or 32-bit integer,
+     channels; 0 is today's 44.1/16.
+  2. The mix in 32 bits at the output's rate.
+  3. The output's setting and rate follow the highest-resolution stream
+     playing, within what the device offers (the driver switches the
+     setting: drain, SET_INTERFACE, SET_CUR of the rate, start - timed
+     and said); the others are converted into it.
+  4. Unity is unity: at full gain and master a stream's samples pass
+     untouched; narrowing is exact when the low bits are nought and
+     dithered when not.
+  5. `exact` per stream with its reason (rate, volume, mixed, narrowed)
+     in `AUDIO_OP_STREAMS`, for the player's badge.
+  6. `pcm_convert_to` past 16 bits, and the resampler question -
+     windowed sinc or linear (player decision 5).
+  **Held by** QEMU's speaker at 48/16, the only format QEMU's has: a
+  FLAC of noise at 48/16 found bit for bit in QEMU's WAV, broken by a
+  volume of 99%, a beep over it, or a 44.1 kHz file - each also said as
+  "converted" with its reason. 96/24 is then proved on the M60 by ear
+  and by the driver's counts.
+  The ring holds 64 ms of 96/24 at nine pages, so it stays.
 
 ---
 

@@ -42303,3 +42303,74 @@ Frame ID one interval apart, elsewhere Start Isoch ASAP. Under
 0 lost, 1 ran dry, 0 errors" - the one dry is the ring's end, which is how
 it stops.
 
+
+## 18.999 The mix through a USB speaker: Basket Case on the Edifier (USB audio, U3)
+
+**In short**: everything that makes a sound in Kosmos can now play through
+a USB speaker. On the M700, Music played Green Day's *Basket Case* through
+Diego's EDIFIER M60 - "it works great! basket case sounds great on the
+edifier speakers" - mixed by the audio server, converted from 44.1 to 48
+kHz and fed to the speaker by the USB driver. For now the speaker is
+chosen at boot with `opt/kosmos/audio=usb`; choosing it in Mixer is U4.
+
+**What**:
+
+- **One region, made by init** (`user/include/usbaudioring.h`): nine
+  pages handed to the audio server and to `xhci` and nobody else, as the
+  game pads' page is - so no capability passes at run time and no other
+  program can play past the mixer or pose as a speaker. In it the
+  speaker's format and a ring of its own frames, single producer and
+  single consumer, 64-bit frame counts; `xhci` says a speaker arrived by
+  its format, indices at nought, a new generation and then `present`, each
+  behind the barrier.
+- **The server** (`user/servers/audio.c`): the mixing loop is `mix()` now,
+  one copy whichever way it goes. While a speaker is present and wanted,
+  each period goes through `pcm_convert_to` - the resampler `sys.pcm` and
+  the Playback Kit share, given an output rate rather than copied - into
+  the ring, up to 23 ms of the speaker's time (decision 2), instead of to
+  HD Audio. A stream's position counts what is in the ring and on the
+  controller's, back in the mix's frames. A pulse is not answered.
+- **The driver** (`xhci.c`): a speaker plays the ring rather than the
+  beeps - each interval's frames from it, silence for what it lacks
+  (counted as `starved`), `played` advanced as TDs come back - and pulses
+  `/Devices/audio` once a pass when it took frames, and when a speaker
+  arrives or leaves. TDs in flight are 16 now, not 32: 16 ms.
+
+**Held by**:
+
+- `tools/test_pcmconvert.c`: a second of 1 kHz at 44.1 kHz, in the
+  server's 256-frame periods with the carry, is 48,000 frames at 48 kHz
+  less the one carried, and 1,000 crossings. Its 2,464 cases against
+  `sys.pcm` from before the move are unchanged. 14 checks.
+- `usb_audio_play` in `x86-usb-2`: HD Audio and QEMU's USB speaker both
+  present, as on the M700, and the word. `beep 1000 2000` reaches QEMU's
+  WAV as one run of 2.000 s at 999.5 Hz - a conversion at the wrong rate
+  would be 8.8% off - with no gap. **Its control**, `USBAUDIO_HDA=1`,
+  boots without the word: the beep goes to HD Audio, the WAV is silent,
+  and 3 of 3 checks fail. `usb_audio_tone` still passes at 16 TDs.
+
+**On the M700**, 0.12.80 with `opt/kosmos/audio=usb`: "speaker: playing
+the mix on 1.1 at 48000 Hz", `beep 440 1500` took its 1,500 ms in 1,437 ms
+(the speaker's clock setting the pace), and Music played the song, heard
+by Diego.
+
+**Next**: hi-res, asked the same day - the M60's 24 bits at 96 kHz, a
+FLAC at its own resolution (`roadmap.md`) - and U4, the choice in Mixer.
+
+
+**The gate after U3**: 158 of 162 suites passed together. `x86-flight-land`,
+`x86-jetski` (the film's tone heard at 383 Hz) and `x86-display-4` passed
+alone, as the same suites did after U1: load. **`x86-loader` failed alone
+too, and was real**: the Storage Kit's write of 2,621,563 bytes said
+2,097,152. Its `/Home` was 224 MB, fixed. The images it carries (Doom,
+Quake, the Super Nintendo, the test programs, `posixtest.elf`,
+`cxxtest.elf`) grow with the runtime, and tonight they filled it, so the
+third megabyte of the write found no room. With 320 MB it passed. So the
+disk is now as large as what goes on it plus 64 MB for the programs' own
+writes. **Its control**, 1 MB of room, fails the check it failed tonight.
+
+**And installed applications on the M700** would not start - Quake III's
+copy was 0.12.66's, Flight's 0.12.63's, made for other protocols - and
+nothing said why but the log. `pkg update` over Telnet brought eight; P5 of
+`docs/packages.md` makes the boot do it, and the roadmap has the window
+that says why.

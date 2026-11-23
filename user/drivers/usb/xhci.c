@@ -88,6 +88,7 @@
 #include "uvc_decode.h"
 #include "uac_decode.h"
 #include "uac_stream.h"
+#include "usbaudioring.h"
 #include "midi_decode.h"
 #include "btusb_decode.h"
 #include "../bluetooth/hci_decode.h"
@@ -6334,7 +6335,7 @@ static bool read_configuration(struct controller *c, struct device *d,
 #define UAC1_SAM_FREQ       0x0100u     /* SAMPLING_FREQ_CONTROL << 8 */
 
 #define SPEAKERS_MAX        2u
-#define SPEAKER_TDS         32u         /* 32 ms in flight at full speed */
+#define SPEAKER_TDS         16u         /* 16 ms in flight at full speed */
 #define SPEAKER_BELL_EVERY  8u
 #define SPEAKER_MIX_RATE    44100u      /* the audio server's, today */
 #define SPEAKER_TONE_HZ     440u
@@ -6345,6 +6346,8 @@ static bool read_configuration(struct controller *c, struct device *d,
 struct speaker {
     bool          used;
     bool          streaming;
+    bool          tone;                 /* the beeps, not the ring (U2) */
+    bool          pulse;                /* the server is owed a look */
     bool          stopping;             /* no TD goes back on the ring */
     struct controller *c;
     unsigned      slot;
@@ -6372,7 +6375,8 @@ struct speaker {
     unsigned long tds_pages;
 
     struct uac_clock clock;
-    struct uac_tone  tone;
+    struct uac_tone  beeps;
+    uint16_t      taken[SPEAKER_TDS];   /* frames each TD took from the ring */
     uint32_t      played;               /* frames, since the first */
     uint32_t      tone_frames;          /* how many the beeps take */
 
@@ -6380,6 +6384,31 @@ struct speaker {
 };
 
 static struct speaker speakers[SPEAKERS_MAX];
+
+/*
+ * **The ring from the audio server** (`usbaudioring.h`, U3), handed to this
+ * driver by init, and the server's door, which this only ever pulses. One
+ * ring: the first speaker with the mix is the one that plays it, until U4
+ * chooses.
+ */
+static struct usb_audio_ring *usb_ring;
+static long audio_door = -1;
+static struct speaker *usb_ring_owner;
+
+static void usb_ring_map(long audio, long cap)
+{
+    long at = cap < 0 ? -1 : kosmos_mem_map(cap);
+
+    if (at < 0) {
+        return;
+    }
+
+    audio_door = audio;
+    usb_ring = (struct usb_audio_ring *)(uintptr_t)at;
+    usb_ring->present = 0;
+    RING_BARRIER();
+    usb_ring->magic = USB_AUDIO_MAGIC;
+}
 
 static struct speaker *speaker_on(const struct controller *c, unsigned slot)
 {
@@ -6416,20 +6445,57 @@ static unsigned iso_interval(unsigned speed, unsigned interval)
     return (speed == 1u || speed == 2u) ? interval + 2u : interval - 1u;
 }
 
-/* The next interval's frames into buffer `which`: a beep's, or silence. */
+/*
+ * The next interval's frames into buffer `which`, from the audio server's
+ * ring: as many as it has, up to what the interval carries, and silence for
+ * the rest - a short interval is counted, and the server is behind.
+ */
+static uint32_t speaker_from_ring(struct speaker *s, unsigned which,
+                                  uint8_t *at, uint32_t frames)
+{
+    struct usb_audio_ring *r = usb_ring;
+    uint64_t read = r->read;
+    uint64_t ready = usb_audio_load(&r->write) - read;
+    uint32_t take = ready < frames ? (uint32_t)ready : frames, f;
+
+    for (f = 0; f < take; f++) {
+        memcpy(at, usb_audio_at(r, read + f), s->frame_bytes);
+        at += s->frame_bytes;
+    }
+
+    if (take < frames) {
+        memset(at, 0, (frames - take) * s->frame_bytes);
+
+        if (read != 0) {
+            r->starved++;               /* not before the first period */
+        }
+    }
+
+    usb_audio_store(&r->read, read + take);
+    s->taken[which] = (uint16_t)take;
+    s->pulse = s->pulse || take > 0;
+    return frames * s->frame_bytes;
+}
+
+/* The next interval's frames into buffer `which`: the ring's, or the
+ * beeps' or silence. */
 static uint32_t speaker_fill(struct speaker *s, unsigned which)
 {
     uint8_t *at = (uint8_t *)(s->tds + (uintptr_t)which * s->td_room);
     uint32_t frames = uac_clock_next(&s->clock), f;
     uint32_t beep = s->rate / 10u * SPEAKER_BEEP_TENTHS;
 
+    if (!s->tone) {
+        return speaker_from_ring(s, which, at, frames);
+    }
+
     for (f = 0; f < frames; f++, s->played++) {
         if (s->played < s->tone_frames && s->played % s->rate < beep) {
-            (void)uac_tone_fill(&s->tone, at, 1, s->alt.channels,
+            (void)uac_tone_fill(&s->beeps, at, 1, s->alt.channels,
                                 s->alt.subframe);
         } else {
             memset(at, 0, s->frame_bytes);
-            s->tone.phase = 0;          /* each beep begins at nought */
+            s->beeps.phase = 0;         /* each beep begins at nought */
         }
 
         at += s->frame_bytes;
@@ -6498,6 +6564,12 @@ static void speaker_bells(const struct controller *c)
             s->bell = false;
             mmio_write32(c->doorbells + 4u * s->slot, s->dci);
         }
+
+        /* And the server woken, once a pass, to fill what was taken. */
+        if (s->used && s->c == c && s->pulse && audio_door >= 0) {
+            s->pulse = false;
+            (void)kosmos_pulse(audio_door, AUDIO_PULSE_USB, 0);
+        }
     }
 }
 
@@ -6523,6 +6595,15 @@ static void speaker_said(struct speaker *s, const char *what)
     say_dec(&line, s->errors);
     say_text(&line, " errors");
     say_send(console, &line);
+}
+
+/* What a TD that came back took from the ring has been heard. */
+static void speaker_played(struct speaker *s, unsigned which)
+{
+    if (!s->tone && usb_ring != NULL && usb_ring_owner == s) {
+        usb_audio_store(&usb_ring->played,
+                        usb_ring->played + s->taken[which]);
+    }
 }
 
 /* A TD back off a speaker's ring: counted, and the next interval queued. */
@@ -6575,6 +6656,7 @@ static void take_audio(struct controller *c, const uint32_t *event)
     while (s->oldest != place) {
         s->lost++;
         s->out--;
+        speaker_played(s, s->td_of[s->oldest]);
 
         if (!s->stopping) {
             speaker_queue(s, s->td_of[s->oldest]);
@@ -6586,6 +6668,7 @@ static void take_audio(struct controller *c, const uint32_t *event)
     s->oldest = ring_next(place);
     s->out--;
     s->intervals++;
+    speaker_played(s, s->td_of[place]);
 
     if (code == CC_MISSED_SERVICE) {
         s->missed++;
@@ -6593,7 +6676,7 @@ static void take_audio(struct controller *c, const uint32_t *event)
         s->errors++;
     }
 
-    if (!s->stopping && s->played >= s->tone_frames) {
+    if (s->tone && !s->stopping && s->played >= s->tone_frames) {
         s->stopping = true;
     }
 
@@ -6615,6 +6698,19 @@ static void speaker_gone(struct controller *c, unsigned slot)
             (void)kosmos_cap_drop(s->tds_cap);
         }
 
+        /* The mix goes back to the machine's own device (`audio.c`). */
+        if (usb_ring_owner == s) {
+            usb_ring_owner = NULL;
+            usb_audio_store((volatile uint64_t *)(void *)&usb_ring->played,
+                            usb_ring->played);
+            usb_ring->present = 0;
+            RING_BARRIER();
+
+            if (audio_door >= 0) {
+                (void)kosmos_pulse(audio_door, AUDIO_PULSE_USB, 0);
+            }
+        }
+
         memset(s, 0, sizeof(*s));
     }
 }
@@ -6627,7 +6723,7 @@ static void speaker_gone(struct controller *c, unsigned slot)
  */
 static bool speaker_start(struct controller *c, struct device *d,
                           const struct uac_device *info, int which,
-                          uint32_t rate, struct say_line *line)
+                          uint32_t rate, bool tone, struct say_line *line)
 {
     struct speaker *s = NULL;
     uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
@@ -6646,7 +6742,19 @@ static bool speaker_start(struct controller *c, struct device *d,
         return false;
     }
 
+    if (!tone && (usb_ring == NULL || usb_ring_owner != NULL)) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, usb_ring == NULL
+                       ? ": speaker: no ring from the audio server; it plays nothing"
+                       : ": speaker: another speaker has the mix; it plays nothing");
+        say_send(console, line);
+        return false;
+    }
+
     memset(s, 0, sizeof(*s));
+    s->tone = tone;
     s->c = c;
     s->slot = d->slot;
     s->dev = *d;
@@ -6736,8 +6844,33 @@ static bool speaker_start(struct controller *c, struct device *d,
     }
 
     uac_clock_init(&s->clock, rate, s->uframes);
-    uac_tone_init(&s->tone, SPEAKER_TONE_HZ, rate, SPEAKER_TONE_LEVEL);
-    s->tone_frames = rate * SPEAKER_BEEPS;
+    uac_tone_init(&s->beeps, SPEAKER_TONE_HZ, rate, SPEAKER_TONE_LEVEL);
+    s->tone_frames = tone ? rate * SPEAKER_BEEPS : 0;
+
+    /*
+     * **The ring said to be this speaker's** (`usbaudioring.h`): absent
+     * while it is set up, its format, its indices at nought, a new
+     * generation, then present - each behind the barrier, so the server
+     * never sees a format half written. Then the server is told to look.
+     */
+    if (!tone) {
+        struct usb_audio_ring *r = usb_ring;
+
+        r->present = 0;
+        RING_BARRIER();
+        r->rate = rate;
+        r->channels = s->alt.channels;
+        r->subframe = s->alt.subframe;
+        r->frames = USB_AUDIO_RING_BYTES / s->frame_bytes;
+        r->starved = 0;
+        r->write = r->read = r->played = 0;
+        RING_BARRIER();
+        r->generation++;
+        RING_BARRIER();
+        r->present = 1;
+        usb_ring_owner = s;
+        s->pulse = true;
+    }
     s->mfindex = mmio_read32(c->rt + RT_MFINDEX) & 0x3FFFu;
     s->sched = s->mfindex + 8u * s->uframes;   /* a little ahead to start */
     s->oldest = s->ring.enqueue;
@@ -6752,11 +6885,15 @@ static bool speaker_start(struct controller *c, struct device *d,
     about(line, c);
     say_text(line, " port ");
     say_dec(line, d->port);
-    say_text(line, ": speaker: playing ");
-    say_dec(line, SPEAKER_BEEPS);
-    say_text(line, " beeps of ");
-    say_dec(line, SPEAKER_TONE_HZ);
-    say_text(line, " Hz on ");
+    if (tone) {
+        say_text(line, ": speaker: playing ");
+        say_dec(line, SPEAKER_BEEPS);
+        say_text(line, " beeps of ");
+        say_dec(line, SPEAKER_TONE_HZ);
+        say_text(line, " Hz on ");
+    } else {
+        say_text(line, ": speaker: playing the mix on ");
+    }
     say_dec(line, s->alt.interface);
     say_text(line, ".");
     say_dec(line, s->alt.alternate);
@@ -6879,11 +7016,18 @@ static void use_audio(struct controller *c, struct device *d,
         char option[16] = { 0 };
         uint32_t rate = 0;
         int which;
+        bool tone = kosmos_boot_option("opt/kosmos/usbaudio", option,
+                                       sizeof(option)) == 4
+                    && memcmp(option, "tone", 4) == 0;
 
-        if (kosmos_boot_option("opt/kosmos/usbaudio", option,
-                               sizeof(option)) != 4
-            || memcmp(option, "tone", 4) != 0) {
-            return;                     /* until the audio server has it: U3 */
+        /* The mix, where `opt/kosmos/audio=usb` says so (U3); Mixer's
+         * choice from U4. Otherwise it is named and left. */
+        memset(option, 0, sizeof(option));
+
+        if (!tone && (kosmos_boot_option("opt/kosmos/audio", option,
+                                         sizeof(option)) != 3
+                      || memcmp(option, "usb", 3) != 0)) {
+            return;
         }
 
         which = uac_pick(info, false, SPEAKER_MIX_RATE, &rate);
@@ -6897,7 +7041,7 @@ static void use_audio(struct controller *c, struct device *d,
             return;
         }
 
-        (void)speaker_start(c, d, info, which, rate, line);
+        (void)speaker_start(c, d, info, which, rate, tone, line);
     }
 }
 
@@ -9879,7 +10023,8 @@ static long camera_endpoint_now(void)
 void xhci_server(long console_cap, long blocks_cap, long writes_cap,
                  long frames_cap, long camera_cap, long midi_cap,
                  long notify_cap, long usb_cap, long hci_cap,
-                 long bluetooth_cap, long pads_cap)
+                 long bluetooth_cap, long pads_cap, long audio_cap,
+                 long audio_ring_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -9902,6 +10047,7 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     bluetooth_endpoint = bluetooth_cap;
     hci_options();
     pads_map(pads_cap);
+    usb_ring_map(audio_cap, audio_ring_cap);
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;

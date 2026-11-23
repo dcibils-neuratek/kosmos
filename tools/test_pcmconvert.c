@@ -266,6 +266,51 @@ int main(void)
         }
     }
 
+    /*
+     * ---- 44.1 to 48 kHz, in the audio server's periods ----
+     * `pcm_convert_to`, as the server converts its mix for a USB speaker
+     * (`docs/usbaudio.md` U3): a second of a 1 kHz sine, 256 frames at a
+     * time with what each call leaves carried, comes out as a second at 48
+     * kHz - 48000 frames, less the one held for the next period - and still
+     * 1 kHz: a thousand rising crossings.
+     */
+    {
+        static int16_t sine[44100 * 2], out[512 * 2];
+        unsigned char carry[512 * 4];
+        size_t have = 0, used;
+        long frames = 0, crossings = 0, n, k;
+        int16_t last = 0;
+        double ph = 0;
+
+        for (k = 0; k < 44100; k++) {
+            int16_t v = (int16_t)lrint(12000.0 * sin(2.0 * M_PI * 1000.0 * k / 44100.0));
+            sine[2 * k] = sine[2 * k + 1] = v;
+        }
+
+        for (k = 0; k < 44100; k += 256) {
+            long take = 44100 - k < 256 ? 44100 - k : 256;
+
+            memcpy(carry + have, sine + 2 * k, (size_t)take * 4);
+            have += (size_t)take * 4;
+            n = pcm_convert_to(carry, have, 44100, 2, 16, 0, &ph, out,
+                               (long)sizeof(out), &used, 48000);
+            memmove(carry, carry + used, have - used);
+            have -= used;
+
+            for (long i = 0; i < n; i++) {
+                crossings += (last < 0 && out[2 * i] >= 0) ? 1 : 0;
+                last = out[2 * i];
+            }
+
+            frames += n;
+        }
+
+        CHECK(frames >= 47998 && frames <= 48000,
+              "a second at 44.1 kHz made %ld frames at 48 kHz, not 48000", frames);
+        CHECK(crossings == 999 || crossings == 1000,
+              "1 kHz at 48 kHz crossed %ld times in a second, not 1000", crossings);
+    }
+
     if (failed) {
         printf("FAIL: %d of %d checks on pcmconvert.h\n", failed, checks);
         return 1;

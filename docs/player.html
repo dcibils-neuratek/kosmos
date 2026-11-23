@@ -1,0 +1,484 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Music, the next one: a library player on iTunes's ground, at the file's
+  own resolution. Drawn on 22 November 2026 from Diego's ask: "design and
+  build a new audio player app inspired in itunes and will hires audio
+  support with flac and mp4, m4a, mp3, wav, etc", "we want the best audio
+  player". docs/player.md is the feature set and the architecture.
+
+  It keeps the look agreed for Music on 11 October (docs/music.html):
+  Astra's dark window, Tracker's sidebar, the header as the title bar,
+  what is playing on top. Inspired by iTunes in what it does; nothing of
+  Apple's art, names or marks. Every song, album and artist is made up.
+-->
+<title>Music player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look - the system's, as Monitor and Tracker have it. */
+  --a-win: #1f2430; --a-side: #1a1e28; --a-raised: #262c39; --a-hover: #2c3342;
+  --a-line: #333b4a; --a-ink: #e9ecf1; --a-dim: #9aa3b2; --a-faint: #6b7486;
+  --a-sel: #2f6bdc; --a-sel-soft: rgba(47,107,220,.22);
+  --vu-g: #34c759; --vu-y: #ffcc33; --vu-r: #ff453a;
+  --exact: #7fd6a0; --exact-line: #3c6d50; --conv: #f2c66d; --conv-line: #7a6331;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 86ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 840px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 8px; }
+table.plain { border-collapse: collapse; margin: 10px 0; max-width: 900px; width: 100%; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-size: 13px; color: var(--muted); font-weight: 600; }
+
+/* ---- The window ---- */
+.win { width: 1120px; height: 690px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 16px 44px rgba(0,0,0,.3); position: relative; font-size: 13px; overflow: hidden;
+       display: grid; grid-template-columns: 206px 1fr; grid-template-rows: 46px 96px 1fr; }
+.head { grid-column: 1 / 3; display: grid; grid-template-columns: 206px 1fr auto; align-items: center; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; padding-left: 18px; background: var(--a-side); height: 100%; display: flex; align-items: center; border-right: 1px solid var(--a-line); }
+.head .mid { display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+.head .mid b { font-size: 14px; } .head .mid span { color: var(--a-dim); }
+.seg { display: flex; border: 1px solid var(--a-line); border-radius: 7px; overflow: hidden; margin-left: 8px; }
+.seg span { padding: 2px 10px; color: var(--a-dim) !important; font-size: 12px; } .seg span.on { background: var(--a-hover); color: var(--a-ink) !important; }
+.search { margin-left: auto; width: 240px; height: 28px; border-radius: 7px; background: var(--a-raised); border: 1px solid var(--a-line);
+          color: var(--a-faint); display: flex; align-items: center; padding: 0 10px; gap: 7px; }
+.search::before { content: ""; width: 10px; height: 10px; border: 1.6px solid var(--a-faint); border-radius: 50%; flex: none; }
+.search.typed { color: var(--a-ink); border-color: var(--a-sel); }
+.head .right { display: flex; align-items: center; gap: 12px; padding-right: 14px; }
+.dots { color: var(--a-dim); font-weight: 700; letter-spacing: 1px; }
+.lights { display: flex; gap: 7px; } .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+/* What is playing, on top. */
+.now { grid-column: 1 / 3; display: grid; grid-template-columns: 1fr 340px; align-items: center; border-bottom: 1px solid var(--a-line);
+       background: linear-gradient(180deg, #232938, #1f2430); }
+.now .playing { display: grid; grid-template-columns: 68px 1fr; gap: 14px; align-items: center; padding: 0 22px 0 16px; }
+.cover { border-radius: 6px; flex: none; box-shadow: 0 4px 14px rgba(0,0,0,.4); position: relative; overflow: hidden; }
+.cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,.18), transparent 45%); }
+.now .line1 { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; overflow: hidden; }
+.now .title { font-size: 15px; font-weight: 600; } .now .meta { color: var(--a-dim); }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; padding: 0 7px; border-radius: 4px; line-height: 18px; border: 1px solid; white-space: nowrap; cursor: default; }
+.badge.exact { color: var(--exact); border-color: var(--exact-line); background: rgba(52,199,89,.08); }
+.badge.exact::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--exact); }
+.badge.conv { color: var(--conv); border-color: var(--conv-line); background: rgba(242,198,109,.08); }
+.badge.conv::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--conv); }
+.fmt { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 0 6px; border-radius: 4px; line-height: 17px; border: 1px solid; letter-spacing: .03em; }
+.fmt.hr { color: #7fd6a0; border-color: #3c6d50; background: rgba(52,199,89,.08); }
+.fmt.ll { color: #8fb6f5; border-color: #3d5680; background: rgba(47,107,220,.08); }
+.fmt.lo { color: var(--a-dim); border-color: #465063; }
+.ctl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; align-items: center; margin-top: 6px; }
+.transport { display: flex; align-items: center; gap: 14px; }
+.tb { width: 22px; height: 22px; display: grid; place-items: center; color: var(--a-dim); }
+.tb svg { width: 16px; height: 16px; fill: currentColor; } .tb.on { color: var(--a-sel); }
+.play { width: 34px; height: 34px; border-radius: 50%; background: var(--a-ink); display: grid; place-items: center; }
+.play svg { width: 14px; height: 14px; fill: #1f2430; }
+.seek { display: grid; grid-template-columns: 38px 1fr 38px; gap: 10px; align-items: center; color: var(--a-dim); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.seek span:last-child { text-align: right; }
+.bar { height: 4px; border-radius: 2px; background: #3a4252; position: relative; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--a-ink); }
+.bar b { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+.now .tools { display: grid; grid-template-columns: auto auto; gap: 8px 14px; align-items: center; justify-content: end; padding-right: 18px; }
+.vu { display: grid; gap: 3px; }
+.vu .ch { display: grid; grid-template-columns: 10px repeat(20, 5px); gap: 2px; align-items: center; color: var(--a-faint); font-size: 9.5px; font-family: var(--mono); }
+.vu .ch i { height: 7px; border-radius: 1.5px; background: #2d3442; }
+.vu .ch i.g { background: var(--vu-g); } .vu .ch i.y { background: var(--vu-y); } .vu .ch i.r { background: var(--vu-r); }
+.vol { display: flex; align-items: center; gap: 8px; color: var(--a-dim); } .vol svg { width: 15px; height: 15px; fill: currentColor; } .vol .bar { width: 96px; }
+.mini-btns { display: flex; gap: 8px; justify-self: end; }
+.pill { border: 1px solid var(--a-line); background: var(--a-raised); border-radius: 6px; padding: 1px 9px; color: var(--a-ink); font-size: 11.5px; }
+.pill.on { border-color: #3d5680; background: var(--a-sel-soft); }
+
+/* The sidebar. */
+.side { background: var(--a-side); border-right: 1px solid var(--a-line); padding: 10px 10px; overflow: hidden; }
+.side h5 { margin: 10px 8px 3px; font-size: 11px; color: var(--a-faint); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+.side div { display: flex; justify-content: space-between; padding: 4px 9px; border-radius: 7px; color: var(--a-dim); }
+.side div.on { background: var(--a-hover); color: var(--a-ink); }
+.side div span { color: var(--a-faint); font-variant-numeric: tabular-nums; }
+.side div .sm::before { content: "\2731  "; color: var(--a-sel); font-size: 10px; }
+.side .foot { position: absolute; left: 0; bottom: 0; width: 206px; padding: 9px 18px; color: var(--a-faint); font-size: 11.5px; border-top: 1px solid var(--a-line); background: var(--a-side); }
+.main { overflow: hidden; position: relative; }
+
+/* Songs. */
+.songs { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.songs th { text-align: left; color: var(--a-faint); font-weight: 500; font-size: 12px; padding: 9px 10px 7px; border-bottom: 1px solid var(--a-line); white-space: nowrap; }
+.songs th.sorted { color: var(--a-ink); } .songs th.sorted::after { content: " \25B4"; }
+.songs td { padding: 0 10px; height: 31px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; color: var(--a-dim); }
+.songs td.ti { color: var(--a-ink); }
+.songs tr:nth-child(even) td { background: rgba(255,255,255,.018); }
+.songs tr.playing td { background: var(--a-sel-soft); color: var(--a-ink); }
+.songs tr.sel td { background: var(--a-sel); color: #fff; }
+.songs td.n { width: 40px; text-align: right; color: var(--a-faint); }
+.songs td.t { width: 54px; text-align: right; }
+.stars { color: var(--a-faint); letter-spacing: 1px; font-size: 11px; } .stars b { color: var(--conv); font-weight: 400; }
+.eqbars { display: inline-flex; gap: 2px; align-items: flex-end; height: 11px; }
+.eqbars i { width: 3px; background: var(--a-sel); border-radius: 1px; }
+
+/* Column browser. */
+.browser { display: grid; grid-template-columns: repeat(3, 1fr); height: 200px; border-bottom: 1px solid var(--a-line); }
+.browser .col { border-right: 1px solid var(--a-line); overflow: hidden; }
+.browser .col:last-child { border-right: 0; }
+.browser .col h6 { margin: 0; padding: 7px 12px; font-size: 11.5px; color: var(--a-faint); font-weight: 500; border-bottom: 1px solid var(--a-line); }
+.browser .col div { padding: 3px 12px; color: var(--a-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.browser .col div.on { background: var(--a-sel); color: #fff; }
+.browser .col div.all { color: var(--a-ink); }
+
+/* Albums. */
+.albums { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px 18px; padding: 16px 20px; }
+.album .cover { width: 100%; aspect-ratio: 1; border-radius: 8px; }
+.album b { display: block; margin-top: 7px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.album span { color: var(--a-dim); font-size: 12px; }
+.album.playing .cover { outline: 2px solid var(--a-sel); outline-offset: 2px; }
+.album .hrmark { position: absolute; right: 6px; bottom: 6px; z-index: 2; font-family: var(--mono); font-size: 9.5px; padding: 0 5px; line-height: 15px; border-radius: 3px; background: rgba(15,20,28,.78); color: var(--exact); }
+.toolbar { display: flex; gap: 10px; align-items: center; padding: 10px 20px 0; color: var(--a-dim); font-size: 12px; }
+.toolbar .drop { border: 1px solid var(--a-line); background: var(--a-raised); border-radius: 6px; padding: 1px 24px 1px 9px; position: relative; color: var(--a-ink); }
+.toolbar .drop::after { content: ""; position: absolute; right: 8px; top: 8px; border: 4px solid transparent; border-top-color: var(--a-dim); }
+
+/* An album opened. */
+.opened { display: grid; grid-template-columns: 240px 1fr; gap: 26px; padding: 20px 24px; }
+.opened .cover { width: 240px; height: 240px; border-radius: 10px; }
+.opened .back { color: var(--a-dim); font-size: 12px; margin-bottom: 6px; }
+.opened h3 { font-family: var(--display); font-size: 27px; margin: 0; line-height: 1.15; }
+.opened .by { color: var(--a-dim); font-size: 14px; margin: 2px 0 6px; }
+.opened .facts { color: var(--a-faint); font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btns { display: flex; gap: 10px; margin: 14px 0 10px; }
+.btn { border-radius: 7px; padding: 4px 16px; font-weight: 500; border: 1px solid var(--a-line); background: var(--a-raised); }
+.btn.primary { background: var(--a-sel); border-color: var(--a-sel); color: #fff; }
+.disc { color: var(--a-faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; padding: 10px 10px 4px; }
+
+/* Artists. */
+.artists { display: grid; grid-template-columns: 230px 1fr; height: 100%; }
+.artists .list { border-right: 1px solid var(--a-line); padding: 8px 8px; }
+.artists .list div { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 7px; color: var(--a-dim); }
+.artists .list div.on { background: var(--a-hover); color: var(--a-ink); }
+.face { width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 600; font-size: 11px; color: #fff; }
+.artists .pane { padding: 18px 22px; }
+.artists .pane h3 { font-family: var(--display); font-size: 24px; margin: 0 0 2px; }
+.artists .pane .facts { color: var(--a-faint); font-size: 12px; margin-bottom: 14px; }
+.artists .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+
+/* Search. */
+.results { padding: 14px 22px; }
+.results h4 { margin: 12px 0 8px; font-size: 12px; color: var(--a-faint); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+.results .hits { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.mark { background: rgba(47,107,220,.35); color: #fff; border-radius: 2px; padding: 0 1px; }
+
+/* Popovers and sheets. */
+.pop { position: absolute; background: #262c39; border: 1px solid #424b5d; border-radius: 12px; box-shadow: 0 22px 54px rgba(0,0,0,.55); padding: 14px 18px 16px; z-index: 5; }
+.pop h4 { margin: 0 0 4px; font-size: 14px; }
+.pop .lead { color: var(--a-dim); font-size: 12px; margin-bottom: 10px; }
+.path { display: grid; grid-template-columns: 18px 1fr auto; gap: 0 10px; }
+.path .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--exact); margin-top: 3px; background: #262c39; position: relative; z-index: 1; }
+.path .dot.conv { border-color: var(--conv); background: var(--conv); }
+.path .rail { grid-column: 1; width: 2px; background: #3c6d50; margin: -2px 0 -2px 5px; }
+.path .rail.conv { background: var(--conv-line); }
+.path .st { padding-bottom: 9px; } .path .st b { font-weight: 600; display: block; }
+.path .st span { color: var(--a-dim); font-size: 12px; }
+.path .fm { font-family: var(--mono); font-size: 11px; color: var(--a-dim); text-align: right; padding-top: 1px; white-space: nowrap; }
+.path .fm.conv { color: var(--conv); }
+.verdict { margin-top: 6px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; }
+.verdict.exact { background: rgba(52,199,89,.10); border: 1px solid var(--exact-line); color: #cdeed8; }
+.verdict.conv { background: rgba(242,198,109,.08); border: 1px solid var(--conv-line); color: #f3e2bb; }
+.verdict a { color: #8fb6f5; text-decoration: none; }
+.sheet { position: absolute; left: 50%; top: 92px; transform: translateX(-50%); width: 640px; background: #262c39; border: 1px solid #424b5d; border-radius: 12px; box-shadow: 0 26px 60px rgba(0,0,0,.6); padding: 16px 20px; z-index: 6; }
+.sheet h4 { margin: 0 0 12px; font-size: 15px; }
+.rule { display: grid; grid-template-columns: 150px 130px 1fr 26px; gap: 8px; margin-bottom: 8px; align-items: center; }
+.field { border: 1px solid var(--a-line); background: var(--a-win); border-radius: 6px; padding: 3px 10px; color: var(--a-ink); position: relative; }
+.field.dd { padding-right: 24px; } .field.dd::after { content: ""; position: absolute; right: 9px; top: 10px; border: 4px solid transparent; border-top-color: var(--a-dim); }
+.minus { color: var(--a-dim); text-align: center; border: 1px solid var(--a-line); border-radius: 50%; width: 22px; height: 22px; line-height: 20px; }
+.chk { display: flex; gap: 8px; align-items: center; color: var(--a-dim); margin: 6px 0; }
+.chk i { width: 14px; height: 14px; border-radius: 4px; background: var(--a-sel); display: inline-block; position: relative; }
+.chk i::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.chk i.off { background: none; border: 1px solid var(--a-line); } .chk i.off::after { display: none; }
+.sheet .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; color: var(--a-faint); font-size: 12px; }
+.dim { position: absolute; inset: 0; background: rgba(10,12,18,.45); z-index: 4; }
+
+/* Up Next panel. */
+.upnext { position: absolute; right: 0; top: 0; bottom: 0; width: 330px; background: #20252f; border-left: 1px solid var(--a-line); padding: 12px 14px; z-index: 3; box-shadow: -14px 0 30px rgba(0,0,0,.25); }
+.upnext h4 { margin: 0 0 2px; font-size: 14px; display: flex; justify-content: space-between; }
+.upnext h4 span { color: var(--a-dim); font-weight: 400; font-size: 12px; }
+.upnext .sec { color: var(--a-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin: 12px 0 4px; }
+.qi { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 4px 4px; border-radius: 7px; }
+.qi .cover { width: 34px; height: 34px; border-radius: 4px; }
+.qi b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qi span { color: var(--a-dim); font-size: 11.5px; } .qi em { color: var(--a-faint); font-style: normal; font-size: 11.5px; }
+.qi.drag { background: var(--a-hover); box-shadow: 0 6px 16px rgba(0,0,0,.4); }
+.qi.hist { opacity: .6; }
+
+/* Mini player. */
+.miniwrap { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+.mini { width: 380px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px; box-shadow: 0 16px 44px rgba(0,0,0,.3); padding: 12px 14px; display: grid; grid-template-columns: 64px 1fr; gap: 12px; font-size: 13px; }
+.mini .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini .meta { color: var(--a-dim); font-size: 12px; }
+.mini .transport { gap: 10px; margin-top: 6px; }
+.mini .play { width: 28px; height: 28px; }
+.mini .seek { grid-column: 1 / 3; }
+.deskbar { width: 520px; height: 34px; background: #171b23; border: 1px solid var(--a-line); border-radius: 10px; display: flex; align-items: center; gap: 10px; padding: 0 12px; color: var(--a-dim); font-size: 12px; }
+.deskbar .rep { display: flex; align-items: center; gap: 8px; background: #222835; border-radius: 7px; padding: 3px 9px; color: var(--a-ink); }
+.deskbar .rep svg { width: 12px; height: 12px; fill: currentColor; }
+.deskbar .clock { margin-left: auto; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Music, the next one</h1>
+<p class="sub">A library player on iTunes's ground: songs, albums, artists, playlists and smart playlists, Up Next, a mini player. It plays FLAC, ALAC, AAC, MP3, WAV, AIFF, Vorbis and Opus at the file's own resolution, and always says honestly what reached the speaker. It is drawn in Astra's look, as Music was agreed on 11 October (<code>docs/music.html</code>), and this design is that one's next version (<code>docs/player.md</code>, decision 1). Every song, album and artist here is made up.</p>
+
+<div class="q"><b>Diego, 22 November 2026</b>: "design and build a new audio player app inspired in itunes and will hires audio support with flac and mp4, m4a, mp3, wav, etc", "we want the best audio player", and of the EDIFIER M60: "so we can play flac audio file sin full resolution", "in bitrate and all".</div>
+
+<h2>1. Songs, as it opens: a 96/24 FLAC playing, bit-perfect</h2>
+<div class="scroller"><div class="win" id="w1"></div></div>
+<p class="cap">What is playing stays on top. Beside the song's name is <b>what reached the speaker</b>. Green means every bit got there. That is not the player's claim: the audio server says it, per stream, because only it knows whether anything was mixed in, scaled or resampled. The list sorts by any column. Format and Quality are columns of their own, and the moving bars mark the song playing. Smart playlists (marked ✱) sit in the sidebar with the ordinary ones.</p>
+
+<h2>2. The signal path, one click on the badge</h2>
+<div class="scroller"><div class="win" id="w2"></div></div>
+<p class="cap">On the left, the same song alone at full volume, with every stage green. On the right, a 44.1 kHz ALAC, the volume at 70%, and a notification's sound arriving. Each stage that changed the bits is marked, and says what it did and what to do instead. The last line chooses the output, as Mixer does (<code>usbaudio.md</code> U5).</p>
+
+<h2>3. Albums</h2>
+<div class="scroller"><div class="win" id="w3"></div></div>
+<p class="cap">Every album as its cover. The cover comes from the file's own picture (ID3, FLAC's picture block, an M4A's <code>covr</code>) or a <code>cover.jpg</code> beside the songs. An album with none gets one drawn from its name. <b>96/24</b> on a cover marks a hi-res album. A compilation is one album, not twenty. Sort by artist, title, year or date added.</p>
+
+<h2>4. An album, opened</h2>
+<div class="scroller"><div class="win" id="w4"></div></div>
+<p class="cap">The cover large, the facts beneath it, <b>Play</b> and <b>Shuffle</b>, and its songs by disc and track. It plays gaplessly: the second song starts at the sample the first one ends. <b>‹ Albums</b>, or Escape, goes back.</p>
+
+<h2>5. Artists</h2>
+<div class="scroller"><div class="win" id="w5"></div></div>
+<p class="cap">Each artist, by album artist where the files name one, with their albums as covers and their most played songs. A face is drawn from the name's letters. There are no photographs from the internet in tier 1.</p>
+
+<h2>6. Search, as you type</h2>
+<div class="scroller"><div class="win" id="w6"></div></div>
+<p class="cap">Across title, artist, album, album artist, composer and genre, grouped as Songs, Albums and Artists, with the match marked. It is a scan of the library in memory, a few milliseconds over ten thousand songs.</p>
+
+<h2>7. The column browser and Up Next</h2>
+<div class="scroller"><div class="win" id="w7"></div></div>
+<p class="cap">Control B shows iTunes's three columns, Genre, Artist and Album, over the song list. Three clicks narrow ten thousand songs. <b>Up Next</b> is the queue made visible. <i>Play next</i> and <i>Play later</i> come from a right-click, a song is dragged to reorder it, and History lies beneath. Editing the queue never interrupts the song playing.</p>
+
+<h2>8. A smart playlist</h2>
+<div class="scroller"><div class="win" id="w8"></div></div>
+<p class="cap">Rules over any field, including the ones a hi-res library wants: sample rate, bit depth and format. They can be <i>all</i> or <i>any</i>, with a limit, and they update live as the library changes. Five ship ready-made: Recently added, Most played, Top rated, Hi-Res and Never played. A play counts when a song finishes, as iTunes counted.</p>
+
+<h2>9. The mini player and the Deskbar</h2>
+<div class="miniwrap" id="w9"></div>
+<p class="cap">The mini player keeps the cover, the song, the transport and the bar, and it can be kept on top. The Deskbar's replicant gives the same three buttons in the bar. Clicking the song opens the player.</p>
+
+<h2>What it plays, and how the badge reads</h2>
+<table class="plain">
+  <tr><th>File</th><th>Decoded by</th><th>Shown as, played alone at full volume on the M60</th></tr>
+  <tr><td>FLAC 96 kHz / 24-bit</td><td>the Media Kit, FFmpeg's <code>flac</code></td><td><span class="badge exact" style="color:#1f8a4c;border-color:#94cfa8">FLAC 96 kHz / 24-bit · bit-perfect</span></td></tr>
+  <tr><td>FLAC 192 kHz / 24-bit</td><td>the same</td><td><span class="badge conv" style="color:#8a6514;border-color:#e2c98a">FLAC 192 / 24 · converted to 96 kHz (the speaker's most)</span></td></tr>
+  <tr><td>ALAC 44.1 kHz / 16-bit in M4A</td><td>the Media Kit, <code>alac</code> (to be added, P1)</td><td><span class="badge conv" style="color:#8a6514;border-color:#e2c98a">ALAC 44.1 / 16 · converted to 48 kHz (the speaker takes 48 or 96)</span></td></tr>
+  <tr><td>WAV 48 kHz / 24-bit</td><td>the Media Kit, <code>pcm_s24le</code></td><td><span class="badge exact" style="color:#1f8a4c;border-color:#94cfa8">WAV 48 kHz / 24-bit · bit-perfect</span></td></tr>
+  <tr><td>AIFF 44.1 kHz / 16-bit</td><td>the Media Kit, <code>aiff</code> (to be added, P1)</td><td>as ALAC's</td></tr>
+  <tr><td>AAC 256 kbps in M4A</td><td>the Media Kit, <code>aac</code></td><td><span class="badge exact" style="color:#1f8a4c;border-color:#94cfa8">AAC 256 kbps · decoded, nothing changed after</span> (a lossy file is never "bit-perfect" to its source, so the badge says what it can truthfully say)</td></tr>
+  <tr><td>MP3 320 kbps, Vorbis, Opus</td><td>the Media Kit</td><td>as AAC's; Opus is always 48 kHz</td></tr>
+  <tr><td>An old iTunes Store <code>.m4p</code></td><td>refused</td><td>"protected by FairPlay; Kosmos cannot play it"</td></tr>
+</table>
+<p>When the equaliser, ReplayGain, crossfade or a volume below full is on, the badge turns amber and names it. Nothing is hidden, and nothing is ever silenced without being asked (<code>player.md</code>, decisions 6 and 7).</p>
+</div>
+
+<script>
+const ICON = {
+  shuffle: '<svg viewBox="0 0 16 16"><path d="M1 4h3l6 8h3v-2l3 2.5L13 15v-2H9.5l-6-8H1zM1 12h3l1.6-2.1.9 1.3L4.5 13H1zM9.5 4H13V2l3 2.5L13 7V5h-3l-1.6 2.1-.9-1.3z"/></svg>',
+  prev: '<svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg>',
+  next: '<svg viewBox="0 0 16 16"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg>',
+  play: '<svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg>',
+  pause: '<svg viewBox="0 0 16 16"><path d="M3 2h4v12H3zM9 2h4v12H9z"/></svg>',
+  repeat: '<svg viewBox="0 0 16 16"><path d="M3 6a3 3 0 0 1 3-3h6V1l3 3-3 3V5H6a1 1 0 0 0-1 1v2H3zM13 10a3 3 0 0 1-3 3H4v2l-3-3 3-3v2h6a1 1 0 0 0 1-1V8h2z"/></svg>',
+  speaker: '<svg viewBox="0 0 16 16"><path d="M1 5h3l4-3v12l-4-3H1zM10 5.5a3.5 3.5 0 0 1 0 5l-1-1a2 2 0 0 0 0-3zM11.8 3.5a6 6 0 0 1 0 9l-1-1a4.6 4.6 0 0 0 0-7z"/></svg>',
+};
+
+const ALBUMS = [
+  { a: "Night Ferry", by: "Ana Lindqvist", y: 2021, f: "FLAC", q: "96/24", n: 11, c: "radial-gradient(circle at 30% 35%, #ffd27a 0 14%, transparent 15%), linear-gradient(170deg, #1b2a5c, #3d4f9a 55%, #d9785a)" },
+  { a: "Copper Season", by: "Low Meridian", y: 2019, f: "MP3", q: "320k", n: 9, c: "linear-gradient(135deg, #c8622d, #e9a35a 50%, #5b2a1a)" },
+  { a: "Glass Weather", by: "Mirae", y: 2023, f: "FLAC", q: "192/24", n: 12, c: "conic-gradient(from 200deg at 60% 40%, #8fe3ff, #b59cff, #ff9ccf, #8fe3ff)" },
+  { a: "Slow Orbit", by: "The Quiet Engines", y: 2017, f: "ALAC", q: "44.1/16", n: 10, c: "radial-gradient(circle at 50% 50%, #f4f1ea 0 18%, #1a1d26 19% 30%, #f4f1ea 31% 32%, #1a1d26 33%)" },
+  { a: "Saltmarsh", by: "Delia Frost", y: 2020, f: "WAV", q: "48/24", n: 8, c: "linear-gradient(180deg, #cfe3e8 0 45%, #6f9a8d 46% 70%, #2f4a45)" },
+  { a: "North of Noon", by: "Kestrel & Vine", y: 2022, f: "FLAC", q: "96/24", n: 13, c: "linear-gradient(160deg, #f6e27a, #f2a65a 40%, #c94f4f 75%, #5a2140)" },
+  { a: "Harbour Lights", by: "The Tidewater Set", y: 2018, f: "AAC", q: "256k", n: 10, c: "repeating-linear-gradient(90deg, #0f2238 0 18px, #f2c14e 18px 20px), #0f2238" },
+  { a: "Field Notes, Vol. 2", by: "Orrin Hale", y: 2016, f: "FLAC", q: "44.1/16", n: 7, c: "linear-gradient(120deg, #3b5d3a, #8fb36b 50%, #e7e3c4)" },
+  { a: "Paper Moons", by: "Ilse Brandt", y: 2024, f: "FLAC", q: "88.2/24", n: 9, c: "radial-gradient(circle at 70% 30%, #fff6d8 0 22%, transparent 23%), linear-gradient(200deg, #262a4f, #5b4b8a)" },
+  { a: "Undertow", by: "Marrow Club", y: 2015, f: "MP3", q: "V0", n: 11, c: "linear-gradient(0deg, #091b2b, #155a6d 60%, #6fd1c4)" },
+];
+const HR = q => /^(88|96|176|192)/.test(q) || /\/24$/.test(q);
+const KIND = f => ({FLAC:"ll",ALAC:"ll",WAV:"ll",AIFF:"ll"})[f] || "lo";
+
+const SONGS = [
+  [1, "Lanterns on the Water", 0, "3:58", 4, 31], [2, "Night Ferry", 0, "4:41", 5, 48], [3, "Kept Warm", 0, "3:12", 3, 12],
+  [4, "Copper Season", 1, "5:03", 4, 22], [5, "Small Hours", 1, "3:47", 0, 3], [6, "Glass Weather", 2, "4:20", 5, 40],
+  [7, "Static Bloom", 2, "3:35", 3, 9], [8, "Slow Orbit", 3, "6:12", 4, 17], [9, "Saltmarsh", 4, "4:09", 0, 1],
+  [10, "North of Noon", 5, "3:51", 4, 26], [11, "Harbour Lights", 6, "4:33", 3, 14], [12, "The Long Field", 7, "7:02", 5, 8],
+  [13, "Paper Moons", 8, "3:26", 4, 19], [14, "Undertow", 9, "4:58", 2, 6], [15, "Lighthouse Keeper", 6, "3:44", 0, 0],
+];
+
+const cov = (al, px, extra="") => `<div class="cover" style="width:${px}px;height:${px}px;background:${al.c};${extra}"></div>`;
+const stars = n => `<span class="stars"><b>${"★".repeat(n)}</b>${"★".repeat(5-n)}</span>`;
+const fmt = al => `<span class="fmt ${HR(al.q) && KIND(al.f)==="ll" ? "hr" : KIND(al.f)}">${al.f}</span>`;
+const quality = al => ({ "96/24":"96 kHz · 24", "192/24":"192 kHz · 24", "44.1/16":"44.1 kHz · 16", "48/24":"48 kHz · 24", "88.2/24":"88.2 kHz · 24", "320k":"320 kbps", "256k":"256 kbps", "V0":"VBR ~245" })[al.q];
+
+function head(title, mid, search) {
+  return `<div class="head"><div class="t">Music</div>
+    <div class="mid">${mid}<div class="search ${search ? "typed" : ""}">${search || "Search the library"}</div></div>
+    <div class="right"><span class="dots">···</span><div class="lights"><i style="background:#febc2e"></i><i style="background:#28c840"></i><i style="background:#ff5f57"></i></div></div></div>`;
+}
+function now(o = {}) {
+  const al = ALBUMS[o.al ?? 0];
+  const badge = o.badge || `<span class="badge exact">FLAC 96 kHz / 24-bit · bit-perfect</span>`;
+  const lamps = (n) => Array.from({length:20}, (_,i) => `<i class="${i < n ? (i < 14 ? "g" : i < 18 ? "y" : "r") : ""}"></i>`).join("");
+  return `<div class="now">
+    <div class="playing">${cov(al, 68)}
+      <div><div class="line1"><span class="title">${o.title || "Night Ferry"}</span><span class="meta">${al.by} — ${al.a}</span>${badge}</div>
+        <div class="ctl"><div class="transport">
+          <span class="tb ${o.shuffle ? "on" : ""}">${ICON.shuffle}</span><span class="tb">${ICON.prev}</span>
+          <span class="play">${ICON.pause}</span><span class="tb">${ICON.next}</span><span class="tb on">${ICON.repeat}</span></div>
+          <div class="seek"><span>${o.at || "1:52"}</span><div class="bar"><i style="width:${o.pct || 40}%"></i><b style="left:${o.pct || 40}%"></b></div><span>${o.len || "4:41"}</span></div></div></div></div>
+    <div class="tools">
+      <div class="vu"><div class="ch"><span>L</span>${lamps(o.l ?? 15)}</div><div class="ch"><span>R</span>${lamps(o.r ?? 13)}</div></div>
+      <div class="vol">${ICON.speaker}<div class="bar"><i style="width:${o.vol ?? 100}%"></i><b style="left:${o.vol ?? 100}%"></b></div></div>
+      <div class="mini-btns"><span class="pill">EQ</span><span class="pill ${o.upnext ? "on" : ""}">Up Next</span><span class="pill">Mini</span></div>
+      <span style="color:var(--a-faint);font-size:11px;text-align:right">EDIFIER M60 · USB</span>
+    </div></div>`;
+}
+function side(on) {
+  const it = (n, c, cls="") => `<div class="${on === n ? "on" : ""}"><span class="${cls}" style="color:inherit">${n}</span><span>${c}</span></div>`;
+  return `<div class="side"><h5>Library</h5>${it("Songs","2,318")}${it("Albums","196")}${it("Artists","141")}${it("Genres","24")}${it("Recently added","64")}
+    <h5>Playlists</h5>${it("Hi-Res","412","sm")}${it("Most played","25","sm")}${it("Top rated","88","sm")}${it("Never played","530","sm")}${it("Sunday morning","18")}${it("Long drive","42")}
+    <h5>Places</h5>${it("/Home/Music","")}${it("KINGSTON (USB)","")}${it("Radio","")}
+    <div class="foot">2,318 songs · 6.4 days · 71 GB</div></div>`;
+}
+function songRows(list, playing = 1, sel = -1, cols = "full") {
+  return list.map(([n, t, a, len, r, p], i) => {
+    const al = ALBUMS[a];
+    const num = i === playing ? `<span class="eqbars"><i style="height:6px"></i><i style="height:11px"></i><i style="height:8px"></i></span>` : n;
+    return `<tr class="${i === playing ? "playing" : ""} ${i === sel ? "sel" : ""}"><td class="n">${num}</td><td class="ti">${t}</td><td>${al.by}</td><td>${al.a}</td>
+      <td class="t">${len}</td><td>${fmt(al)}</td><td>${quality(al)}</td>${cols === "full" ? `<td>${stars(r)}</td><td class="t">${p}</td>` : ""}</tr>`;
+  }).join("");
+}
+function songsTable(list, playing, sel, cols = "full") {
+  return `<table class="songs"><tr><th></th><th>Title</th><th class="sorted">Artist</th><th>Album</th><th style="text-align:right">Time</th><th>Format</th><th>Quality</th>${cols === "full" ? "<th>Rating</th><th style=\"text-align:right\">Plays</th>" : ""}</tr>${songRows(list, playing, sel, cols)}</table>`;
+}
+const crumbs = (v) => `<b>${v}</b><div class="seg"><span class="${v==="Songs"?"on":""}">Songs</span><span class="${v==="Albums"?"on":""}">Albums</span><span class="${v==="Artists"?"on":""}">Artists</span></div>`;
+
+// 1. Songs.
+document.getElementById("w1").innerHTML = head("", crumbs("Songs") + `<span>2,318 songs</span>`) + now() + side("Songs") +
+  `<div class="main">${songsTable(SONGS, 1, 5)}</div>`;
+
+// 2. Signal path, two states.
+function pathPop(left, top, stages, verdict, cls) {
+  const rows = stages.map((s, i) => `
+    <div class="dot ${s.c ? "conv" : ""}"></div><div class="st"><b>${s.t}</b><span>${s.d}</span></div><div class="fm ${s.c ? "conv" : ""}">${s.f}</div>
+    ${i < stages.length - 1 ? `<div class="rail ${stages[i+1].c ? "conv" : ""}" style="height:100%"></div><div></div><div></div>` : ""}`).join("");
+  return `<div class="pop" style="left:${left}px;top:${top}px;width:500px">
+    <h4>Signal path</h4><div class="lead">From the file to the speaker, as the audio server reports it this second.</div>
+    <div class="path">${rows}</div><div class="verdict ${cls}">${verdict}</div></div>`;
+}
+const EXACT = [
+  { t: "The file", d: "Night Ferry.flac · /Home/Music/Ana Lindqvist/Night Ferry", f: "FLAC 96 kHz / 24 · 3,412 kbps" },
+  { t: "Decoded", d: "the Media Kit · FFmpeg's FLAC · integer samples · MD5 matches the file's", f: "PCM 96 / 24 in 32" },
+  { t: "Played", d: "the Playback Kit · its thread in the audio band · 8.0 s ahead", f: "stream 96 / 24" },
+  { t: "Mixed", d: "the audio server · one stream · gain 100% · master 100% · equaliser off", f: "unchanged" },
+  { t: "The speaker", d: "EDIFIER M60 · USB · UAC1 · setting 1.2", f: "96 kHz / 24" },
+];
+const CONV = [
+  { t: "The file", d: "Slow Orbit.m4a", f: "ALAC 44.1 kHz / 16" },
+  { t: "Decoded", d: "the Media Kit · FFmpeg's ALAC · integer samples", f: "PCM 44.1 / 16" },
+  { t: "Played", d: "the Playback Kit · its thread in the audio band", f: "stream 44.1 / 16" },
+  { t: "Mixed", d: "volume 70% · and a notification's sound, for 0.4 s", f: "scaled · mixed", c: 1 },
+  { t: "Resampled", d: "the speaker takes 48 or 96 kHz, not 44.1", f: "→ 48 kHz / 24", c: 1 },
+  { t: "The speaker", d: "EDIFIER M60 · USB", f: "48 kHz / 24" },
+];
+document.getElementById("w2").innerHTML = head("", crumbs("Songs") + `<span>2,318 songs</span>`) + now() + side("Songs") +
+  `<div class="main">${songsTable(SONGS, 1, -1)}</div>` +
+  pathPop(36, 120, EXACT, `<b>Bit-perfect.</b> Every sample in the file reached the speaker unchanged.`, "exact") +
+  pathPop(574, 120, CONV, `<b>Converted</b>, by two things: the volume (at full, the bits are kept) and the speaker's rate (it has no 44.1). <a>Output: EDIFIER M60 ▾</a>`, "conv");
+
+// 3. Albums.
+document.getElementById("w3").innerHTML = head("", crumbs("Albums") + `<span>196 albums</span>`) + now() + side("Albums") +
+  `<div class="main"><div class="toolbar">Sort <span class="drop">Artist</span> Show <span class="drop">All formats</span></div><div class="albums">${ALBUMS.map((al, i) =>
+    `<div class="album ${i === 0 ? "playing" : ""}"><div style="position:relative">${cov(al, 0, "width:100%;height:auto;aspect-ratio:1;border-radius:8px")}${HR(al.q) && KIND(al.f)==="ll" ? `<span class="hrmark">${al.q}</span>` : ""}</div><b>${al.a}</b><span>${al.by} · ${al.y}</span></div>`).join("")}</div></div>`;
+
+// 4. An album opened.
+const NF = [["Lanterns on the Water","3:58"],["Night Ferry","4:41"],["Kept Warm","3:12"],["Tide Tables","5:20"],["The Ninth Bell","2:47"],["Low Light, Long Water","6:05"]];
+const NF2 = [["Salt Road","4:12"],["Winter Crossing","3:36"],["Harbourmaster","4:58"],["Kept Warm (Reprise)","1:44"],["Last Boat Home","7:11"]];
+const trows = (l, off, playing) => l.map(([t, len], i) => `<tr class="${off+i === playing ? "playing" : ""}"><td class="n">${off+i === playing ? `<span class="eqbars"><i style="height:6px"></i><i style="height:11px"></i><i style="height:8px"></i></span>` : i+1}</td><td class="ti">${t}</td><td class="t">${len}</td><td>${stars([4,5,3,4,0,5][ (off+i)%6 ])}</td></tr>`).join("");
+document.getElementById("w4").innerHTML = head("", crumbs("Albums") + `<span>Night Ferry</span>`) + now() + side("Albums") +
+  `<div class="main"><div class="opened"><div>${cov(ALBUMS[0], 240)}</div><div><div class="back">‹ Albums</div>
+    <h3>Night Ferry</h3><div class="by">Ana Lindqvist</div>
+    <div class="facts">2021 · 2 discs · 11 songs · 47 min · <span class="fmt hr">FLAC</span> 96 kHz / 24-bit · gapless</div>
+    <div class="btns"><span class="btn primary">▶ Play</span><span class="btn">Shuffle</span><span class="btn">···</span></div>
+    <div style="max-height:300px;overflow:hidden"><div class="disc">Disc 1</div><table class="songs">${trows(NF, 0, 1)}</table><div class="disc">Disc 2</div><table class="songs">${trows(NF2, 6, -1)}</table></div>
+  </div></div></div>`;
+
+// 5. Artists.
+const ARTISTS = [["Ana Lindqvist","#3d4f9a"],["Delia Frost","#6f9a8d"],["Ilse Brandt","#5b4b8a"],["Kestrel & Vine","#c94f4f"],["Low Meridian","#c8622d"],["Marrow Club","#155a6d"],["Mirae","#b59cff"],["Orrin Hale","#3b5d3a"],["The Quiet Engines","#555b6a"],["The Tidewater Set","#0f2238"],["Various artists","#465063"]];
+document.getElementById("w5").innerHTML = head("", crumbs("Artists") + `<span>141 artists</span>`) + now() + side("Artists") +
+  `<div class="main"><div class="artists"><div class="list">${ARTISTS.map(([n, c], i) => `<div class="${i === 0 ? "on" : ""}"><span class="face" style="background:${c}">${n.split(" ").map(w => w[0]).join("").slice(0,2)}</span>${n}</div>`).join("")}</div>
+    <div class="pane"><h3>Ana Lindqvist</h3><div class="facts">4 albums · 41 songs · 2 h 51 min · 3 in hi-res</div>
+      <div class="row">${[0, 8, 5, 2].map(i => { const al = ALBUMS[i]; return `<div class="album"><div style="position:relative">${cov(al, 0, "width:100%;height:auto;aspect-ratio:1;border-radius:8px")}${HR(al.q) ? `<span class="hrmark">${al.q}</span>` : ""}</div><b>${i === 0 ? al.a : ["Night Ferry","Paper Moons","Coastline (Live)","Glass Weather"][[0,8,5,2].indexOf(i)]}</b><span>${[2021,2024,2022,2023][[0,8,5,2].indexOf(i)]}</span></div>`; }).join("")}</div>
+      <div class="results" style="padding:14px 0 0"><h4>Most played</h4><table class="songs">${songRows([SONGS[1], SONGS[0], SONGS[2]], 0, -1, "short")}</table></div></div></div></div>`;
+
+// 6. Search.
+const hl = (s, q) => s.replace(new RegExp(q, "i"), m => `<span class="mark">${m}</span>`);
+document.getElementById("w6").innerHTML = head("", crumbs("Songs") + `<span>results</span>`, "nigh|") + now() + side("") +
+  `<div class="main"><div class="results"><h4>Albums</h4><div class="hits">${[0].map(i => `<div class="album"><div>${cov(ALBUMS[i], 0, "width:100%;height:auto;aspect-ratio:1;border-radius:8px")}</div><b>${hl(ALBUMS[i].a, "nigh")}</b><span>${ALBUMS[i].by}</span></div>`).join("")}
+    <div class="album"><div>${cov({c:"linear-gradient(140deg,#0d1020,#2a2f5a 60%,#e0b35a)"}, 0, "width:100%;height:auto;aspect-ratio:1;border-radius:8px")}</div><b>${hl("Nightjar", "nigh")}</b><span>Orrin Hale</span></div></div>
+    <h4>Songs</h4><table class="songs">${[[2,"Night Ferry",0,"4:41",5,48],[3,"Midnight Tide",9,"5:12",3,7],[7,"All Night Bus",1,"3:30",4,15],[1,"Nightjar",7,"6:44",0,2]].map(([n,t,a,len,r,p], i) => { const al = ALBUMS[a]; return `<tr class="${i===0?"playing":""}"><td class="n">${n}</td><td class="ti">${hl(t,"nigh")}</td><td>${al.by}</td><td>${hl(al.a,"nigh")}</td><td class="t">${len}</td><td>${fmt(al)}</td><td>${quality(al)}</td></tr>`; }).join("")}</table>
+    <h4>Artists</h4><div style="display:flex;gap:18px;color:var(--a-dim)"><span><span class="face" style="background:#2a2f5a;display:inline-grid;margin-right:8px">TN</span>The ${hl("Nightshift", "nigh")} Choir</span></div></div></div>`;
+
+// 7. Column browser + Up Next.
+const col = (h, items, on) => `<div class="col"><h6>${h}</h6>${items.map((x, i) => `<div class="${i === on ? "on" : ""} ${i === 0 ? "all" : ""}">${x}</div>`).join("")}</div>`;
+document.getElementById("w7").innerHTML = head("", crumbs("Songs") + `<span>Folk · 3 artists</span>`) + now({ upnext: 1 }) + side("Songs") +
+  `<div class="main"><div class="browser" style="width:calc(100% - 330px)">${col("Genre", ["All (24 genres)","Ambient","Classical","Electronic","Folk","Jazz","Rock","Soundtrack"], 4)}${col("Artist", ["All (3 artists)","Ana Lindqvist","Delia Frost","Orrin Hale"], 1)}${col("Album", ["All (2 albums)","Night Ferry","Paper Moons"], 0)}</div>
+    <div style="width:calc(100% - 330px)">${songsTable(SONGS.slice(0, 4), 1, -1, "short")}</div>
+    <div class="upnext"><h4>Up Next <span>Clear</span></h4>
+      <div class="sec">Playing from Night Ferry</div>
+      ${[[0,"Kept Warm","3:12"],[0,"Tide Tables","5:20"]].map(([a,t,l]) => `<div class="qi">${cov(ALBUMS[a],34)}<div><b>${t}</b><span>${ALBUMS[a].by}</span></div><em>${l}</em></div>`).join("")}
+      <div class="sec">Played next, by you</div>
+      <div class="qi drag">${cov(ALBUMS[2],34)}<div><b>Glass Weather</b><span>Mirae · dragging</span></div><em>4:20</em></div>
+      <div class="qi">${cov(ALBUMS[5],34)}<div><b>North of Noon</b><span>Kestrel &amp; Vine</span></div><em>3:51</em></div>
+      <div class="sec">History</div>
+      ${[[0,"Lanterns on the Water","3:58"],[3,"Slow Orbit","6:12"],[7,"The Long Field","7:02"]].map(([a,t,l]) => `<div class="qi hist">${cov(ALBUMS[a],34)}<div><b>${t}</b><span>${ALBUMS[a].by}</span></div><em>${l}</em></div>`).join("")}
+    </div></div>`;
+
+// 8. Smart playlist sheet.
+const rule = (f, o, v) => `<div class="rule"><span class="field dd">${f}</span><span class="field dd">${o}</span><span class="field">${v}</span><span class="minus">−</span></div>`;
+document.getElementById("w8").innerHTML = head("", `<b>Hi-Res</b><span>412 songs · 1 day 9 h</span>`) + now() + side("Hi-Res") +
+  `<div class="main">${songsTable([SONGS[1], SONGS[5], SONGS[9], SONGS[12], SONGS[0], SONGS[6]], 0, -1)}</div><div class="dim"></div>
+  <div class="sheet"><h4>Smart playlist · Hi-Res</h4>
+    <div class="chk">Match <span class="field dd" style="display:inline-block">all</span> of these rules:</div>
+    ${rule("Format","is","FLAC, ALAC, WAV, AIFF")}${rule("Sample rate","is at least","88.2 kHz")}${rule("Bit depth","is at least","24")}${rule("Plays","is less than","50")}
+    <div class="chk"><i></i>Limit to <span class="field" style="width:60px;display:inline-block">500</span> songs, chosen by <span class="field dd" style="display:inline-block">most recently added</span></div>
+    <div class="chk"><i></i>Keep it up to date as the library changes</div>
+    <div class="chk"><i class="off"></i>Only songs that are on this machine (not a plugged-in drive)</div>
+    <div class="foot"><span>412 songs match · ＋ add a rule</span><span><span class="btn">Cancel</span> <span class="btn primary">Save</span></span></div></div>`;
+
+// 9. Mini player and Deskbar.
+const al = ALBUMS[0];
+document.getElementById("w9").innerHTML = `<div class="mini">${cov(al, 64)}<div><div class="title">Night Ferry</div><div class="meta">${al.by} — ${al.a}</div>
+    <div class="transport"><span class="tb">${ICON.prev}</span><span class="play">${ICON.pause}</span><span class="tb">${ICON.next}</span><span class="badge exact" style="margin-left:auto">96/24 · exact</span></div></div>
+    <div class="seek"><span>1:52</span><div class="bar"><i style="width:40%"></i><b style="left:40%"></b></div><span>4:41</span></div></div>
+  <div class="deskbar"><span>Kosmos</span><span>Tracker</span><span>Music</span><span class="rep"><span class="tb" style="width:auto;color:inherit">${ICON.prev}</span><span class="tb" style="width:auto;color:inherit">${ICON.pause}</span><span class="tb" style="width:auto;color:inherit">${ICON.next}</span>Night Ferry — Ana Lindqvist</span><span class="clock">21:47</span></div>`;
+</script>
+</body>
+</html>
