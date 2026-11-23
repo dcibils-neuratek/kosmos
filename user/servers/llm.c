@@ -944,6 +944,8 @@ static void vk_said(void)
  * answer used to end there with no words and no error (`testing.md`
  * 18.992). False where the step was not Vulkan's.
  */
+static void pool_start(void);
+
 static bool vk_failed(const int32_t *rest, uint32_t n)
 {
     uint32_t had = held.n;
@@ -962,6 +964,7 @@ static bool vk_failed(const int32_t *rest, uint32_t n)
     vk_lost = true;
     llm_offload(&model.m, NULL, NULL, NULL);    /* X7's products are the same GPU's */
     vk_apply();                         /* forgets the conversation, which is now the prompt */
+    pool_start();                       /* the processor's now, on every core asked for */
     return true;
 }
 
@@ -969,7 +972,14 @@ static const char *vk_name(void)
 {
     return vk_state == 1 ? vk_dev.device_name : NULL;
 }
+
+/* Whether a step is Vulkan's whole, so the processor's workers have none. */
+static bool vk_steps(void)
+{
+    return vk_active;
+}
 #else
+static bool vk_steps(void) { return false; }
 static void vk_look(void) {}
 static void vk_apply(void) {}
 static bool vk_failed(const int32_t *rest, uint32_t n) { (void)rest; (void)n; return false; }
@@ -1432,7 +1442,13 @@ static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
     /* The settings as they stand now, for this whole answer. */
     if (llm_use_loops(&model.m, settings.loops) < 0) (void)llm_use_loops(&model.m, LLM_LOOPS_AUTO);
     ran_loops = model.m.loops;
-    pool_start();
+    /* **No workers while Vulkan takes the steps** (`testing.md` 18.1008):
+     * a worker waits for its next product by yielding, which is right
+     * between the processor's products, a fraction of a millisecond
+     * apart, and wrong for a whole answer with none - every core of the
+     * machine was busy waiting while the GPU worked. `vk_failed` starts
+     * them when the processor takes over. */
+    if (!vk_steps()) pool_start();
     ran_cores = pool.n ? pool.n : 1;
     ran_gpu = 0;
     *cap = ans.region.cap;

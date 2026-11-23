@@ -42678,3 +42678,22 @@ Alone, side by side: **phi-2 Q8_0 70 s, Q4_0 96, Qwen2.5 0.5B 20, 1.5B 76,
 3B 133**, all five in 189 s with the images. The same 532 checks. The work
 is the same; what changed is that the longest piece of it is 133 s, not
 335.
+
+## 18.1008 No workers while Vulkan answers
+
+`x86-llm-vk` took 200 s alone and **943 s of the Mac's processors** -
+nearly five cores, 13% of a whole gate's CPU. Its guest has four, and all
+four were busy for the whole of every answer: the LLM server starts a
+worker on each core as an answer begins, a worker waits for its next
+product by yielding, and on Vulkan every step is the GPU's whole, so there
+was never a product. Every core of the machine spent the answer waiting,
+on QEMU and on a real machine alike, while lavapipe - which wants those
+cores - did the work.
+
+`pool_start` is not called now when Vulkan takes the steps, and is called
+in `vk_failed` when the processor takes over (the V6 boot says "each
+product cut across 4 cores" right after "the processor takes over"). The
+same 29 checks, the four F16 answers the kit's own byte for byte: **136 s
+alone and 325 s of processor**, against 200 and 943; the first answer 39
+s from boot against 54. `x86-llm`, the processor's server, passes as it
+was (60 checks).

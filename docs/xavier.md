@@ -703,6 +703,11 @@ part is handed over by a counter in memory rather than by a message: the
 server's thread adds one to `gen`, and each worker does its rows and adds
 one to `finished`. A worker waiting between products gives its core away
 with `kosmos_yield`. A server with nothing to answer runs nothing.
+**And an answer on Vulkan starts none** (0.12.87, `testing.md` 18.1008):
+there every step is the GPU's whole, so the workers had no product for a
+whole answer and spent it yielding - every core of the machine busy
+waiting while the GPU worked. They start when the processor takes over
+(`vk_failed`).
 
 On this Mac, four parts, scalar loops:
 
