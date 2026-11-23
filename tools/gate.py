@@ -73,6 +73,7 @@ class Suite:
         self.x86 = x86              # needs the x86-64 cross compiler
         self.watch = watch          # a library's: run when one of these changed
         self.took = None
+        self.cpu = None                 # seconds of the Mac's processors, `reap`
         self.code = None
         self.kept = None                # a failed log, where no run overwrites it
         self.log = os.path.join(LOGS, name + ".log")
@@ -1301,6 +1302,28 @@ for board, image in (("arm", ARM), ("x86", X86)):
 SUITE_LIMIT = 12 * 60
 
 
+def reap(proc, limit):
+    """A suite's exit code and the processor it and everything it waited
+    for used, QEMU included (18.1008): `os.wait4` rather than `wait`, which
+    says only when. A suite's seconds say how long it held a place in the
+    gate; its processor says how much of the Mac it took, and a guest
+    whose threads wait by spinning takes several cores while looking like
+    one suite."""
+    until = time.monotonic() + limit
+
+    while True:
+        pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
+
+        if pid == proc.pid:
+            proc.returncode = os.waitstatus_to_exitcode(status)
+            return proc.returncode, usage.ru_utime + usage.ru_stime
+
+        if time.monotonic() > until:
+            raise subprocess.TimeoutExpired(proc.args, limit)
+
+        time.sleep(0.2)
+
+
 def run(suite, lock, started):
     begin = time.monotonic()
 
@@ -1314,7 +1337,7 @@ def run(suite, lock, started):
                                 start_new_session=True, env=env)
 
         try:
-            suite.code = proc.wait(timeout=SUITE_LIMIT)
+            suite.code, suite.cpu = reap(proc, SUITE_LIMIT)
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
@@ -1337,9 +1360,11 @@ def run(suite, lock, started):
 
     with lock:
         at = time.monotonic() - started
-        print("%6.0fs  %s  %-16s %5.0fs" % (at, "PASS" if suite.code == 0
-                                             else "FAIL", suite.name,
-                                             suite.took), flush=True)
+        print("%6.0fs  %s  %-16s %5.0fs%s" % (at, "PASS" if suite.code == 0
+                                               else "FAIL", suite.name, suite.took,
+                                               "  %5.0fs of processor" % suite.cpu
+                                               if suite.cpu is not None else ""),
+              flush=True)
 
 
 FAILED = os.path.join(LOGS, "failed")
@@ -1681,6 +1706,24 @@ def main():
     print()
     print("slowest: " + ", ".join("%s %.0fs" % (s.name, s.took) for s in
                                   sorted(chosen, key=lambda s: -s.took)[:6]))
+    # And what the gate spent: on ten cores a whole gate can end no sooner
+    # than its processor over ten, however the suites are packed.
+    timed = [s for s in chosen if s.cpu is not None]
+    if timed:
+        spent = sum(s.cpu for s in timed)
+        print("processor: %.0f s in all, %.0f s over %d cores; the most: %s"
+              % (spent, spent / (os.cpu_count() or 1), os.cpu_count() or 1,
+                 ", ".join("%s %.0fs" % (s.name, s.cpu) for s in
+                           sorted(timed, key=lambda s: -s.cpu)[:6])))
+        cpu_file = os.path.join(LOGS, "cpu.json")
+        try:
+            with open(cpu_file) as f:
+                kept = json.load(f)
+        except (OSError, ValueError):
+            kept = {}
+        kept.update({s.name: round(s.cpu, 1) for s in timed if s.code == 0})
+        with open(cpu_file, "w") as f:
+            json.dump(kept, f, indent=1, sort_keys=True)
 
     for s in failed:
         print()
