@@ -13282,12 +13282,14 @@ copied a phone's home grid and shade, and was redrawn the same hour.
   starved when the host has every core busy. 0.12.90's audio code fails
   the same way under the same load. To do: make the parts hold, or have
   them say they were starved, as `x86-film` does. **Found in 0.12.98**
-  (18.1019), with the driver's new silence line: under load the speaker
-  is served when `xhci`'s nap ends, not on its interrupts - 16 TDs out,
-  nothing back for 110 ms, then all 16 at once - so it plays at a seventh
-  of its speed. Next: why the eighth TD's interrupt (the only one not
-  `TRB_BEI`) does not wake the driver then, and whether 16 ms in flight
-  is too little.
+  (18.1019), with the driver's new silence line: under load QEMU hands the
+  speaker's TDs back late - 16 out, nothing back for 110 ms, then all 16
+  at once - so it plays at a seventh of its speed. It is QEMU's, not the
+  driver's: every pass drains the whole event ring before it looks, so
+  nothing had come back (18.1021; 18.1019 first read it as interrupts
+  missed). **Done in 0.12.100** (18.1021): the speaker's parts stop as
+  starved after six silences, saying so, and the gate runs a suite that
+  said it was starved once more alone.
 - **The best audio player, iTunes's ground, hi-res - ASKED 22 November
   2026** (Diego: "design and build a new audio player app inspired in
   itunes and will hires audio support with flac and mp4, m4a, mp3, wav,

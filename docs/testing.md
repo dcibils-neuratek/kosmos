@@ -43310,15 +43310,13 @@ the speaker; nothing about it is stopped.
 Beside thirteen QEMU suites it said what is wrong, every cycle of the
 stream: 16 TDs out, nothing back for 105 to 112 ms, then all 16 at once and
 the ring 16 further on - never dry, never lost, never an error. So the
-controller plays the 16 ms it holds and the driver does not hear it until
-its nap ends: the speaker is served on the clock, not on its interrupts,
-and plays at a seventh of its speed, which is the suite's two minutes of
-silence. U10g sends nothing there (the master is set once, at the open, and
-the silences begin while the suite is still typing). **Left in the
-roadmap's item, with this**: why the speaker's interrupts do not wake the
-driver under load - the eighth TD's, which is all that is not `TRB_BEI` -
-and whether 16 ms in flight is too little for a guest a full host holds
-off.
+controller hands back the 16 ms it holds a seventh as fast as they play,
+which is the suite's two minutes of silence. This first read it as the
+driver not woken by the speaker's interrupts and served on its nap; it is
+not - every pass drains the whole event ring before `serve_speakers` looks,
+so the TDs had not come back, and the lateness is QEMU's under a full host
+(18.1021). U10g sends nothing there (the master is set once, at the open,
+and the silences begin while the suite is still typing).
 
 **Result**: the whole gate, 162 suites in 868 s, every one passing but
 `x86-usb-3`, whose two faults are above; then the fifteen suites the fixes
@@ -43363,3 +43361,36 @@ the resize put back as it was, `[0, 0]`, failing.
 **Result**: the eleven suites the two reach, then `x86-player`, `x86-sysmon`
 and `x86-film` again with the fixes - all passing. `arm-media`, where the
 old phases were, is AArch64's and waits with the others.
+
+## 18.1021 A suite that says it was starved, and the gate that runs it again alone
+
+**What 18.1019 read wrongly.** Its silence lines - 16 TDs out, nothing
+back for 105 to 112 ms, then all 16 - were read as the driver not woken by
+the speaker's interrupts and served on its nap. Every pass of `xhci`'s loop
+drains the whole event ring in `service()` before `serve_speakers` looks,
+so when it said nothing had come back, nothing had: QEMU, under a host with
+every core taken, hands the TDs back late, and the guest has nothing to
+mend. 18.1013 was right that the suite is starved; this says how, and what
+the suite now does about it.
+
+**What is checked.** A speaker part stops as soon as its machine's driver
+has said six times that a speaker went quiet (`STARVED_SILENCES`), with
+`STARVED:`, the count and the longest - from `PluggedMachine.wait_for` for
+the six parts that type at a machine, and from `starved_in` over the
+console `boot` returns for the tone and the play parts. Before, such a
+suite crawled at a seventh of its speed into the gate's limit and was
+killed with nothing said. And the gate (`said_starved`) runs a suite that
+failed saying `STARVED:` once more after the quiet ones, alone; the first
+failure is kept and printed, and the second run decides. A suite that
+failed without saying so is never run again.
+
+And every suite's Python is unbuffered now (`PYTHONUNBUFFERED`): a suite
+the gate killed left only the gate's own FAIL line in its log, its output
+lost in its buffer.
+
+**Controls.** `RUN_X86_STARVED_AFTER=0` calls every wait starved at once:
+the exact part and the tone part each end in `STARVED:` and exit 1, and
+`said_starved` takes that log and refuses a passing one.
+
+**Result**: `x86-usb-3` beside thirteen QEMU suites, 76 of 76 (not starved
+that time, 286 s for the fourteen); the tone and play parts, 7 of 7.

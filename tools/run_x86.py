@@ -1601,6 +1601,28 @@ def usb_flush_refused(image, check):
           "\n    %s" % "\n    ".join(cache or lines[-8:]))
 
 
+# How many times the driver may say a speaker went quiet before the part
+# is called starved: once is a moment's load, six is the whole part slowed.
+# `RUN_X86_STARVED_AFTER=0` is its control: every wait starved at once.
+STARVED_SILENCES = int(os.environ.get("RUN_X86_STARVED_AFTER", "6"))
+
+
+class Starved(Exception):
+    """A machine the host is too busy to let play in time (`wait_for`)."""
+
+
+def starved_in(out):
+    """The same verdict over a console `boot` returned whole: a part that
+    boots once and reads what it said, as the tone and the play parts do."""
+    waits = [int(m) for m in re.findall(r"speaker: nothing back from the controller "
+                                        r"for (\d+) ms", out or "")]
+
+    if len(waits) >= STARVED_SILENCES:
+        raise Starved("STARVED: QEMU handed the speaker's TDs back late %d times, "
+                      "the longest %d ms - the host is too busy for its sound "
+                      "to keep time" % (len(waits), max(waits) if waits else 0))
+
+
 class PluggedMachine:
     """A machine for a check that plugs something in while it runs.
 
@@ -1656,12 +1678,32 @@ class PluggedMachine:
     def since(self, mark):
         return self.heard[mark:].decode("utf-8", "replace").replace("\r", "")
 
+    def starving(self):
+        """How often the speaker's driver has said nothing came back from the
+        controller, and the longest it waited (`serve_speakers`)."""
+        waits = [int(m) for m in re.findall(rb"speaker: nothing back from the controller "
+                                            rb"for (\d+) ms", bytes(self.heard))]
+        return len(waits), max(waits) if waits else 0
+
     def wait_for(self, mark, pattern, seconds):
         until = time.time() + seconds
 
         while time.time() < until:
             if re.search(pattern, self.since(mark)):
                 return True
+
+            # **Starved, said and stopped** (`testing.md` 18.1021): QEMU
+            # handing the speaker's TDs back late plays the sound at a
+            # fraction of its speed, every wait in a part runs out in turn,
+            # and the suite crawls into the gate's limit and is killed
+            # saying nothing. A machine whose driver has said so this often
+            # is not tested any further.
+            silences, worst = self.starving()
+
+            if silences >= STARVED_SILENCES:
+                raise Starved("STARVED: QEMU handed the speaker's TDs back late %d times, "
+                              "the longest %d ms - the host is too busy for its sound "
+                              "to keep time" % (silences, worst))
 
             time.sleep(0.25)
 
@@ -4775,6 +4817,8 @@ def usb_audio_tone(image, check):
         check(False, "the machine would not boot with a USB speaker")
         return
 
+    starved_in(out)
+
     out = out.replace("\r", "")
     said = "\n    ".join(l for l in out.splitlines() if "speaker" in l) or "(nothing)"
     started = re.search(r"port \d+: speaker: playing 10 beeps of 440 Hz on 1\.1 "
@@ -4875,6 +4919,8 @@ def usb_audio_play(image, check):
     if out is None:
         check(False, "the machine would not boot with HD Audio and a USB speaker")
         return
+
+    starved_in(out)
 
     out = out.replace("\r", "")
     said = "\n    ".join(l for l in out.splitlines()
@@ -7258,4 +7304,9 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Starved as why:
+        # Said in the words the gate looks for, which run it again alone.
+        print(str(why))
+        sys.exit(1)

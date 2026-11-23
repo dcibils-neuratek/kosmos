@@ -1552,7 +1552,9 @@ def run(suite, lock, started):
         # The suite's name, so its guests keep their whole serial lines
         # under build/gate/serial/ (`run_screenshot.Guest.close`): a flake
         # read from a suite's last 3000 characters is a flake not read.
-        env = dict(os.environ, KOSMOS_SUITE=suite.name)
+        # Unbuffered, so a suite the gate kills has said what it had: its
+        # log was the FAIL line alone, Python's buffer lost with it.
+        env = dict(os.environ, KOSMOS_SUITE=suite.name, PYTHONUNBUFFERED="1")
         proc = subprocess.Popen(suite.cmd, cwd=ROOT, stdout=out,
                                 stderr=subprocess.STDOUT,
                                 start_new_session=True, env=env)
@@ -1591,6 +1593,16 @@ def run(suite, lock, started):
 
 
 FAILED = os.path.join(LOGS, "failed")
+
+
+def said_starved(suite):
+    """Whether a failed suite's log says its machine was starved - `STARVED:`
+    at the start of a line, with the evidence after it (`run_x86.Starved`)."""
+    try:
+        with open(suite.log, "rb") as f:
+            return re.search(rb"(?m)^STARVED: ", f.read()) is not None
+    except OSError:
+        return False
 
 
 def keep_failed(suite):
@@ -1954,6 +1966,16 @@ def main():
 
     # 3. And the ones that measure time, one at a time on a quiet machine.
     for suite in quiet:
+        run(suite, lock, started)
+
+    # 4. **And a suite that said it was starved, once more alone** (`testing.md`
+    # 18.1021): one whose machine played too slowly to keep time under the
+    # others' load, and said so with its evidence - never one that merely
+    # failed. Its first failure is kept and printed; the second run decides.
+    for suite in [s for s in shared if s.code != 0 and said_starved(s)]:
+        with lock:
+            print("        %-16s said it was starved under the others' load; "
+                  "again, alone" % suite.name, flush=True)
         run(suite, lock, started)
 
     total = time.monotonic() - started
