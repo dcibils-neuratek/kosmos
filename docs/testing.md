@@ -42582,3 +42582,31 @@ audio server among them. That takes 822 suite-seconds off any change that
 does not touch the LLM Kit. **Next**: the same checks in less time in
 Flight's and Cafesa3D's suites, the largest totals left.
 
+## 18.1005 Flight's suites: the same flights in fewer frames
+
+Timed alone, phase by phase: a boot to Telnet is **2.6 s**, so the boots
+are not where a suite's time goes. A frame is. Flight's step is capped at
+a twentieth of a second, and under TCG a frame takes about a second, so a
+suite's length is its flight's length in frames. llvmpipe draws about
+155,000 triangles a frame, half of them the sun's map.
+
+- **`x86-flight-747` takes off at 16x.** Flight's X now goes on to 8x and
+  16x where the setting `fastest` says so (4 unless set: `x86-flight`
+  still holds X to 2, 3, 4 and 1). Each of the model's steps is the same
+  0.05 s, so the roll is the same roll: **140 kt after 1,002 m** at 16x as
+  at 4x, the spool's quarter to three quarters 6.4 s, the terrain moved
+  twice under the runway. **243 s alone, now 46 s.** Its control, a jet
+  that spools at once, still fails (2.6 s).
+- **`x86-flight-land` lands at 4x** and rolls at 1x, since the roll's
+  slowing is reckoned a frame at 0.05 s (at 4x it read four times too
+  much, which is how that was found): **255 fpm** at 1x, **256** at 4x;
+  rolling at idle 1.50 m/s2 both, braked 2.50 and 2.33. **171 s alone, now
+  72 s.** Its control, the yoke forward, still crashes (2,555 fpm).
+- **Neither suite draws shadows or buildings**: neither is held to one,
+  and `x86-flight` is. That was 14% of each (243 to 209 s, 199 to 171 s)
+  before the time rate. A picture for a person (`KOSMOS_FLIGHT_SHOT`)
+  keeps them.
+
+Between them about 300 s alone come off, so about 540 suite-seconds
+under the gate's load.
+

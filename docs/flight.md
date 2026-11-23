@@ -929,6 +929,11 @@ ends on the M700:
     the ground under the wheels again, and a crash ends the frame's
     steps. The tiles are asked for from a point ahead of the eye, as far
     as the extra steps carry it in two seconds.
+  - **8x and 16x where `fastest` says so** (0.12.85, `testing.md`
+    18.1005): the setting is 4 unless changed, and at 8 or 16 X goes
+    1x, 2x, 3x, 4x, 8x, 16x and round. Each step is still a twentieth of
+    a second, only more of them a frame. The 747's suite takes off at
+    16x, the same roll in a quarter of the frames.
 - **F12 - aircraft of their own** - asked by Diego on 21 November 2026:
   "I will be adding more planes as well with different capabilities like
   jet engines, a Boeing 747 and other types so each plane has specific

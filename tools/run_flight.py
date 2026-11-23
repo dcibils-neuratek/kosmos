@@ -596,11 +596,19 @@ def main():
             # Begun on Rio's runway, as the M700 was: going offline has to
             # take the flight off a field that is not there.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway" }\n')
+        if (B747 or LAND) and not os.environ.get("KOSMOS_FLIGHT_SHOT"):
+            # Neither the takeoff nor the landing is held to a shadow or a
+            # building - `x86-flight` is - and under TCG they are most of a
+            # frame: the sun's map draws the scene a second time. A frame
+            # here is a twentieth of a second of flight however long it
+            # takes, so what they cost is wall clock and nothing else. A
+            # picture for a person keeps them.
+            f.write('prefs.open("flight", {}):set{ shadows = false, buildings = false }\n')
         if B747:
             # The terrain moved every 400 m (F10a) - twice in the roll -
             # where a flight moves it every 40 km.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway", aircraft = "%s",'
-                    ' weather = "clear", wind = 0, anchor_after = 400, lon = -43.205,'
+                    ' weather = "clear", wind = 0, anchor_after = 400, fastest = 16, lon = -43.205,'
                     ' lat = -22.955, fly_to = "GIG" }\n'
                     % ("b747instant" if INSTANT else "b747"))
         if LAND:
@@ -710,12 +718,16 @@ def main():
         guest.wait_for("flight device=", "the window opened")
 
         if B747:
-            # The time 4x, then Q with a route set (F10d): the autopilot
+            # The time 16x, then Q with a route set (F10d): the autopilot
             # takes off on its own - full power, the approach's flaps, the
             # yoke back at the 747's rotate speed - from the runway it is on.
+            # At 16x and not 4x: each of the model's steps is the same
+            # twentieth of a second, sixteen a frame, so the roll is the
+            # same roll in forty frames rather than a hundred and sixty -
+            # under TCG a frame is a second, and the roll was most of this.
             guest.wait_for("flight started runway", "on Rio's runway")
             wait_frames(2, "on the runway")
-            for rate in (2, 3, 4):
+            for rate in (2, 3, 4, 8, 16):
                 have = guest.seen.count("flight time %dx" % rate)
                 keys(True, "x")
                 time.sleep(0.1)
@@ -728,10 +740,10 @@ def main():
             time.sleep(0.1)
             keys(False, "q")
             wait_frames(1, "pressed Q")
-            # Waited for by frames, not seconds: the roll is about 170
-            # frames at 4x, and a frame under TCG is one second alone and
-            # three beside the gate's other suites - 420 s ran out under
-            # load. 260 frames, and a wall that only a stuck machine meets.
+            # Waited for by frames, not seconds: the roll is about 40
+            # frames at 16x (170 at 4x), and a frame under TCG is one
+            # second alone and three beside the gate's other suites. 260
+            # frames, and a wall that only a stuck machine meets.
             rolling = latest()
             first = rolling[-1]["frame"] if rolling else 0
             until = time.monotonic() + 1500
@@ -749,6 +761,20 @@ def main():
             return b747_checks(guest.seen[mark:])
 
         if LAND:
+            # At 4x, a flare Flight steps four times a frame (F11) with the
+            # ground asked for under each step: the same landing in a
+            # quarter of the frames, and the roll's slowing measured over
+            # four times the flight.
+            guest.wait_for("flight started final", "on final")
+            for rate in (2, 3, 4):
+                have = guest.seen.count("flight time %dx" % rate)
+                keys(True, "x")
+                time.sleep(0.1)
+                keys(False, "x")
+                until = time.monotonic() + 60
+                while guest.seen.count("flight time %dx" % rate) == have and time.monotonic() < until:
+                    guest._read_available()
+                    time.sleep(0.1)
             if os.environ.get("KOSMOS_FLIGHT_PUSH"):        # the control: the yoke forward
                 keys(True, "up")
             until = time.monotonic() + 300
@@ -764,6 +790,16 @@ def main():
             # is reckoned from the slowing.
             roll = {}
             if re.search(r"flight landed at", guest.seen[mark:]):
+                # Back to 1x for the roll: its slowing is reckoned a frame
+                # at a twentieth of a second.
+                have = guest.seen.count("flight time 1x")
+                keys(True, "x")
+                time.sleep(0.1)
+                keys(False, "x")
+                until = time.monotonic() + 60
+                while guest.seen.count("flight time 1x") == have and time.monotonic() < until:
+                    guest._read_available()
+                    time.sleep(0.1)
                 keys(True, "0")
                 time.sleep(0.2)
                 keys(False, "0")

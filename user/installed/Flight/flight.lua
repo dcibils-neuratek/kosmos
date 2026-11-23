@@ -60,6 +60,7 @@ local settings = prefs.open("flight", {
   report = 120,                                  -- a line on the console every this many
   anchor_after = 40000,                          -- metres from the terrain's centre to move it (F10a)
   fly_to = "",                                   -- an airport's code: Q flies there (F10c)
+  fastest = 4,                                   -- the time's highest rate: 4, 8 or 16 (F11)
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
@@ -2682,9 +2683,12 @@ while not w:closed(0) do
       graphics_next = 0
     end
     if f then S.flaps = (S.flaps + 0.5) % 1.5 end
-    -- The time faster (F11): X steps 1x, 2x, 3x, 4x and round again.
+    -- The time faster (F11): X steps 1x, 2x, 3x, 4x and round again - and
+    -- on to 8x and 16x first where `fastest` says so, each step of the
+    -- model still a twentieth of a second, only more of them a frame.
     if w:pressed(KEY.x) then
-      S.rate = S.rate % 4 + 1
+      local fastest = math.max(4, math.tointeger(settings.fastest) or 4)
+      S.rate = S.rate >= fastest and 1 or S.rate < 4 and S.rate + 1 or S.rate * 2
       say(("time %dx"):format(S.rate))
     end
     -- The autopilot (F10b): Q holds what the aircraft is doing, and Q again
