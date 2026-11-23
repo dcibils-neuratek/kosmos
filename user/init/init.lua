@@ -99,7 +99,10 @@ local IMAGES = { WINDOW = 256 * 1024, made = {}, window = nil,
                  -- looked up this way, and the list is in the system's
                  -- image, so a header cannot name a file a person put
                  -- somewhere.
-                 SYSTEM = { webkit = "/Kosmos/WebKit/webkit.elf" } }
+                 SYSTEM = { webkit = "/Kosmos/WebKit/webkit.elf",
+                            -- And the media family's (`docs/media.md` M6,
+                            -- Diego, 23 November 2026): Video, `listen`.
+                            media = "/Kosmos/Media/media.elf" } }
 
 -- The name in a program's header, or nil. The header is the comment its file
 -- opens with, blank lines and all.
@@ -712,6 +715,7 @@ local function new_namespace()
     end
 
     ns.mount("/Kosmos/WebKit", disk, "/Home/System/WebKit", "disk", nil, true)
+    ns.mount("/Kosmos/Media", disk, "/Home/System/Media", "disk", nil, true)
   end
 
   --

@@ -54,7 +54,13 @@ SYSTEM_APPS = "/Home/System/Apps"
 # `-- kosmos: image webkit` - a system image, `IMAGES.SYSTEM` in `init.lua` -
 # so it is not looked for beside the program. A `system` package of its own.
 WEBKIT = "/Home/System/WebKit"
-SYSTEM_IMAGES = {"webkit": "webkit.elf"}
+
+# **The media family's image** (`docs/media.md` M6, Diego, 23 November
+# 2026: a system image beside WebKit's): `media.elf`, the Media Kit on
+# FFmpeg built whole, in a folder of its own seen read only as /Kosmos/Media.
+# Video and `listen` name it `-- kosmos: image media`; a `system` package.
+MEDIA = "/Home/System/Media"
+SYSTEM_IMAGES = {"webkit": "webkit.elf", "media": "media.elf"}
 
 # **The LLM server on Vulkan** (`docs/xavier.md` X12, V4): the server's two
 # images with a Vulkan driver linked in - lavapipe's and Intel's - in a
@@ -155,6 +161,24 @@ def webkit(arch, apps, staged, objcopy):
 
     mine.append((manifest, "package.txt"))
     return ["%s:%s/%s" % (here, WEBKIT, inside) for here, inside in mine]
+
+
+def media(arch, apps, staged, objcopy):
+    """/Home/System/Media's pairs: the image and the folder's `package.txt`.
+    Left out where `make apps` did not link it."""
+    import packages
+
+    if not os.path.exists(os.path.join(apps, "media.elf")):
+        return []
+
+    mine = [(stripped("media.elf", apps, staged, objcopy), "media.elf")]
+    manifest = os.path.join(staged, "Media.package.txt")
+
+    with open(manifest, "w") as f:
+        f.write(packages.manifest(packages.media_facts(), mine))
+
+    mine.append((manifest, "package.txt"))
+    return ["%s:%s/%s" % (here, MEDIA, inside) for here, inside in mine]
 
 
 def llm(arch, apps, staged, objcopy):
@@ -259,7 +283,8 @@ def pairs(arch, home, apps=None):
 
         out.extend("%s:%s/%s" % (here, guest, inside) for here, inside in mine)
 
-    return out + webkit(arch, apps, staged, objcopy) + llm(arch, apps, staged, objcopy)
+    return (out + webkit(arch, apps, staged, objcopy) + media(arch, apps, staged, objcopy)
+            + llm(arch, apps, staged, objcopy))
 
 
 def fonts():

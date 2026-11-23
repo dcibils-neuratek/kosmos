@@ -384,6 +384,23 @@ the old Music's `media.lua`, for an M4A's sound.
 an MP4; each with the controls they have, and a new one - `video.open`
 from the system's image must refuse, and say `media`.
 
+### M6a built: `media.elf` and the Lua door
+
+**0.12.94** (`testing.md` 18.1015). `media.elf` is linked by `make apps`
+from `FULL=0`'s userland, the Media Kit, its door
+(`user/kits/media/media_kosmos.c`), the POSIX layer and FFmpeg built
+whole. It is 63 MB with its debugging sections, and the system's image is
+checked to hold neither the door nor FFmpeg. `installed.py` puts it in
+`/Home/System/Media` with a `package.txt`, a `system` package of its own
+(`packages.media_facts`). init mounts that folder read only as
+`/Kosmos/Media` and knows `-- kosmos: image media` (`IMAGES.SYSTEM`). The
+door is `media.version()`, `media.open(path)`, and a source's `streams()`,
+`read()`, `seek(us)` and `close()`. A packet is a userdata over the kit's
+own, freed by `free` or the collector, and its bytes never become a Lua
+string. The file comes through the Storage Kit, so a source reaches what
+its program's `fs` does. Next: M6b, a decoder from the door - a picture
+into a surface, sound into the Playback Kit.
+
 ### Decided (M6)
 
 **Diego, 23 November 2026**: (1) **(a)**, `media.elf` a system image

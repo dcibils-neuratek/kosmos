@@ -12225,7 +12225,12 @@ spend a day here; a laptop cannot.
   a system image in `/Home/System/Media`, seen as `/Kosmos/Media`; the
   Media Kit's Lua door; `video.lua` on it; Video and `listen` in it; the
   vendored closure and `mp4.lua` out of the tree, and the old Music
-  without M4A until the new Music's P5. Next to be built.
+  without M4A until the new Music's P5. **M6a built** (0.12.94,
+  `testing.md` 18.1015): `media.elf` in `/Home/System/Media`, seen as
+  `/Kosmos/Media`, and the Lua door's demuxing, held to `mediatest`. Next:
+  M6b, decoding from the door; M6c, `video.lua` on it with Video and
+  `listen` moved; M6d, the closure and `mp4.lua` out; M6e, Big Buck
+  Bunny.
 - **Low-latency audio, in and out**: a microphone, USB audio interfaces,
   and the audio band for a web process (M4's owed pieces).
 - **Video calls**: WebRTC in JetSki - the camera that exists, the

@@ -43033,3 +43033,33 @@ own volume stage.
 Restored, the server was rebuilt and the part passed again before the
 gate.
 
+
+## 18.1015 The Media Kit's Lua door, in `media.elf` (M6a)
+
+**What is checked.** `x86-mediakit` (`tools/run_mediakit.py`) boots one
+machine with the generated films on its /Home. As before, `mediatest.elf`
+says each stream and each file, held to this Mac line for line and to
+`ffmpeg -f framemd5` picture for picture. Then, in the same boot, a
+program naming `-- kosmos: image media`, with `media.elf` in
+`/Home/System/Media`, opens every file through `/Kosmos/Kits/media`. It
+must say every stream `mediatest` decoded the same way (kind, codec, size
+and depth, or rate and channels), read a packet or more from every file
+`mediatest` opened, and refuse the truncated film and the noise with
+`mediatest`'s reasons.
+
+**Result**: PASS, 17 streams said the same and 1,222 packets read, and
+FFmpeg 9.0.2 answering from inside `media.elf`.
+
+**Control**: the door built to leave out every sound stream fails with "7
+here, 17 there" and names the missing ones. Restored, it passed.
+
+**Two findings on the way, both harness, neither the kit.**
+
+* `mediatest.elf` from 22 November was refused as "built for another
+  Kosmos" once `audioproto.h` moved the protocol stamp (U10e). The suite's
+  images have to be relinked after a protocol change, which the gate's
+  `make apps` does.
+* `ended, code` is not a program's end: `run`'s own process ends before the
+  program it started has printed. The door's phase waits for its last line,
+  `door: done`, or a `run:` refusal.
+

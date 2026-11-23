@@ -153,6 +153,15 @@ def webkit_facts():
             "into": I.WEBKIT, "icon": "", "needs": "", "depends": ""}
 
 
+def media_facts():
+    """The media family's image's facts (`installed.MEDIA`): no program of
+    its own, so no header to read them from."""
+    return {"version": version(), "build": build_name(), "protocols": stamp(),
+            "name": "media", "title": "Media", "kind": "system",
+            "about": "The image Video and the media applications play in",
+            "into": I.MEDIA, "icon": "", "needs": "", "depends": ""}
+
+
 def llm_facts():
     """The LLM server on Vulkan's facts (`installed.LLM`): images only, no
     program, so no header to read them from."""
@@ -217,6 +226,7 @@ def main():
     # by `make`, so the one a stick's folder carries is left out.
     webkit = []
     llm = []
+    media = []
 
     for pair in I.pairs("x86_64", home):
         here, guest = pair.split(":", 1)
@@ -226,6 +236,13 @@ def main():
 
             if inside != "package.txt":
                 llm.append((here, inside))
+            continue
+
+        if guest.startswith(I.MEDIA + "/"):
+            inside = guest[len(I.MEDIA) + 1:]
+
+            if inside != "package.txt":
+                media.append((here, inside))
             continue
 
         # Kosmos's WebKit: its folder is the package's, with no folder above.
@@ -250,6 +267,9 @@ def main():
 
     if webkit:
         made.append(make(webkit_facts(), "WebKit", webkit))
+
+    if media:
+        made.append(make(media_facts(), "Media", media))
 
     if llm:
         made.append(make(llm_facts(), "LLM", llm))

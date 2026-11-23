@@ -64,6 +64,51 @@ for _, line in ipairs(kit.run("/Home/apps/media/films")) do
 end
 """
 
+# **The Lua door, in `media.elf`** (`docs/media.md` M6a): the same films
+# opened through `/Kosmos/Kits/media` by a program that names the image,
+# kept where `make apps` and a stick put it, /Home/System/Media. Each
+# stream said as `mediatest` says it - kind, codec, size and depth, or rate
+# and channels - and the packets of each file counted; a file refused, with
+# the reason `mediatest` gave.
+DOOR = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- The Media Kit's Lua door's test (`tools/run_mediakit.py`).
+-- kosmos: image media
+local media = use("/Kosmos/Kits/media")
+print("door: FFmpeg " .. media.version())
+local folder = "/Home/apps/media/films/"
+for name in fs.read(folder .. "manifest.txt"):gmatch("%S+") do
+  local src, why = media.open(folder .. name)
+  if not src then
+    print("door " .. name .. ": " .. tostring(why))
+  else
+    for i, st in ipairs(src:streams()) do
+      if st.kind == "video" then
+        print(("door %s #%d video %s %dx%d %d bits"):format(name, i - 1, st.codec,
+              st.width, st.height, st.bits))
+      elseif st.kind == "audio" then
+        print(("door %s #%d audio %s %d Hz %d ch"):format(name, i - 1, st.codec,
+              st.rate, st.channels))
+      end
+    end
+    local packets, keys, bytes = 0, 0, 0
+    while true do
+      local p, err = src:read()
+      if not p then
+        if err then print("door " .. name .. ": read stopped: " .. err) end
+        break
+      end
+      packets = packets + 1
+      if p.key then keys = keys + 1 end
+      bytes = bytes + p.size
+      p:free()
+    end
+    src:close()
+    print(("door %s: %d packets, %d keys, %d bytes"):format(name, packets, keys, bytes))
+  end
+end
+print("door: done")
+"""
+
 PICTURE = ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24:duration=2"]
 SOUND = ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=2"]
 FRAGMENTED = ["-movflags", "frag_keyframe+empty_moov+default_base_moof"]
@@ -209,8 +254,19 @@ def main():
     with open(os.path.join(WORK, "mediatest.lua"), "w") as f:
         f.write(PROGRAM)
 
+    door = os.path.join(APPS, "media.elf")
+    if not os.path.exists(door):
+        print("FAIL: no %s - `make apps` (and ARCH=x86_64) builds it" % door)
+        return 1
+    door_image = os.path.join(WORK, "media.elf")
+    subprocess.run([("x86_64-elf-" if X86 else "aarch64-elf-") + "objcopy",
+                    "--strip-debug", door, door_image], check=True)
+    with open(os.path.join(WORK, "door.lua"), "w") as f:
+        f.write(DOOR)
+
     disk = [(os.path.join(WORK, n), "/Home/apps/media/" + n)
-            for n in ("mediatest.lua", "mediatest.elf")]
+            for n in ("mediatest.lua", "mediatest.elf", "door.lua")]
+    disk += [(door_image, "/Home/System/Media/media.elf")]
     disk += [(os.path.join(FOLDER, n), "/Home/apps/media/films/" + n)
              for n in [n for n, _, _ in found] + ["manifest.txt"]]
     megabytes = sum(os.path.getsize(src) for src, _ in disk) // (1 << 20)
@@ -239,6 +295,21 @@ def main():
             done = any(ln.startswith("mediatest: ") for ln in said) \
                 or "ended, code" in guest.seen[mark:]
         took = time.monotonic() - started
+
+        # The Lua door, in `media.elf`, over the same files.
+        mark_door = len(guest.seen)
+        guest.type("run /Home/apps/media/door.lua")
+        began = time.monotonic()
+        while time.monotonic() < began + 300:
+            time.sleep(0.2)
+            guest._read_available()
+            # Not "ended, code": `run`'s own process ends before the
+            # program it starts has said anything.
+            tail = guest.seen[mark_door:]
+            if "door: done" in tail or "\nrun: " in tail:
+                break
+        door_said = [ln for ln in guest.seen[mark_door:].replace("\r", "").split("\n")
+                     if ln.startswith("door")]
     finally:
         guest.close()
 
@@ -278,12 +349,54 @@ def main():
     if len(refused) < 2:
         print("FAIL: the truncated film and the noise were not both refused: %s" % refused)
         return 1
+
+    # The door: every stream `mediatest` decoded, said the same way, and a
+    # packet or more of every file it opened; the refused ones refused with
+    # its reasons.
+    def shape(line):
+        rest = line.split(" ", 1)[1]
+        if " video " in rest:
+            return rest.split(" bits", 1)[0] + " bits"
+        return rest.split(" ch", 1)[0] + " ch"
+
+    want_streams = sorted(shape(ln) for ln in said
+                          if ln.startswith("stream ") and (" video " in ln or " audio " in ln)
+                          and ": " in ln and ("frames" in ln or "samples" in ln))
+    door_streams = sorted(ln.split(" ", 1)[1] for ln in door_said
+                          if " #" in ln and (" video " in ln or " audio " in ln))
+    opened = [n for n, _, _ in found
+              if any(ln.startswith("file %s: " % n) and " stream" in ln for ln in said)]
+    counted = {ln.split(" ")[1].rstrip(":"): int(ln.split(": ")[1].split(" ")[0])
+               for ln in door_said if " packets, " in ln}
+    want_refused = sorted(ln.split(" ", 1)[1] for ln in refused)
+    door_refused = sorted(ln.split(" ", 1)[1] for ln in door_said
+                          if ln.startswith("door ") and ": " in ln and " #" not in ln
+                          and " packets, " not in ln and not ln.startswith("door: "))
+    problems = []
+    if not any(ln.startswith("door: FFmpeg ") for ln in door_said):
+        problems.append("the program in media.elf did not reach the kit: %r"
+                        % door_said[-3:])
+    missing = [w for w in want_streams if w not in door_streams]
+    if missing or len(door_streams) != len(want_streams):
+        problems.append("its streams are not mediatest's: %d here, %d there; missing %s"
+                        % (len(door_streams), len(want_streams), missing[:4]))
+    empty = [n for n in opened if counted.get(n, 0) <= 0]
+    if empty:
+        problems.append("no packets read from %s" % empty)
+    if door_refused != want_refused:
+        problems.append("its refusals are not mediatest's: %s against %s"
+                        % (door_refused, want_refused))
+    if problems:
+        print("FAIL: the Media Kit's Lua door in media.elf: " + "; ".join(problems))
+        return 1
     streams = sum(1 for ln in said if ln.startswith("stream "))
     print("PASS: the Media Kit read %d files on Kosmos - %d streams decoded, every line "
           "as on this Mac, and %d pictures in %d films as `ffmpeg -f framemd5` says them; "
-          "%d refused, as they should be; in %.1f s (%s)"
+          "%d refused, as they should be; in %.1f s (%s); and through the Lua door in "
+          "media.elf, %d streams said the same and %d packets read"
           % (len(found), streams, pictures, len(tool), len(refused), took,
-             want[0].split(": ", 1)[1] if want else "?"))
+             want[0].split(": ", 1)[1] if want else "?", len(door_streams),
+             sum(counted.values())))
     return 0
 
 

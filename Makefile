@@ -4077,6 +4077,29 @@ $(UBUILD)/apps/mediatest.elf: $(USER_OBJS) $(MEDIA_OBJS) $(MEDIATEST_OBJS) $(POS
 	    || { echo "apps: the system's image has FFmpeg built whole in it"; rm -f $@; exit 1; }
 
 #
+# **`media.elf`, the media family's image** (`docs/media.md` M6): the Media
+# Kit and its Lua door, `/Kosmos/Kits/media`, on FFmpeg built whole - the
+# image Video and `listen` name with `-- kosmos: image media`, kept in
+# /Home/System/Media and seen as /Kosmos/Media (`tools/installed.py`), and
+# the one the new Music, Cut and Paint will run in. Like every image `make
+# apps` links it is `FULL=0`'s userland, so the vendored closure is never in
+# it beside the whole FFmpeg.
+#
+MEDIAKIT_OBJS := $(MEDIA_OBJS) $(UBUILD)/user/kits/media/media_kosmos.c.o
+
+$(UBUILD)/user/kits/media/media_kosmos.c.o: UCFLAGS += -Iuser/kits/media
+
+$(UBUILD)/apps/media.elf: $(USER_OBJS) $(MEDIAKIT_OBJS) $(POSIX_OBJS) $(FFMPEG_W5_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(MEDIAKIT_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(FFMPEG_W5_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_media_kit$$' \
+	    || { echo "apps: media.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_media_kit|avformat_open_input)$$' \
+	    || { echo "apps: the system's image has the Media Kit in it"; rm -f $@; exit 1; }
+
+#
 # **W5e's Skia test** (`tools/run_skia.py`): `skiatest.cpp` and its door,
 # Skia as WebKit carries it (`libSkia.a`, built by WebKit's CMake beside
 # WTF), drawing text through FreeType and decoding pictures through
@@ -5317,6 +5340,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
+            $(UBUILD)/apps/media.elf \
             $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
             $(UBUILD)/apps/k3dvk.elf $(K3DVK_ANV_IMAGE) $(Q3E_IMAGES) $(LLMVK_IMAGES) \
             $(WEBCORE_IMAGE) $(VKCTS_IMAGE) $(ANVTEST_IMAGE) \

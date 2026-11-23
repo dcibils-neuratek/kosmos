@@ -2870,6 +2870,7 @@ void kosmos_skiatest_kit(lua_State *L) __attribute__((weak));
 void kosmos_webcoretest_kit(lua_State *L) __attribute__((weak));
 void kosmos_webkit2test_kit(lua_State *L) __attribute__((weak));
 void kosmos_webkit_kit(lua_State *L) __attribute__((weak));
+void kosmos_media_kit(lua_State *L) __attribute__((weak));
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
 #endif
@@ -2975,6 +2976,10 @@ static const struct {
      * WebKit, `webkit.elf` in /Kosmos/WebKit, so `use("/Kosmos/Kits/webkit")`
      * finds it only in a program that runs there - JetSki, and Mail. */
     { "webkit",   kosmos_webkit_kit, 0 },
+    /* The Media Kit (`docs/media.md` M6): in no image but `media.elf` in
+     * /Kosmos/Media, so `use("/Kosmos/Kits/media")` finds it only in a
+     * program that runs there - Video, `listen`, the media family. */
+    { "media",    kosmos_media_kit, 0 },
 #ifdef KOSMOS_FFMPEG
     /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
     { "h264",     kosmos_h264_kit, 0 },

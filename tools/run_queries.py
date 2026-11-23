@@ -350,7 +350,7 @@ def main():
              "a rename to a name's own other case was refused"),
             ("C-NAMES", "CASE.txt,CASE.txt",
              "a rename to another case did not change the name's spelling"),
-            ("K-KOSMOS", 'directory Apps,Deskbar,Desktops,Documentation,Examples,Filters,Fonts,Kits,Libraries,Programs,Templates,Themes,Tutorial,WebKit kit a kit is C, and is used rather '
+            ("K-KOSMOS", 'directory Apps,Deskbar,Desktops,Documentation,Examples,Filters,Fonts,Kits,Libraries,Media,Programs,Templates,Themes,Tutorial,WebKit kit a kit is C, and is used rather '
                          'than read: use("/Kosmos/Kits/pdf")',
              "/Kosmos was not a folder of Kits and Libraries, a kit in it a kit, "
              "and reading one an answer saying to use it"),
