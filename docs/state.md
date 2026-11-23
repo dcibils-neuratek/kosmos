@@ -324,8 +324,8 @@ the Playback Kit's counts read whole under load (Radio's "0 frames heard");
 and the gate says each suite's processor (`cpu.json`). **An ordinary `make
 test` - every whole-tree suite, 127 - is 571 s; `make test ALL=1`, which
 `make prepush` runs, is 870 s** (1,167 before), 6,473 s of processor, so no
-packing gets it under 647. Whether prepush's every-suite run must fit in
-ten minutes too is Diego's to say. **Next**: U10c, a stream's own format; then the rest of U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
+packing gets it under 647. The ten minutes are `make test`'s (Diego, 23
+November): prepush stays every suite. **Next**: U10c, a stream's own format; then the rest of U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
 the old Music retired at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for

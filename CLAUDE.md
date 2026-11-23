@@ -1031,7 +1031,10 @@ checks, in less time - parallel builds, suites run side by side, waits for
 the thing rather than for a number of seconds - and never fewer checks to
 make the number. A new test is written to fit inside the budget, and a
 suite that pushes the whole past ten minutes is the thing to fix, before
-anything else lands. `make test` is `tools/gate.py`: the suites side by side,
+anything else lands. **The ten minutes are `make test`'s** (Diego, 23
+November 2026): `make prepush`'s `ALL=1` runs every library's suite as well,
+once before a push, and is allowed past them - 870 s at 0.12.88, against
+571 for an ordinary `make test`. `make test` is `tools/gate.py`: the suites side by side,
 4:37 on this Mac on 18 September, with each suite's time printed and the
 slowest named at the end - so the budget is watched rather than remembered.
 
