@@ -90,9 +90,12 @@ check(mark() == committed, "a file added and taken away again left its mark")
 os.remove(os.path.join(repo, "runtime/posix/a.c"))
 check(mark() != committed, "a file removed went unseen")
 
-# And the gate's own: every library suite stands on the runtime.
+# And the gate's own: every library suite stands on the runtime - every one
+# that boots a guest, since the runtime is what a guest's image links. A
+# `host-` suite is built here, on this Mac's own libc, and links none of it;
+# it names the headers of ours it includes instead (`host-llm`, 23 November).
 for s in gate.SUITES:
-    if s.watch:
+    if s.watch and not s.name.startswith("host-"):
         check("runtime" in s.watch and "user/init" in s.watch,
               "%s does not watch the runtime" % s.name)
 

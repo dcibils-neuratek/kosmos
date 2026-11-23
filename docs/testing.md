@@ -42610,3 +42610,23 @@ suite's length is its flight's length in frames. llvmpipe draws about
 Between them about 300 s alone come off, so about 540 suite-seconds
 under the gate's load.
 
+
+Three things measured and left as they are. **A boot is 2.6 s** to Telnet,
+so sharing boots between suites would buy little. **An idle guest costs
+nothing**: 0.2 s of the Mac's processor in 20 s at the prompt, so a suite
+waiting does not slow its neighbours. And **`-cpu max`**, which hands
+llvmpipe AVX where `qemu64` has only SSE2, made the 747's suite slower
+rather than faster (49.6 s against 45.5): TCG pays for the wider
+instructions as much as it saves on their number.
+
+`x86-desktops`' 326 s in the table above is the run that failed under load
+in 0.12.84 and waited out its timeouts; alone it is 21 s. `times.json`
+keeps whatever a suite took last, a failure's waiting included.
+
+**And a correction to 63da028e**, found when this gate would not start: its
+watch named `tools/llm_reference_*`, and a watch is paths, not patterns, so
+the gate refused it before running anything; and `test_gatelibs.py` holds
+every watched suite to the runtime. The reference files are now listed by
+name. And the runtime rule is for a suite that boots a guest, whose image
+links the runtime: a `host-` suite is built on this Mac's own libc, so it
+names the two headers of ours it includes (`utf8.h`, `gpuproto.h`) instead.

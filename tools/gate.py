@@ -247,12 +247,18 @@ SUITES = [
     #
     Suite("host-llm", ["make", "--no-print-directory", "host-llm-check"],
           watch=["user/kits/llm", "tools/test_llm.c", "tools/eu_emu.c", "tools/eu_emu.h",
-                 "tools/llm_reference_*", "tools/llmgpu_header.lua", "user/lib/llmgpu.lua",
+                 "user/include/utf8.h", "user/include/gpuproto.h",
+                 # The reference's source and every answer it gave, by name:
+                 # a watch is paths, not patterns.
+                 *sorted("tools/" + f for f in os.listdir(os.path.dirname(os.path.abspath(__file__)))
+                         if f.startswith("llm_reference")),
+                 "tools/llmgpu_header.lua", "user/lib/llmgpu.lua",
                  "user/lib/kc.lua", "user/lib/eu.lua", "lua/upstream"]),
     # The LLM Kit's steps on Vulkan, each held on this Mac's lavapipe
     # (`docs/xavier.md` X12, V3), named as `host-llm` is.
     Suite("host-llmvk", ["make", "--no-print-directory", "host-llmvk-check"],
           watch=["user/kits/llm", "user/kits/vulkan/kvk.c", "user/kits/vulkan/kvk.h",
+                 "user/include/utf8.h", "user/include/gpuproto.h",
                  "tools/test_llmvk.c", "tools/vkshaders.py", "tools/upstream.py"]),
 
     # The kernel from inside: the largest test asset here, and the only thing
