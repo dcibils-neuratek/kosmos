@@ -164,6 +164,15 @@ static inline long pcm_convert(const unsigned char *in, size_t len,
  * `pcm_convert_to` above stays for `sys.pcm` and the Playback Kit until they
  * ask for this.
  *
+ * **In integers, not floats** (`testing.md` 18.1006). The coefficients are
+ * Q30 - one is 2^30 - each row rounded to sum to exactly that, and a frame
+ * is 64 taps of a 32-bit sample by a 32-bit coefficient summed in 64 bits
+ * and rounded once. The sum cannot overflow: a row's coefficients add up,
+ * in magnitude, to at most 2.24 (measured for every pair of rates from 8 to
+ * 192 kHz), so it stays under 2^31 x 2.24 x 2^30 = 2^62.2. The same
+ * -117 dB as in floats, and a second of 44.1 kHz stereo to 48 kHz in 4.8 ms
+ * on this Mac's ARM cores against 8.5 (2.6 against 2.1 through Rosetta).
+ *
  * **The phase is the caller's, as above, and so is the history**: a frame is
  * kept, not consumed, while a later output frame still needs it as a tap -
  * `*consumed` stops `PCM_SINC_HALF - 1` frames behind the phase. Before the
@@ -180,7 +189,7 @@ static inline long pcm_convert(const unsigned char *in, size_t len,
 
 struct pcm_sinc {
     long  in_rate, out_rate;
-    float k[PCM_SINC_PHASES + 1][2 * PCM_SINC_HALF];
+    int32_t k[PCM_SINC_PHASES + 1][2 * PCM_SINC_HALF];      /* Q30 */
 };
 
 static inline int pcm_wide_format_ok(long rate, long channels, long bits)
@@ -203,7 +212,9 @@ static inline void pcm_sinc_prepare(struct pcm_sinc *s, long in_rate, long out_r
 
     for (p = 0; p <= PCM_SINC_PHASES; p++) {
         double frac = (double)p / PCM_SINC_PHASES;
-        double sum = 0;
+        double sum = 0, v_of[2 * PCM_SINC_HALF];
+        int64_t total = 0;
+        int most = 0;
 
         for (j = 0; j < 2 * PCM_SINC_HALF; j++) {
             /* Tap j is input frame at - (HALF - 1) + j; the point is at + frac. */
@@ -214,13 +225,24 @@ static inline void pcm_sinc_prepare(struct pcm_sinc *s, long in_rate, long out_r
             double a = cutoff * d * pi;
             double v = (d == 0.0 ? cutoff : sin(a) / (d * pi)) * w;
 
-            s->k[p][j] = (float)v;
+            v_of[j] = v;
             sum += v;
         }
 
         for (j = 0; j < 2 * PCM_SINC_HALF; j++) {
-            s->k[p][j] = (float)(s->k[p][j] / sum);
+            double q = v_of[j] / sum * 1073741824.0;
+
+            s->k[p][j] = (int32_t)(q < 0 ? q - 0.5 : q + 0.5);
+            total += s->k[p][j];
+
+            if (s->k[p][j] > s->k[p][most]) {
+                most = j;
+            }
         }
+
+        /* What rounding left over, on the largest tap, so a constant comes
+         * out as exactly itself. */
+        s->k[p][most] += (int32_t)(((int64_t)1 << 30) - total);
     }
 }
 
@@ -273,8 +295,12 @@ static inline long pcm_convert_wide(const unsigned char *in, size_t len,
         long at = (long)phase;
         double where = (phase - (double)at) * PCM_SINC_PHASES;
         int row = (int)where;
-        float t = (float)(where - row);
-        double l = 0, r = 0;
+        /* The fraction between two rows in 24 bits: with 16, a phase
+         * carried across two calls could step it by one, and a full-scale
+         * sample moved by a few hundred at 2^31. A row's difference is
+         * under 2^23, so its product with this stays under 2^47. */
+        int64_t t = (int64_t)((where - row) * 16777216.0);
+        int64_t l = 0, r = 0;
         int j;
 
         /* Every tap there, or the end of the input when it is the end. */
@@ -284,7 +310,8 @@ static inline long pcm_convert_wide(const unsigned char *in, size_t len,
 
         for (j = 0; j < 2 * PCM_SINC_HALF; j++) {
             long i = at - (PCM_SINC_HALF - 1) + j;
-            float k = sinc->k[row][j] + (sinc->k[row + 1][j] - sinc->k[row][j]) * t;
+            int64_t k = sinc->k[row][j]
+                        + ((((int64_t)sinc->k[row + 1][j] - sinc->k[row][j]) * t) >> 24);
             int32_t a, b;
 
             if (i < 0 || i >= in_frames) {
@@ -293,12 +320,14 @@ static inline long pcm_convert_wide(const unsigned char *in, size_t len,
 
             a = pcm_wide_sample(in + i * fb, bits);
             b = (channels == 2) ? pcm_wide_sample(in + i * fb + bits / 8, bits) : a;
-            l += (double)a * k;
-            r += (double)b * k;
+            l += (int64_t)a * k;
+            r += (int64_t)b * k;
         }
 
-        l = l > 2147483647.0 ? 2147483647.0 : (l < -2147483648.0 ? -2147483648.0 : l);
-        r = r > 2147483647.0 ? 2147483647.0 : (r < -2147483648.0 ? -2147483648.0 : r);
+        l = (l + ((int64_t)1 << 29)) >> 30;                   /* rounded once */
+        r = (r + ((int64_t)1 << 29)) >> 30;
+        l = l > 2147483647 ? 2147483647 : (l < -2147483647 - 1 ? -2147483647 - 1 : l);
+        r = r > 2147483647 ? 2147483647 : (r < -2147483647 - 1 ? -2147483647 - 1 : r);
         out[2 * n] = (int32_t)l;
         out[2 * n + 1] = (int32_t)r;
         n++;

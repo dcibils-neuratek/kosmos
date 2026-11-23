@@ -42619,9 +42619,9 @@ llvmpipe AVX where `qemu64` has only SSE2, made the 747's suite slower
 rather than faster (49.6 s against 45.5): TCG pays for the wider
 instructions as much as it saves on their number.
 
-`x86-desktops`' 326 s in the table above is the run that failed under load
-in 0.12.84 and waited out its timeouts; alone it is 21 s. `times.json`
-keeps whatever a suite took last, a failure's waiting included.
+`x86-desktops`' 326 s in the table above was a pass under load from an
+earlier gate (`times.json` keeps only a pass's time); alone it is 21 s, and
+in 0.12.85's gate 24.
 
 **And a correction to 63da028e**, found when this gate would not start: its
 watch named `tools/llm_reference_*`, and a watch is paths, not patterns, so
@@ -42630,3 +42630,36 @@ every watched suite to the runtime. The reference files are now listed by
 name. And the runtime rule is for a suite that boots a guest, whose image
 links the runtime: a `host-` suite is built on this Mac's own libc, so it
 names the two headers of ours it includes (`utf8.h`, `gpuproto.h`) instead.
+
+**0.12.85's whole gate: 948 s, against 1,167** - 162 suites, three failed
+and passed alone, all three sound under load: JetSki's tone at 403 Hz, a
+gap in `x86-film-load` (which runs alone, on a quiet machine, and had not
+failed before), and the USB speaker's beep in two in `x86-usb-2`. The 747's
+suite took 169 s (624 before), the landing's 212. The slowest now:
+`host-llm` 624 s (run only when the LLM Kit changed, or by `ALL=1`),
+`x86-cafesa3d-2` 602, `x86-flight` 594, `x86-llm-vk` 529, `x86-sql` 438.
+Still a minute and a half over ten.
+
+## 18.1006 The sinc in integers
+
+`pcm_convert_wide`'s taps were floats: about 640 floating-point operations
+an output frame. They are Q30 integers now (`pcmconvert.h`), each row
+rounded to sum to exactly 2^30 so a constant stays itself, the products
+summed in 64 bits and rounded once. A row's coefficients add to at most
+2.24 in magnitude, measured for every pair of rates from 8 to 192 kHz, so
+the sum stays under 2^62.2; the fraction between rows is 24 bits, since 16
+let a phase carried across two calls move a full-scale sample by 371 at
+2^31 (the pieces-against-whole check found it).
+
+**The same filter**: -117.1, -114.2 and -105.6 dB on the three pairs, as in
+floats, and all 29 checks. A second of 44.1 kHz stereo to 48 kHz takes
+**4.8 ms on this Mac's ARM cores against 8.5**, and 2.6 against 2.1 through
+Rosetta - under one per cent of a processor either way.
+
+**It was not the cause of the gate's speaker failure**, and this says so
+rather than leave the guess: `x86-usb-2` beside twelve spinners on the Mac
+passed with the integer sinc (324 s) and with the float one (313 s). The
+reason to keep it is the ARM figure, the Pi 5's architecture. Controls: a
+row scaled by 1.001 fails 4 checks; flooring instead of rounding passes,
+half a step at 32 bits being below anything a check can see.
+
