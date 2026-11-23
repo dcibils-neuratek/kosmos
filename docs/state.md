@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-22, at 0.12.82. Pushed to 0.11.507; 0.11.508 to
-0.12.8 are committed on `main`, and go out with `make prepush`.
+Last updated: 2026-11-22, at 0.12.83. Pushed to 0.12.0; 0.12.1 to
+0.12.83 are committed on `main`, and go out with `make prepush`.
 
 ---
 
@@ -309,8 +309,10 @@ by `opt/kosmos/audio=usb`; Diego heard Basket Case on it. **U4 built in
 speaker plugged in plays), a door pulsed on a change, the choice kept in
 `/Home/Preferences/audio` and sent again by the Deskbar; any speaker
 plugged in streams, and pulling it out mid-song moves the sound to
-HD Audio. **Next**: U5, Mixer's chooser and the plugged-in notification;
-then U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
+HD Audio. **U5 built in 0.12.83** (18.1002): Mixer's Output card - the
+device in a dropdown, its format as tiles, the conversion line - told by
+the server's pulse (`window:watch_code`, new in the UI kit), and the
+Deskbar's notification when a speaker comes or goes. **Next**: U10, hi-res (agreed); then the new Music (`docs/player.md`, agreed,
 the old Music retired at its P5). **Packages P5 built in 0.12.81**
 (18.1000): installed packages brought up to the server's at login - Quake
 III and Flight had stopped starting on the M700, their copies made for
