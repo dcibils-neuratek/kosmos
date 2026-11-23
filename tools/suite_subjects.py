@@ -486,12 +486,15 @@ suite("x86-automations", "app", ["app:automations", AUTOMATE, "program:autod", "
                                  "app:calc"],
       "run_automationswin.py: the Automations window - Run now, history, switch, new, steps")
 suite("arm-sysapps x86-sysapps", "app", ["app:procs", "lib:procshare.lua", "lib:prockind.lua",
-                                         "program:clocks", "lib:pulse.lua"],
+                                         "program:clocks", "lib:pulse.lua",
+                                         "lib:proctable.lua", "files:tools/run_sysmon.py"],
       "run_sysapps.py: Processes' columns, files, threads, privilege and sorting")
 suite("x86-sysmon", "app", ["app:sysmon", "lib:sysmon", "kit:series", "lib:meters.lua", "lib:pulse.lua",
                             "lib:procshare.lua", "lib:drivelist.lua", "lib:gpu.lua", "lib:hardware.lua",
-                            "app:deskbar", "lib:indicators.lua"],
-      "run_sysmon.py: System Monitor - inventory rows 1-18, QEMU's absences, cost, pages, paces, Deskbar meters")
+                            "app:deskbar", "lib:indicators.lua",
+                            "lib:prockind.lua", "lib:wmproto.lua", "lib:prefs.lua", "lib:clock.lua",
+                            "lib:filetypes.lua", "lib:proctable.lua", "program:spin"],
+      "run_sysmon.py: System Monitor - inventory rows 1-41, QEMU's absences, cost, pages, paces, Deskbar meters")
 suite("x86-scheduler", "app", ["app:scheduler", "lib:scheduling.lua", "files:kernel/sched*",
                                "lib:wm/gamemode.lua"],
       "run_scheduler.py: the Scheduler window - lanes, Fair (round-robin), 20 ms turn, game mode")

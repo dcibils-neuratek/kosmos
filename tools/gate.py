@@ -811,7 +811,7 @@ SUITES = [
     # level on one and a ring on the other.
     Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
     Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
-    # System Monitor (`docs/sysmonitor.md` S3): the inventory's rows 1-18 on
+    # System Monitor (`docs/sysmonitor.md` S3, S4): the inventory's rows 1-41 on
     # their pages, QEMU's absences, the cost of a sample, pages by a click,
     # Monitor's paces held to the counter, and the Deskbar's meters.
     Suite("x86-sysmon", ["python3", "tools/run_sysmon.py", X86], x86=True),

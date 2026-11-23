@@ -43423,3 +43423,40 @@ was 620 by about 450.
 what it changed, and System Monitor's own suites passed. What it reached
 and nobody named was every suite that photographs a desktop with the
 startup set in it - a reach a file's dependencies do not show.
+
+## 18.1023 System Monitor's Processes page (S4), folded from its lane
+
+**What was built** (`docs/sysmonitor.md` S4). Process Viewer's table, its
+band and End, as System Monitor's Processes page
+(`user/lib/sysmon/processes.lua`), and the selected process's strip: its
+share and its memory over the minute. Process Viewer keeps its window
+until S9. The table is drawn by one library both use, `proctable.lua`. The
+lane's first version copied Process Viewer's table code into the page, and
+it was sent back to share it: a second copy is the defect the kits premise
+is there to catch.
+
+**What is checked.** `x86-sysmon`'s inventory check now holds rows 1-41.
+`sort_checks` and End are moved over from `run_sysapps.py`, which imports
+them, so one copy of each check serves both windows. End is pressed on a
+`spin:600` the suite boots for it, never on a process the machine needs.
+
+**Departures from the mockup**, for Diego:
+- the window is 1332 wide on Processes, where the table's columns need it,
+  and the other pages keep 880;
+- the selected process's strip is new: the mockup has no place for it;
+- the Overview's Memory tile opens Processes, sorted by memory, since there
+  is no Memory page until S6;
+- the page and Process Viewer share one set of preferences, `procs`, so a
+  sort chosen in one is the other's.
+
+**What the first run found.** End did not end `spin`: the kernel answered
+`SYS_ERR_NO_CHILD`, which is what a kill without process control gets.
+System Monitor declared `needs network` on one line and `needs processes`
+on the next. `binfs`'s `declared` reads the first `needs` line and no
+other, and the grant is made from what it read, so the second line was
+never seen. Process Viewer, with one line, had always been granted it. So
+the needs are on one line now, and `check_needs.py` (the host suite)
+refuses a header with two - the class, rather than this instance. Its
+control is the header as the lane wrote it, which it fails by name.
+
+**Result**: `x86-sysmon` 45 of 45 (rows 1-41, End ending `spin`); `x86-sysapps`, `x86-platinum` and `x86-display-3` pass on the shared table; host with the new needs check.

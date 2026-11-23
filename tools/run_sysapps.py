@@ -22,9 +22,12 @@ and again after each press, and this holds both to what they should be:
 
 **Monitor's half moved to `run_sysmon.py`** with its window, which is
 System Monitor's CPU page since `docs/sysmonitor.md` S3: its paces held to
-the counter, its processor's card, its bars and Control-W. Processes' half
-goes there in S4, when Processes becomes a page (`sysmonitor.md`, *How it
-is tested*), and this suite with it in S9.
+the counter, its processor's card, its bars and Control-W. **Processes'
+headings moved there in S4** with its table, which is System Monitor's
+Processes page: what a printed row is (`parse`), the order a heading gives
+(`expected`) and the presses (`sort_checks`) are `run_sysmon.py`'s, and
+this reads them from there - one copy, held to Process Viewer's table and
+to the page's - until S9 removes Process Viewer and this suite with it.
 
 Usage: run_sysapps.py IMAGE
 """
@@ -38,52 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import run_screenshot as R                                   # noqa: E402
-
-# What each column sorts by, from a printed row, and which way it starts:
-# the same table as `SORT_BY` and `DOWN_FIRST` in `procs.lua`, for the
-# columns this presses.
-KEY = {
-    "id":        lambda r: r["id"],
-    "name":      lambda r: r["name"].lower(),
-    "file":      lambda r: r["file"],
-    "threads":   lambda r: r["threads"],
-    "privilege": lambda r: r["level"],
-}
-DOWN_FIRST = {"threads", "privilege"}
-
-
-def parse(line):
-    """The rows a `procs: ...:` line printed, in its order."""
-    rows = []
-
-    for item in (line or "").split("; "):
-        parts = item.strip().split(":", 4)
-
-        if len(parts) != 5:
-            continue
-
-        ident, name, threads, priv, path = parts
-        rows.append({
-            "id": int(ident), "name": name,
-            "threads": None if threads == "-" else int(threads),
-            "priv": priv,
-            "level": 1 if priv in ("EL1", "EL2", "ring 0") else 0,
-            "file": None if path == "-" else path,
-        })
-
-    return rows
-
-
-def expected(rows, key, down):
-    """`rows` as `procs.lua`'s `in_order` sorts them."""
-    get = KEY[key]
-    have = [r for r in rows if get(r) is not None]
-    none = [r for r in rows if get(r) is None]
-
-    have.sort(key=lambda r: r["id"])
-    have.sort(key=get, reverse=down)       # stable: ties stay by id
-    none.sort(key=lambda r: r["id"])
-    return have + none
+from run_sysmon import parse, sort_checks                     # noqa: E402
 
 
 def main():
@@ -217,9 +175,8 @@ def main():
 
         # A heading pressed and slid off before the release sorts nothing: a
         # click is a press and a release (Diego, 9 October, "in all kosmos").
-        if "name" in heads:
-            x, y = heads["name"]
-            mark = len(guest.seen)
+        def slide(key):
+            x, y = heads[key]
             guest.mouse_to(*R._to_tablet(ox + x, oy + y, width, height))
             time.sleep(0.4)
             guest.mouse_button(True)
@@ -228,34 +185,13 @@ def main():
             time.sleep(0.3)
             guest.mouse_button(False)
             time.sleep(1.0)
-            check(said("procs: sorted by ", mark, 1) is None,
-                  "a heading pressed and slid off before the release sorted the rows")
 
-        # Each heading, and one of them twice. The order is checked against
-        # the rows the same line printed, so a process that came or went
-        # between presses cannot make it wrong.
-        for key, down in (("id", False), ("id", True), ("name", False),
-                          ("file", False), ("threads", True),
-                          ("privilege", True)):
-            if key not in heads:
-                check(False, "Processes did not say where its %s heading is" % key)
-                continue
-
-            mark = len(guest.seen)
-            press(key)
-            way = "descending" if down else "ascending"
-            line = said("procs: sorted by %s, %s: " % (key, way), mark)
-
-            if line is None:
-                check(False, "pressing %s did not sort by it %s: %r"
-                      % (key, way, said("procs: sorted by ", mark, 2)))
-                continue
-
-            got = parse(line)
-            want = expected(got, key, down)
-            check([r["id"] for r in got] == [r["id"] for r in want],
-                  "sorted by %s, %s, the order is %s where it should be %s"
-                  % (key, way, [r["id"] for r in got], [r["id"] for r in want]))
+        # Each heading, and one of them twice, and the rows with no file
+        # last: `run_sysmon.py`'s, which the Processes page is held to as
+        # well. The order is checked against the rows the same line
+        # printed, so a process that came or went between presses cannot
+        # make it wrong.
+        sort_checks(heads, press, slide, said, lambda: len(guest.seen), check, "procs: ")
 
         # **The kit's columns** (`ui.columns`): name's edge dragged 40 wider
         # and kept, and the headings' menu by a right click.
@@ -290,13 +226,6 @@ def main():
             time.sleep(0.5)
         else:
             check(False, "Processes did not say where its headings' edges are")
-
-        # And where the rows with nothing in the column went.
-        files = parse(said("procs: sorted by file, ascending: ", 0, 1))
-        if files:
-            gone = [r["file"] is None for r in files]
-            check(gone == sorted(gone),
-                  "sorted by file, a row with no file came before one with a file")
 
         check("the processor chooses its own speed, leaning 192 of 255" in guest.seen,
               "opt/kosmos/speed=battery was not heard at boot as a leaning of 192")

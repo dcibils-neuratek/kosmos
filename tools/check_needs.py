@@ -9,6 +9,12 @@ tiles from the window manager, which Maps then never had. So the build
 says so instead: a program in the image or installed beside it that
 declares more words than the store holds fails `make test`'s host suite.
 
+And one line, never two: `binfs` reads the first `needs` line and no other
+(`declared`), while init's own reading takes every line - so a second line
+passed every look at the source and granted nothing. System Monitor's
+`needs processes` sat on a second line under `needs network` until 23
+November, and its End could not end anything.
+
 Usage: check_needs.py [ROOT]
 """
 
@@ -43,6 +49,10 @@ def main():
                 m = re.search(r"^--\s*kosmos:\s*needs\s+(.*)$", head, re.M)
                 if not m:
                     continue
+                lines = re.findall(r"^--\s*kosmos:\s*needs\s", head, re.M)
+                if len(lines) > 1:
+                    fails.append("%s declares its needs on %d lines and /bin reads the first: "
+                                 "put them on one" % (os.path.relpath(path, ROOT), len(lines)))
                 programs += 1
                 words = m.group(1).split()
                 if len(words) > widest[0]:
@@ -53,7 +63,7 @@ def main():
                                     " ".join(words[most:])))
 
     if fails:
-        print("FAIL: %d of the needs lines do not fit:" % len(fails))
+        print("FAIL: %d of the needs lines are not what /bin reads:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1

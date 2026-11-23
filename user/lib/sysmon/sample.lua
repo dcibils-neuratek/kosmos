@@ -23,6 +23,16 @@
 -- a source was not asked in is a gap in its history, never a nought. A
 -- call with a deadline (`roadmap.md`) is what takes the rule away.
 --
+-- **Each process's share and memory over the minute** (S4), for the
+-- Processes page's strip: kept for every process from the moment it is
+-- seen, so a process chosen after a minute has its minute. Two flat rings
+-- of numbers a process - no table a sample - and only the chosen one is
+-- made into the lists `ui.history` draws (`S:follow`), when it is chosen.
+--
+-- **Asked only while their page shows** (*Sampling*): the window
+-- manager's list of windows, for Processes' **draws** column, once
+-- `S:want("windows", true)`.
+--
 -- **What a sample cost**, for `--tell` and the M700 (`sysmonitor.md`, *The
 -- busiest path*): `cost` holds the counter's ticks spent asking and taking
 -- differences, the messages and the system calls it made, and the
@@ -30,6 +40,8 @@
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local meters = use("/Kosmos/Libraries/meters.lua")
+local wmproto = use("/Kosmos/Libraries/wmproto.lua")
+local proctable = use("/Kosmos/Libraries/proctable.lua")
 local drivelist = use("/Kosmos/Libraries/drivelist.lua")
 local hardware = use("/Kosmos/Libraries/hardware.lua")
 
@@ -99,7 +111,32 @@ SOURCES.machine = {
   end,
 }
 
--- Every process: a system call, for the busiest five.
+--
+-- A process's ring: its share and its memory, a column a pace, `head` the
+-- newest. Numbers in two arrays made once, so a hundred processes are two
+-- hundred tables for the collector rather than twelve thousand.
+--
+local function ring_put(h, columns, pct, kb)
+  h.head = h.head % columns + 1
+  h.pct[h.head], h.kb[h.head] = pct, kb
+  if h.n < columns then h.n = h.n + 1 end
+end
+
+-- One of a ring's two series as `ui.history` keeps one, the oldest first.
+local function ring_list(h, columns, which)
+  local out = {}
+
+  if not h then return out end
+
+  for i = h.n - 1, 0, -1 do
+    out[#out + 1] = { h[which][(h.head - 1 - i) % columns + 1] }
+  end
+
+  return out
+end
+
+-- Every process: a system call, for the busiest five, the Processes page's
+-- table and each process's minute.
 SOURCES.processes = {
   calls = 1, messages = 0,
   ask = function() return sys.processes() end,
@@ -108,19 +145,47 @@ SOURCES.processes = {
 
     local rows = self.procs:take(list, self.kernel)
     local top = self.busiest
+    local hist, cols, now = self.proc_hist, self.columns, self.samples
+    local strip = self.strip
+
+    self.proc_rows = rows
 
     for i = #top, 1, -1 do top[i] = nil end
 
     for _, r in ipairs(rows) do
       local p = r.process
+      local id, kb
 
       if r.kernel then
-        top[#top + 1] = { id = 0, name = "nebula", pct = r.pct,
-                          bytes = ((self.kernel or {}).memory_kb or 0) * 1024 }
-      elseif p and not p.exited then
-        top[#top + 1] = { id = p.id, name = p.name, pct = r.pct,
-                          bytes = (p.held or p.pages or 0) * 4096 }
+        id, kb = 0, (self.kernel or {}).memory_kb or 0
+        top[#top + 1] = { id = 0, name = "nebula", pct = r.pct, bytes = kb * 1024 }
+      else
+        id, kb = p.id, (p.held or p.pages or 0) * 4
+
+        if not p.exited then
+          top[#top + 1] = { id = p.id, name = p.name, pct = r.pct, bytes = kb * 1024 }
+        end
       end
+
+      local h = hist[id]
+
+      if not h then
+        h = { pct = {}, kb = {}, n = 0, head = 0 }
+        hist[id] = h
+      end
+
+      h.at = now
+      ring_put(h, cols, r.pct, kb)
+
+      if id == strip.id then
+        ui.history.push(strip.share, { r.pct }, cols)
+        ui.history.push(strip.memory, { kb }, cols)
+      end
+    end
+
+    -- A process gone from the list takes its minute with it.
+    for id, h in pairs(hist) do
+      if h.at ~= now then hist[id] = nil end
     end
 
     self.alive = 0
@@ -200,6 +265,21 @@ SOURCES.llm = {
   end,
 }
 
+-- The window manager's windows, while the Processes page shows: how each
+-- process draws (its **draws** column). A message a page of windows.
+SOURCES.windows = {
+  calls = 0, messages = 1,
+  ask = function() return wmproto.windows() end,
+  take = function(self, desktop)
+    if type(desktop) ~= "table" then return false end
+
+    -- How each process draws, worked out where Process Viewer works it out.
+    proctable.video(desktop, self.video)
+
+    return true
+  end,
+}
+
 -- Each by its name, which `slow` and `--tell` say.
 for name, src in pairs(SOURCES) do src.name = name end
 
@@ -246,6 +326,8 @@ function S:arrange()
 
   if self.llm_now then list[#list + 1] = SOURCES.llm end
 
+  if self.wants.windows then list[#list + 1] = SOURCES.windows end
+
   -- What each source knew of itself - slow, how long it took - kept across
   -- the list made again.
   local was = self.sources or {}
@@ -286,6 +368,7 @@ function M.new(counter_hz, columns)
     procs = meters.processes(), net = meters.network(counter_hz),
     gpu = meters.gpu(counter_hz), llm = meters.llm(),
     drive = {}, drives = {}, totals = {}, temps = {}, busiest = {}, alive = 0,
+    proc_rows = {}, strip = { id = nil }, video = {}, wants = {},
     cost = nil,
   }, S)
 
@@ -337,8 +420,41 @@ function S:clear()
 
   self.heat_h, self.watts_h, self.memory_h = {}, {}, {}
   self.gpu_h, self.net_h, self.llm_h = {}, {}, {}
+  self.proc_hist = {}
+  self.strip.share, self.strip.memory = {}, {}
 
   for _, m in pairs(self.drive) do m.history = {} end
+end
+
+--
+-- **A source asked only while a page shows** (`windows`, for Processes):
+-- in the list from the next sample, and out of it again.
+--
+function S:want(name, on)
+  on = on and true or nil
+
+  if self.wants[name] == on then return end
+
+  self.wants[name] = on
+  self:arrange()
+end
+
+--
+-- **The process the strip follows**: its share and memory over the minute
+-- made into the two lists `ui.history` draws, from its ring - once, when it
+-- is chosen, on the click that chose it - and pushed to a sample at a time
+-- after. nil follows nothing.
+--
+function S:follow(id)
+  local strip = self.strip
+
+  if strip.id == id then return end
+
+  local h = id and self.proc_hist[id]
+
+  strip.id = id
+  strip.share = ring_list(h, self.columns, "pct")
+  strip.memory = ring_list(h, self.columns, "kb")
 end
 
 function S:restart()

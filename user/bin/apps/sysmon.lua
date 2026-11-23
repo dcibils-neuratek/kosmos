@@ -3,13 +3,14 @@
 -- kosmos: icon App_Pulse
 -- kosmos: name System Monitor
 -- kosmos: section system
--- kosmos: needs network
+-- kosmos: needs network processes
 -- Every monitor Kosmos has, in one window: the whole machine at a glance,
 -- and a page for each part of it (`docs/sysmonitor.md`, drawn in
 -- `docs/sysmonitor.html`).
 --
 --   wm sysmon                  the Overview
 --   wm sysmon:cpu              the CPU page
+--   wm sysmon:processes        the Processes page
 --   wm sysmon:--tell cpu       and a line a sample, for a suite
 --
 -- Diego, 22 November 2026: "i want to have 1 place to see all the system
@@ -20,6 +21,8 @@
 -- window is the CPU page now (`/Kosmos/Libraries/sysmon/cpu.lua`), with
 -- each core's temperature added, and it opens on the Overview
 -- (`sysmon/overview.lua`), which the Deskbar's meters open too. Step S3.
+-- Process Viewer's table, band and End are its Processes page since S4
+-- (`sysmon/processes.lua`), with the chosen process's minute under them.
 --
 -- **The window is the thinnest layer** (*Kits supply, applications
 -- orchestrate*): it counts nothing. Every number is the kernel's, a
@@ -29,16 +32,20 @@
 -- shows a page, and says what it shows with `--tell`.
 --
 -- **The sidebar always shows**, a row for each part of this machine with
--- a live number. A part whose page is not here yet - Memory, Processes,
--- the GPU, the drives, the network, the LLM server, until S4 to S8 move
--- each in - opens the window that shows it today, which stays until its
--- rows have been seen here (S9), so nothing is out of reach in between.
--- Heat and power opens the CPU page, whose card holds the package's heat
--- and power until its own page (S6).
+-- a live number. A part whose page is not here yet - the GPU, the drives,
+-- the network, the LLM server, until S5 to S8 move each in - opens the
+-- window that shows it today, which stays until its rows have been seen
+-- here (S9), so nothing is out of reach in between. Heat and power opens
+-- the CPU page, whose card holds the package's heat and power, and Memory
+-- the Processes page, whose band holds memory and the pools, until each
+-- has its own page (S6).
 --
 -- **What it may do** (decision 7): `needs network`, for the network's
--- counts, which Network Monitor held alone. Nothing it reads is secret.
--- `needs processes` comes with End, in S4.
+-- counts, which Network Monitor held alone, and `needs processes`, for
+-- End on the Processes page, which Process Viewer held alone - so one
+-- window now holds both. Nothing it reads is secret: `sys.processes()` is
+-- anyone's, and the authority to end a process is the one Process Viewer
+-- had, used only by End.
 --
 -- **How often it samples is chosen in the dots' menu** (`roadmap.md` 6p):
 -- every half second, second or two seconds, for every page at once, and a
@@ -51,6 +58,7 @@ local L = ui.layout
 local sample = use("/Kosmos/Libraries/sysmon/sample.lua")
 local cpu_page = use("/Kosmos/Libraries/sysmon/cpu.lua")
 local overview_page = use("/Kosmos/Libraries/sysmon/overview.lua")
+local processes_page = use("/Kosmos/Libraries/sysmon/processes.lua")
 
 local ARGS = tostring(args or "")
 local TELL = ARGS:find("%-%-tell") ~= nil     -- a line a sample, for its suite
@@ -64,7 +72,8 @@ end
 -- The counter's rate, for the window's clock and for every rate, read where
 -- it is used as every piece of counter arithmetic here does
 -- (`architecture.md` §5).
-local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local CPU = fs.read("/Devices/cpu") or {}
+local counter_hz = CPU.counter_hz or 62500000
 
 --
 -- The three paces, and what sixty columns of each come to. A second to
@@ -92,7 +101,6 @@ local CORES = S.cores
 local WIDE = CORES > 16 and CORES <= 32
 local SIDE = 200                              -- the sidebar, `docs/sysmonitor.html`'s 206 less its rule
 local MW = WIDE and 1180 or 680               -- a page
-local W = SIDE + MW
 
 --------------------------------------------------------------------------
 -- The pages, and the windows that show a part until its page is here.
@@ -102,22 +110,28 @@ local P = cpu_page.processor(CORES)
 local function the_pace() return pace end
 local function in_bits() return bits end
 
+local win, err                                -- the window, made once the pages say how tall
+
 local pages = {
   cpu = cpu_page.new{ S = S, w = MW, pace = the_pace, processor = P },
   overview = overview_page.new{ S = S, w = MW, pace = the_pace, bits = in_bits, processor = P },
+  processes = processes_page.new{ S = S, w = math.max(MW, processes_page.WIDTH), pace = the_pace,
+                                  cpu = CPU, window = function() return win end },
 }
 
+-- How wide each page is: its own `w`, the window's width the sidebar and it.
+for _, page in pairs(pages) do page.w = page.w or MW end
+
 local ELSEWHERE = {
-  memory    = "/Kosmos/Apps/procs.lua",
-  processes = "/Kosmos/Apps/procs.lua",
   gpu       = "/Kosmos/Apps/gpumon.lua",
   disks     = "/Kosmos/Apps/diskmon.lua",
   network   = "/Kosmos/Apps/netmon.lua",
   llm       = "/Kosmos/Apps/llmmon.lua",
 }
 
--- Heat and power has the CPU page's card until its own page (S6).
-local STANDS_IN = { heat = "cpu" }
+-- Heat and power has the CPU page's card, and Memory the Processes page's
+-- band, until each has its own page (S6).
+local STANDS_IN = { heat = "cpu", memory = "processes" }
 
 local showing = pages[START] and START or STANDS_IN[START] or "overview"
 
@@ -204,8 +218,12 @@ local function height()
   return math.max(side_need(), pages[showing].h)
 end
 
-local win, err = ui.window{ title = "System Monitor", w = W, h = L.head + height(), x = 90, y = 130,
-                            header = true }
+local function width()
+  return SIDE + pages[showing].w
+end
+
+win, err = ui.window{ title = "System Monitor", w = width(), h = L.head + height(), x = 90, y = 130,
+                      header = true }
 
 if not win then
   print("sysmon: " .. tostring(err))
@@ -246,10 +264,19 @@ function legend:draw(g)
 end
 
 -- Declared here and defined with the sampling, which is what they change.
-local set_pace, set_bars, set_per_core, set_bits, show
+local set_pace, set_bars, set_per_core, set_bits, show, refresh
 local paced_at = sys.ticks()
 
 local more = ui.iconbutton{ icon = "more" }
+
+-- The Processes page's one action, in the header while it shows: the
+-- process chosen ended, said in the header's line at once.
+local end_button
+
+end_button = ui.button{ text = "End", on_click = function()
+  pages.processes:end_selected()
+  refresh()
+end }
 
 -- Rebuilt on every press, so each mark is on what is in use.
 more.on_click = function()
@@ -273,6 +300,11 @@ more.on_click = function()
   items[#items + 1] = { text = "Rates in bits a second", mark = bits,
                         on_choose = function() set_bits(not bits) end }
 
+  -- Process Viewer's Refresh, on its page: a sample now (row 41).
+  if showing == "processes" then
+    items[#items + 1] = { text = "Refresh", on_choose = function() refresh(true) end }
+  end
+
   local mx = more:in_window()
   local m = win:open_menu(win.origin_x + mx, win.origin_y + L.head, items)
 
@@ -286,15 +318,34 @@ more.on_click = function()
   end
 end
 
-local header = ui.header{ x = SIDE, y = 0, w = MW, title = pages[showing].title,
-                          right = { legend, more }, title_bar = true }
+local header = ui.header{ x = SIDE, y = 0, w = pages[showing].w, title = pages[showing].title,
+                          right = { legend, end_button, more }, title_bar = true }
+
+-- What the header holds on each page: the processors' colours where there
+-- are graphs of them, and End with the machine's line on Processes.
+local function header_for(id)
+  legend.hidden = (id == "processes") or nil
+  end_button.hidden = (id ~= "processes") or nil
+  header.sub = id == "processes" and pages.processes:summary() or nil
+end
+
+header_for(showing)
 
 --------------------------------------------------------------------------
 -- The page shown, as one view; on the Overview a click on a tile opens its
 -- part, on the release over the tile it was pressed on.
 --------------------------------------------------------------------------
 
-local body = ui.view{ x = SIDE, y = L.head, w = MW, h = pages[showing].h }
+local body = ui.view{ x = SIDE, y = L.head, w = pages[showing].w, h = pages[showing].h }
+
+-- A page that takes the pointer and the keys itself - Processes' table -
+-- is a view of its own in the body, there only while its page shows.
+for id, page in pairs(pages) do
+  if page.view then
+    body:add(page.view)
+    page.view.hidden = (id ~= showing) or nil
+  end
+end
 local painted = { ticks = 0, kb = 0 }
 local open_part                       -- forward: a tile and the sidebar call it
 
@@ -345,7 +396,9 @@ function body:draw(g)
   -- What a paint costs, by the counter and the collector, for `--tell`.
   local t0, kb = sys.ticks(), collectgarbage("count")
 
-  pages[showing]:draw(g)
+  local page = pages[showing]
+
+  if page.draw then page:draw(g) end
 
   painted.ticks, painted.kb = sys.ticks() - t0, collectgarbage("count") - kb
 end
@@ -371,13 +424,14 @@ end
 local function ms(ticks) return ticks * 1000 / counter_hz end
 
 local function tell_rows()
-  for _, name in ipairs({ "overview", "cpu" }) do
+  for _, name in ipairs({ "overview", "cpu", "processes" }) do
     for _, r in ipairs(pages[name]:rows()) do
       print(("sysmon: row %d %s: %s = %s"):format(r[1], name, r[2], r[3]))
     end
   end
 
   print("sysmon: core temperatures " .. pages.cpu:temperatures())
+  print("sysmon: strip " .. pages.processes:strip_words())
 
   local slow = {}
 
@@ -425,6 +479,8 @@ end
 
 function sampler:tick()
   S:take()
+  pages.processes:tick(showing == "processes")
+  if showing == "processes" then header.sub = pages.processes:summary() end
 
   -- The sidebar's numbers, and its rows when a part came or went.
   local items = side_items()
@@ -453,9 +509,11 @@ function relayout(why)
   local page = pages[showing]
 
   page:measure()
-  body.h = page.h
+  body.w, body.h = page.w, page.h
 
-  local ok, w, h = win:resize(W, L.head + height())   -- as it was opened
+  -- The page's width and the taller of it and the sidebar, below the
+  -- header - as it was opened, and as every page since.
+  local ok, w, h = win:resize(width(), L.head + height())
 
   -- The page's own height and the sidebar's beside the window's: the
   -- window is the taller of the two, so on a machine of few cores the
@@ -467,16 +525,47 @@ end
 
 -- A page shown: the header's name, the sidebar's choice and the page, all
 -- in the same paint as the click that asked for them.
+local function first_line(id)
+  if id == "cpu" then return pages.cpu:heading() end
+  if id == "processes" then return pages.processes:summary(true) end
+  return "tiles " .. pages.overview:names()
+end
+
 function show(id, why)
   showing = id
   side.selected = id
   header.title = pages[id].title
   told_tiles = nil
+
+  for pid, page in pairs(pages) do
+    if page.view then page.view.hidden = (pid ~= id) or nil end
+  end
+
+  -- The window manager's windows asked only while Processes shows, and its
+  -- rows from what the sample last heard, so the page paints at once.
+  S:want("windows", id == "processes")
+  if id == "processes" then pages.processes:refresh() end
+
+  header_for(id)
   relayout(why or ("page " .. id))
 
-  local first = id == "cpu" and pages.cpu:heading() or ("tiles " .. pages.overview:names())
+  print(("sysmon: page %s shown: %s"):format(id, first_line(id)))
 
-  print(("sysmon: page %s shown: %s"):format(id, first))
+  if id == "processes" then
+    local ex, ey = end_button:in_window()
+
+    print(("sysmon: end at %d,%d"):format(ex + end_button.w // 2, ey + end_button.h // 2))
+  end
+end
+
+--
+-- **The header's line and the page at once** after End, and a sample now
+-- after Refresh: never a wait for the next tick to say what a click did.
+--
+function refresh(sample)
+  if sample then sampler:tick() end
+  header_for(showing)
+  win:paint()
 end
 
 --
@@ -553,8 +642,12 @@ win:add(header)
 win:add(body)
 win:add(sampler)
 
-print(("sysmon: page %s shown: %s"):format(showing,
-      showing == "cpu" and pages.cpu:heading() or ("tiles " .. pages.overview:names())))
+if showing == "processes" then
+  S:want("windows", true)
+  pages.processes:refresh()
+end
+
+print(("sysmon: page %s shown: %s"):format(showing, first_line(showing)))
 
 -- After the sampler, which is what makes the kit read a clock at all.
 win.tick_every = pace_ticks(pace)
