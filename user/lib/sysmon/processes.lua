@@ -223,7 +223,8 @@ function M.new(spec)
 
     m.foot = y + 10
     self.h = m.foot + gfx.height() + L.page_foot
-    view.h = self.h
+    view.w, view.h = self.w, self.h
+    list.view.w = self.w - 2 * L.page_side
     self.m = m
     return m
   end
@@ -280,7 +281,7 @@ function M.new(spec)
   function view:draw(g)
     local m = page.m or page:measure()
     local x = L.page_side
-    local inner = W - 2 * L.page_side
+    local inner = page.w - 2 * L.page_side
     local t = S.totals
     local gap = 14
     local each = (inner - gap * 3) // 4

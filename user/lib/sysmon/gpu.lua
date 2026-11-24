@@ -127,7 +127,9 @@ function M.new(spec)
   --------------------------------------------------------------------------
 
   function page:measure()
-    local m = { inner = MAIN_W - 2 * L.page_side }
+    local m = { main = self.w - SIDE_W }
+
+    m.inner = m.main - 2 * L.page_side
     local y = L.page_top
 
     m.card = y
@@ -349,7 +351,7 @@ function M.new(spec)
         facts = S.gpu_why or "asking the GPU's driver",
       })
       note(g, x, m.busy, m.inner, BUSY_H, NO_GPU_HERE)
-      side(g, MAIN_W, self.h)
+      side(g, m.main, self.h)
       return
     end
 
@@ -382,7 +384,7 @@ function M.new(spec)
     holders(g, x, m.holders, m.inner)
 
     g:text(x + 3, m.foot, pace().foot, theme.text_dim, theme.window, "ui")
-    side(g, MAIN_W, self.h)
+    side(g, m.main, self.h)
   end
 
   --------------------------------------------------------------------------

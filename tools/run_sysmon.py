@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""System Monitor (`docs/sysmonitor.md`), as far as step S5 has built it:
-the window, the Overview's tiles, the CPU, Processes, GPU, Disks and
-Network pages, in two boots that run side by side (*How it is tested*: the
-suite in two halves, to keep within the budget).
+"""System Monitor (`docs/sysmonitor.md`), as far as step S6 has built it:
+the window, the Overview's tiles, the CPU, Memory, Heat and power,
+Processes, GPU, Disks and Network pages, in two boots that run side by side
+(*How it is tested*: the suite in two halves, to keep within the budget).
 
 `wm deskbar:--bar top,sysmon:--tell,spin:600` - the Deskbar as a bar at
 the top, which is where its meters are, System Monitor saying what it
@@ -12,11 +12,13 @@ shows, and a process for its End to end.
 - **The inventory check** (*How it is tested*): System Monitor prints the
   label and value of every row of `docs/sysmonitor.md`'s inventory on every
   page it can show, a row number each, and this holds them to the document
-  itself - read here, not copied - for rows 1 to 86: each on its own page
-  (1-18 the CPU page, 19-41 Processes, 42-60 the GPU, 61-74 Disks, 75-86
-  Network), and each whose "Goes to" names the Overview on the Overview as
-  well - where this machine has the part: under QEMU there is no GPU tile,
-  so the GPU's rows are not asked of the Overview there. **A row missing
+  itself - read here, not copied - for rows 1 to 86, 96 to 99 and 102:
+  each on its own page (1-18 and 96-99 the CPU page, 19-41 Processes,
+  42-60 the GPU, 61-74 Disks, 75-86 Network, 102 Heat and power), each
+  whose "Goes to" names Memory or Heat and power on that page too (S6),
+  and each whose "Goes to" names the Overview on the Overview as well -
+  where this machine has the part: under QEMU there is no GPU tile, so the
+  GPU's rows are not asked of the Overview there. **A row missing
   from its page fails the suite.** It is the "lose nothing"
   contract made into a check that is never deleted; each later step widens
   `ROWS`.
@@ -25,14 +27,20 @@ shows, and a process for its End to end.
   QEMU there is no Intel GPU to watch." (row 59, GPU Monitor's words,
   moved here from `run_gpumon.py`) and its power and temperature not
   measured; no battery; and "not measured on this machine" for every heat
-  and speed row and each core's temperature - never a nought that looks
-  like a reading.
+  and speed row, on the CPU page, the Overview and Heat and power, for
+  each core's temperature, and for TjMax, PL1, its window and PL2, which
+  Heat and power draws for the first time (S6) - never a nought that
+  looks like a reading.
+- **Memory and who ran** (S6): the address spaces' pool said as so many of
+  its most, a lane read for every core with its ticks, and game mode
+  "off" once the CPU page has asked the window manager.
 - **The cost of a sample** said, by the counter and the collector, in the
   shape the M700 is to be read in (`--tell`; the numbers here are TCG's
   and are not held to anything).
-- **Pages opened by a click**: the CPU tile, then the sidebar's Overview
-  and CPU, each page's first line read. A tile pressed and slid off before
-  the release opens nothing.
+- **Pages opened by a click**: the CPU tile, the Memory and Heat and
+  power tiles and their sidebar rows (S6: the Memory tile opened Processes
+  until then), then the sidebar's Overview and CPU, each page's first line
+  read. A tile pressed and slid off before the release opens nothing.
 - **Monitor's checks, moved here with its window** from `run_sysapps.py`:
   each pace held to the counter, the processor named in a card with its
   chip and features, each core's bar shown and put away with the window
@@ -96,10 +104,22 @@ sys.path.insert(0, HERE)
 DOC = os.environ.get("KOSMOS_SYSMON_DOC") or os.path.join(ROOT, "docs", "sysmonitor.md")
 
 # The rows of the inventory this step's pages answer for, each on the page
-# that is its home. S6 adds 96-99 and the Memory and Heat rows, S8 87-93.
-ROWS = range(1, 87)
+# that is its home. S8 adds 87-93.
+ROWS = list(range(1, 87)) + list(range(96, 100)) + [102]
 HOMES = ((range(1, 19), "cpu"), (range(19, 42), "processes"), (range(42, 61), "gpu"),
-         (range(61, 75), "disks"), (range(75, 87), "network"))
+         (range(61, 75), "disks"), (range(75, 87), "network"), (range(96, 100), "cpu"),
+         (range(102, 103), "heat"))
+
+# A page a row's "Goes to" names besides its home, which tells it too
+# (S6): "Processes band; Memory; Overview" is row 21 on Memory as well.
+ALSO = (("Memory", "memory"), ("Heat and power", "heat"))
+
+
+def also(goes):
+    """The pages besides the home and the Overview that `goes` names."""
+    places = [g.strip() for g in goes.split(";")]
+
+    return [page for word, page in ALSO if any(p.startswith(word) for p in places)]
 
 # The part a row's Overview tile is - asked of the Overview only where the
 # machine has that part (*Nothing that is absent gets a tile*). Row 85 is
@@ -173,6 +193,10 @@ def missing(said, doc, rows=ROWS, parts=None):
         if not said.get((n, home(n))):
             out.append("row %d is not on the %s page" % (n, home(n)))
 
+        for page in also(goes):
+            if page != home(n) and not said.get((n, page)):
+                out.append("row %d goes to %s (%s) and is not there" % (n, page, goes))
+
         present = parts is None or part(n) is None or part(n) in parts
 
         if "Overview" in goes and present and not said.get((n, "overview")):
@@ -186,7 +210,7 @@ def unmeasured_wrong(said, temperatures):
     out = []
 
     for n in QEMU_UNMEASURED:
-        for page in ("cpu", "overview"):
+        for page in ("cpu", "overview", "heat"):
             v = said.get((n, page))
 
             if v is not None and v != UNMEASURED:
@@ -196,6 +220,76 @@ def unmeasured_wrong(said, temperatures):
         out.append("each core's temperature says %r" % temperatures)
 
     return out
+
+
+def heat_absent_wrong(said, limits):
+    """Heat and power under QEMU (S6): the GPU's power, TjMax, PL1, its
+    window and PL2 each not measured, and no battery."""
+    out = []
+
+    if said.get((54, "heat")) != UNMEASURED:
+        out.append("Heat and power's GPU power under QEMU says %r" % said.get((54, "heat")))
+
+    m = re.fullmatch(r"TjMax (.+); PL1 (.+); its window (.+); PL2 (.+)", limits or "")
+
+    if not m:
+        out.append("the limits were not said: %r" % limits)
+    else:
+        for name, v in zip(("TjMax", "PL1", "its window", "PL2"), m.groups()):
+            if v != UNMEASURED:
+                out.append("%s under QEMU says %r" % (name, v))
+
+    if not (said.get((102, "heat")) or "").startswith("none"):
+        out.append("Heat and power has a battery under QEMU: %r" % said.get((102, "heat")))
+
+    return out
+
+
+def spaces_wrong(line):
+    """The address spaces' pool, drawn for the first time: so many of its most."""
+    m = re.fullmatch(r"(\d+) of (\d+)", line or "")
+
+    if not m or int(m.group(1)) < 1 or int(m.group(2)) < int(m.group(1)):
+        return ["the Memory page did not say the address spaces' pool: %r" % line]
+
+    return []
+
+
+def who_wrong(said):
+    """Who ran (rows 96-97): a lane read for every core, its ticks, and
+    switches counted."""
+    out = []
+    m = re.fullmatch(r"(\d+) lanes, (\d+) read, (\d+) ticks each", said.get((96, "cpu")) or "")
+
+    if not m or int(m.group(1)) < 1 or m.group(1) != m.group(2) or int(m.group(3)) < 1:
+        out.append("not every core's lane was read: %r" % said.get((96, "cpu")))
+
+    if not re.fullmatch(r"\d+", said.get((97, "cpu")) or "") or int(said[(97, "cpu")]) < 1:
+        out.append("no switches a second counted: %r" % said.get((97, "cpu")))
+
+    return out
+
+
+def game_wrong(said):
+    """Game mode (row 99), asked of the window manager while the CPU page
+    showed: off, since nothing here asked for it."""
+    v = said.get((99, "cpu"))
+
+    return [] if v == "off" else ["game mode was not heard from the window manager: %r" % v]
+
+
+# The first line each page says when it is shown (S6's two).
+FIRST = {
+    "memory": r"\d+ of \d+ MB used · Nebula .+",
+    "heat": r"the package: .+",
+}
+
+
+def first_wrong(page, got):
+    if got is not None and re.fullmatch(FIRST[page], got):
+        return []
+
+    return ["the %s page was not shown: %r" % (page, got)]
 
 
 NO_GPU = "No GPU this driver knows"
@@ -603,8 +697,71 @@ def pace_wrong(samples, seconds, pace):
             % (pace, samples, seconds, want)]
 
 
+def grip_wrong(before, got, tiles_before, tiles_after, cpu):
+    """The window dragged 160 right and 60 down by its grip: `before` the
+    Overview's relayout line, `got` the one the grip gave, the tiles said
+    either side of it, and `cpu` the CPU page's line shown after. The window
+    takes the size, its page is that less the sidebar, the tiles reach
+    across it, and the next page keeps the width (Diego, 23 November)."""
+    size = re.match(r"(\d+)x(\d+), its page \d+, the sidebar \d+, the page (\d+) wide", before or "")
+
+    if size is None:
+        return ["the Overview shown did not say its size: %r" % before]
+
+    w0, h0, p0 = (int(v) for v in size.groups())
+    after = re.match(r"\d+x\d+, (\d+)x(\d+), its page \d+, the sidebar \d+, the page (\d+) wide", got or "")
+
+    if after is None or int(after.group(1)) < w0 + 120 or int(after.group(2)) < h0 + 40 \
+            or int(after.group(3)) != int(after.group(1)) - (w0 - p0):
+        return ["System Monitor dragged 160 right and 60 down by its grip from %dx%d (its page %d) "
+                "did not lay its page out at the new size: %r" % (w0, h0, p0, got)]
+
+    def reach(line):
+        return max((int(t.group(1)) + int(t.group(3))
+                    for t in re.finditer(r"\S+ at (\d+),(\d+) (\d+)x(\d+)", line or "")), default=0)
+
+    grew = reach(tiles_after) - reach(tiles_before)
+
+    if grew < 120:
+        return ["the Overview's tiles did not reach across the window grown by its grip: "
+                "%d further, %r then %r" % (grew, tiles_before, tiles_after)]
+
+    kept = re.match(r"(\d+)x\d+, its page \d+, the sidebar \d+, the page (\d+) wide", cpu or "")
+
+    if kept is None or int(kept.group(1)) != int(after.group(1)):
+        return ["the CPU page after the grip did not keep the width a person chose, %s: %r"
+                % (after.group(1), cpu)]
+
+    return []
+
+
+# The grip's lines as the window says them, for the controls on the host.
+GRIP = ("880x736, its page 712, the sidebar 736, the page 680 wide",
+        "880x736, 1040x796, its page 712, the sidebar 736, the page 840 wide",
+        "cpu at 26,64 300x120; memory at 340,64 300x120",
+        "cpu at 26,64 380x120; memory at 420,64 380x120",
+        "1040x796, its page 760, the sidebar 736, the page 840 wide")
+
+
+def grip_controls(before, got, tiles_before, tiles_after, cpu):
+    """`grip_wrong`, each of its four halves broken: each must fail."""
+    bitten = []
+    still = got.replace("the page %s wide" % got.rsplit("the page ", 1)[-1].split()[0], "the page 680 wide")
+
+    for what, args in (("the page left at its own width", (before, still, tiles_before, tiles_after, cpu)),
+                       ("no resize said", (before, None, tiles_before, tiles_after, cpu)),
+                       ("the tiles left where they were", (before, got, tiles_before, tiles_before, cpu)),
+                       ("the next page back at its own width",
+                        (before, got, tiles_before, tiles_after, before))):
+        if not grip_wrong(*args):
+            bitten.append("the grip's check passed with " + what)
+
+    return bitten
+
+
 def controls(text, said, doc, temperatures, tiles, gpu_why, battery, cost, pace_seen,
-             sorted_seen=(), ended=None, strip=None, side=None, gpu_temperature=None, parts=None):
+             sorted_seen=(), ended=None, strip=None, side=None, gpu_temperature=None, parts=None,
+             limits=None, spaces=None, firsts=(), late=None):
     """Each check, over what was said with one thing broken: each must fail.
     Returns the checks that did not. `sorted_seen` is what `sort_checks`
     read, `ended` the `(text, id, name)` End was held to, `strip` the
@@ -612,6 +769,53 @@ def controls(text, said, doc, temperatures, tiles, gpu_why, battery, cost, pace_
     what the GPU's absence and the parts were held to (S5)."""
     bitten = []
     side = side or {}
+
+    # A row of each S6 page taken off it, the CPU page's who ran, and the
+    # Overview's switches a second.
+    for row, page in ((22, "memory"), (71, "memory"), (54, "heat"), (102, "heat"), (7, "heat"),
+                      (96, "cpu"), (99, "cpu"), (97, "overview")):
+        if not missing({k: v for k, v in said.items() if k != (row, page)}, doc, parts=parts):
+            bitten.append("the inventory did not miss row %d taken off the %s page" % (row, page))
+
+    # Heat and power's absences under QEMU, each broken.
+    if limits is not None:
+        if not heat_absent_wrong(said, limits.replace("TjMax " + UNMEASURED, "TjMax 100 °C", 1)):
+            bitten.append("a TjMax of 100 °C under QEMU was not caught")
+        if not heat_absent_wrong(said, limits.replace("PL2 " + UNMEASURED, "PL2 0 W", 1)):
+            bitten.append("a PL2 of nought under QEMU was not caught")
+        broken = dict(said)
+        broken[(54, "heat")] = "0.00 W"
+        if not heat_absent_wrong(broken, limits):
+            bitten.append("Heat and power's GPU power of nought under QEMU was not caught")
+        broken = dict(said)
+        broken[(102, "heat")] = "50%, charging"
+        if not heat_absent_wrong(broken, limits):
+            bitten.append("a battery on Heat and power under QEMU was not caught")
+
+    if spaces is not None and not spaces_wrong(None):
+        bitten.append("the address spaces' pool not said was not caught")
+    if spaces is not None and not spaces_wrong("0 of 0"):
+        bitten.append("an empty address spaces' pool was not caught")
+
+    broken = dict(said)
+    broken[(96, "cpu")] = re.sub(r", (\d+) read,", ", 0 read,", said.get((96, "cpu")) or "")
+    if not who_wrong(broken):
+        bitten.append("lanes not read were not caught")
+    broken = dict(said)
+    broken[(97, "cpu")] = "not counted yet"
+    if not who_wrong(broken):
+        bitten.append("switches not counted were not caught")
+
+    if late is not None:
+        broken = dict(late)
+        broken[(99, "cpu")] = "asked while this page shows"
+        if not game_wrong(broken):
+            bitten.append("game mode never heard was not caught")
+
+    for page, got in firsts:
+        other = "4 processors · 23% busy"
+        if not first_wrong(page, other):
+            bitten.append("the CPU page shown for %s was not caught" % page)
 
     # A row of each S5 page taken off it.
     for row, page in ((50, "gpu"), (59, "gpu"), (66, "disks"), (73, "disks"), (80, "network"),
@@ -737,7 +941,19 @@ def selftest():
             value = UNMEASURED
         if n == 59:
             value = "%s: no GPU this driver knows. %s" % (NO_GPU, NO_GPU_HERE)
+        if n == 96:
+            value = "4 lanes, 4 read, 512 ticks each"
+        if n == 97:
+            value = "3412"
+        if n == 99:
+            value = "off"
+        if n == 102:
+            value = "none on this machine"
         lines.append("sysmon: row %d %s: a row = %s" % (n, home(n), value))
+
+        for page in also(doc.get(n, "")):
+            if page != home(n):
+                lines.append("sysmon: row %d %s: a row = %s" % (n, page, value))
 
         if "Overview" in doc.get(n, ""):
             lines.append("sysmon: row %d overview: a row = %s" % (n, value))
@@ -753,7 +969,12 @@ def selftest():
     by_threads = expected(rows, "threads", True)
     ended_text = ("sysmon: processes: ended spin\nsysmon: process 31 gone\n")
     strip = "31 spin: share 14 columns, now 25%; memory 14 columns, now 160 KB"
+    limits = "TjMax {0}; PL1 {0}; its window {0}; PL2 {0}".format(UNMEASURED)
+    firsts = [("memory", "2000 of 8000 MB used · Nebula 64 MB"),
+              ("heat", "the package: " + UNMEASURED)]
     failed = (missing(said, doc) + unmeasured_wrong(said, UNMEASURED)
+              + heat_absent_wrong(said, limits) + spaces_wrong("31 of 1024") + who_wrong(said)
+              + game_wrong(said) + sum((first_wrong(p, g) for p, g in firsts), [])
               + tiles_wrong(tiles, "no GPU this driver knows", "none") + cost_wrong(cost)
               + pace_wrong(10, 10.2, 1) + nebula_wrong(said, True)
               + order_wrong(by_threads, "threads", True)
@@ -763,7 +984,8 @@ def selftest():
                       cost, [(10, 10.2, 1), (20, 10.1, 0.5)],
                       [("threads", True, by_threads), ("id", False, expected(rows, "id", False))],
                       (ended_text, 31, "spin"), (strip, 31, "spin"),
-                      side={}, gpu_temperature=UNMEASURED, parts={"disks", "network"})
+                      side={}, gpu_temperature=UNMEASURED, parts={"disks", "network"},
+                      limits=limits, spaces="31 of 1024", firsts=firsts, late=said)
 
     # The `--io` half's, over lines in the pages' shapes.
     io_text = ("sysmon: disks /Drives/PHOTOS read 0 B/s, wrote 0 B/s; busiest - 0 0\n"
@@ -787,6 +1009,8 @@ def selftest():
         failed += strip_io_wrong(line, name, drive=drive, remote=remote)
     bitten += io_controls(io_text, (io_text, "/Drives/PHOTOS", "reader"), (io_text, "pull"),
                           graphs, strips, first_io)
+    failed += grip_wrong(*GRIP)
+    bitten += grip_controls(*GRIP)
 
     for f in failed:
         print("  the good lines failed: " + f)
@@ -903,6 +1127,13 @@ def main():
         holds(tiles_wrong(first, gpu_why, battery), "the Overview's tiles")
         holds(cost_wrong(cost), "the cost of a sample")
 
+        # Heat and power's limits, the Memory page's spaces, who ran (S6).
+        limits = said("sysmon: heat limits ", start, 5)
+        spaces = said("sysmon: memory spaces ", start, 5)
+        holds(heat_absent_wrong(rows, limits), "Heat and power under QEMU")
+        holds(spaces_wrong(spaces), "the Memory page's pools")
+        holds(who_wrong(rows), "who ran")
+
         # ---- Pages by a click ----
         tiles = dict((t.group(1), tuple(int(v) for v in t.groups()[1:]))
                      for t in re.finditer(r"(\w+) at (\d+),(\d+) (\d+)x(\d+)",
@@ -927,11 +1158,51 @@ def main():
             check(got is not None and re.fullmatch(r"\d+ processors? · \d+% busy", got),
                   "a click on the CPU tile did not show the CPU page: %r" % got)
 
+        # The Memory and Heat and power pages (S6): each by its tile on the
+        # Overview - the Memory tile opened Processes until then - and by
+        # its row in the sidebar.
+        firsts = []
+
+        for page in ("memory", "heat"):
+            if page in tiles and "overview" in side:
+                mark = len(guest.seen)
+                click(ox + side["overview"][0], oy + side["overview"][1])
+                said("sysmon: page overview shown: ", mark, 10)
+                x, y, w, h = tiles[page]
+                mark = len(guest.seen)
+                click(ox + x + w // 2, oy + y + 20)
+                got = said("sysmon: page %s shown: " % page, mark, 10)
+                firsts.append((page, got))
+                holds(first_wrong(page, got), "the %s tile" % page)
+            else:
+                check(False, "the Overview has no %s tile, or the sidebar no Overview" % page)
+
+            # The rows as last said: LLM's arrives with its server's first
+            # answer, and every row under it moves down.
+            side.update((s_.group(1), (int(s_.group(2)), int(s_.group(3))))
+                        for s_ in re.finditer(r"sysmon: sidebar (\S+) at (\d+),(\d+)", guest.seen[start:]))
+
+            if page in side:
+                # Away first: a row of the page already shown shows nothing.
+                if "overview" in side:
+                    mark = len(guest.seen)
+                    click(ox + side["overview"][0], oy + side["overview"][1])
+                    said("sysmon: page overview shown: ", mark, 10)
+                mark = len(guest.seen)
+                click(ox + side[page][0], oy + side[page][1])
+                got = said("sysmon: page %s shown: " % page, mark, 10)
+                firsts.append((page, got))
+                holds(first_wrong(page, got), "the sidebar's %s" % page)
+            else:
+                check(False, "the sidebar has no %s row" % page)
+
         for page, want in (("overview", r"tiles cpu, .*busiest"),
                            ("cpu", r"\d+ processors? · \d+% busy")):
             if page not in side:
                 continue
 
+            side.update((s_.group(1), (int(s_.group(2)), int(s_.group(3))))
+                        for s_ in re.finditer(r"sysmon: sidebar (\S+) at (\d+),(\d+)", guest.seen[start:]))
             mark = len(guest.seen)
             click(ox + side[page][0], oy + side[page][1])
             got = said("sysmon: page %s shown: " % page, mark, 10)
@@ -1123,6 +1394,53 @@ def main():
               "Control-W then Right did not move System Monitor 16 to the right of %r: %r"
               % (placed, got))
 
+        # ---- The grip: the Overview laid out at the size a person drags ----
+        # Each page was laid out once at its own width, so a window grown by
+        # its grip showed the same page in a corner of it (Diego on the
+        # M700, 23 November). The bottom right corner dragged 160 right and
+        # 60 down, then the CPU page shown (`grip_wrong`).
+        grip = None
+
+        if moved is not None and "overview" in side and "cpu" in side:
+            wx, wy = int(moved.group(1)), int(moved.group(2))
+            # The CPU page first: the Overview's row, if it were showing
+            # already, would show nothing and say no size.
+            mark = len(guest.seen)
+            click(wx + side["cpu"][0], wy + side["cpu"][1])
+            said("sysmon: page cpu shown: ", mark, 10)
+            mark = len(guest.seen)
+            click(wx + side["overview"][0], wy + side["overview"][1])
+            before = said("sysmon: sidebar overview, ", mark, 10)
+            time.sleep(1)
+            tiles_before = (re.findall(r"sysmon: tiles (.*)", guest.seen[start:]) or [None])[-1]
+            size = re.match(r"(\d+)x(\d+), ", before or "")
+            got = cpu = tiles_after = None
+
+            if size:
+                gx, gy = wx + int(size.group(1)) - 6, wy + int(size.group(2)) - 6
+                mark = len(guest.seen)
+                guest.mouse_to(*R._to_tablet(gx, gy, width, height))
+                time.sleep(0.3)
+                guest.mouse_button(True)
+                time.sleep(0.3)
+                for i in range(1, 11):
+                    guest.mouse_to(*R._to_tablet(gx + 16 * i, gy + 6 * i, width, height))
+                    time.sleep(0.06)
+                time.sleep(0.4)
+                guest.mouse_button(False)
+                got = said("sysmon: resized to ", mark, 10)
+                time.sleep(1)
+                tiles_after = (re.findall(r"sysmon: tiles (.*)", guest.seen[mark:]) or [None])[-1]
+                mark = len(guest.seen)
+                click(wx + side["cpu"][0], wy + side["cpu"][1])
+                cpu = said("sysmon: sidebar cpu, ", mark, 10)
+
+            grip = (before, got, tiles_before, tiles_after, cpu)
+            holds(grip_wrong(*grip), "the grip")
+        else:
+            check(False, "System Monitor's grip was not tried: moved %r, the sidebar %r"
+                  % (moved and moved.group(0), sorted(side)))
+
         # ---- LLM, twice: one LLM Monitor, the second click raising it ----
         # It opened another on every click (Diego on the M700, 23 November).
         # Last but the meters, since LLM Monitor's window lands over this one.
@@ -1162,11 +1480,21 @@ def main():
                   "a click on the Deskbar's meters did not open System Monitor's Overview: %r, %r"
                   % (asked, opened))
 
+        # Game mode, heard from the window manager while the CPU page
+        # showed (row 99): the latest the window told.
+        late = told(guest.seen[start:])
+        holds(game_wrong(late), "game mode")
+
         # The controls, over what this boot said.
         for b_ in controls(text, told(guest.seen[start:]), doc, temperatures, first, gpu_why, battery,
                            cost, pace_seen, sorted_seen, ended, strip,
-                           side=side, gpu_temperature=gpu_temp, parts=have):
+                           side=side, gpu_temperature=gpu_temp, parts=have,
+                           limits=limits, spaces=spaces, firsts=firsts, late=late):
             check(False, "control: " + b_)
+
+        if grip and all(grip):
+            for b_ in grip_controls(*grip):
+                check(False, "control: " + b_)
 
         time.sleep(1)
         check("sysmon.lua:" not in guest.seen[start:] and "System Monitor stopped" not in guest.seen[start:],
@@ -1181,8 +1509,10 @@ def main():
         return 1
 
     print("PASS: %d checks on System Monitor (rows %d-%d of the inventory on their pages, "
-          "QEMU's absences said, a sample's cost said, the CPU tile and the sidebar opening "
-          "their pages, three paces kept by the clock, the processor's card, each core's bar "
+          "QEMU's absences said - TjMax, PL1 and PL2 among them - the spaces' pool, every "
+          "core's lane and game mode heard, a sample's cost said, the CPU, Memory and Heat "
+          "tiles and the sidebar opening their pages, three paces kept by the clock, the "
+          "processor's card, each core's bar "
           "shown and put away, Processes' headings sorting, End ending spin and its strip "
           "holding its minute, Control-W moving it, and the Deskbar's meters opening the "
           "Overview; every check's control bit)" % (checks, ROWS[0], ROWS[-1]))

@@ -6534,7 +6534,7 @@ host-check: build/airports/airports.tsv $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/te
 	@# (`docs/sysmonitor.md` S2): a counter that wrapped, a server started
 	@# again, a source that vanished, a first reading; then the controls.
 	$(HOSTDIR)/lua tools/test_meters.lua
-	@for c in no-seconds no-wrap no-first; do \
+	@for c in no-seconds no-wrap no-first no-lanes; do \
 	  if $(HOSTDIR)/lua tools/test_meters.lua $$c >/dev/null; then \
 	    echo "FAIL: the meters' control $$c passed: the checks do not bite"; exit 1; fi; done
 	$(HOSTDIR)/lua tools/test_procshare.lua

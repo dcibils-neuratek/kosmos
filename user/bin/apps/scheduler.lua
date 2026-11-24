@@ -18,7 +18,8 @@
 --     and Game mode, which is the next step (G3) and drawn as such;
 --   - **who ran**: a lane for each processor over the last two seconds,
 --     a colour a band, from what each core records at every tick
---     (`sys.sched_lane`);
+--     (`sys.sched_lane`) - drawn by the kit's `ui.lanes`, which System
+--     Monitor's CPU page draws too, and counted by `meters.lanes`;
 --   - **the bands as a ladder**, each with what lives in it;
 --   - **a turn** - the quantum - with what a shorter or longer one trades;
 --   - **the numbers that matter**: how often the processors switch, the
@@ -31,6 +32,7 @@
 local ui         = use("/Kosmos/Libraries/ui.lua")
 local text       = use("/Kosmos/Libraries/text.lua")
 local scheduling = use("/Kosmos/Libraries/scheduling.lua")
+local meters     = use("/Kosmos/Libraries/meters.lua")
 local theme      = ui.theme
 local L          = ui.layout
 
@@ -55,20 +57,16 @@ do
 end
 
 -- The bands by the kernel's names for its numbers (`band_names`), so this
--- page does not keep a numbering of its own; and their colours as the
--- drawing has them - a sign, the same in every look.
-local BAND = {}
-
-for number, name in pairs(info.band_names or {}) do BAND[name] = number end
+-- page does not keep a numbering of its own; and their colours, the kit's
+-- (`ui.lanes.inks`) - a sign, the same in every look, and the same as the
+-- lanes System Monitor draws.
+local INKS = ui.lanes.inks(info.band_names)
+local BAND = INKS.number
 
 local INPUT, AUDIO, DISPLAY = BAND.input or -1, BAND.audio or -1, BAND.display or -1
-local GAME, NORMAL, LOW = BAND.game or -1, BAND.normal or -1, BAND.low or -1
-local IDLE = 255
-local GAME_INK = 0xfff0b43c
-local BAND_INK = {
-  [INPUT] = 0xffe85d75, [AUDIO] = 0xffb07cf0, [DISPLAY] = 0xff4f8cf0, [GAME] = GAME_INK,
-  [NORMAL] = 0xff4bb07a, [LOW] = 0xff3a7a5a, [BAND.idle or 0] = 0xff2f5c47,
-}
+local NORMAL, LOW = BAND.normal or -1, BAND.low or -1
+local GAME_INK = ui.lanes.GAME
+local BAND_INK = INKS.by
 local GOOD, COST = 0xff7fdc9d, 0xffe3a04f
 local SELECT = 0xff2f6bdc
 
@@ -114,33 +112,20 @@ end
 -- What the processors did: sampled twice a second.
 --------------------------------------------------------------------------
 
-local lanes = {}
-local before = nil                  -- { switches, at } from the last sample
+-- Who ran, its switches a second and the keys' longest wait: the
+-- differences `meters.lanes`', which System Monitor's CPU page reads too.
+local who_ran = meters.lanes(counter_hz, INPUT)
+local lanes = who_ran.lanes
 local switches_per_second = nil
 local keys_wait_ms = nil
 local said = "read from the kernel, not remembered"
+local readings = {}
 
 local function sample()
-  local total, keys = 0, 0
+  for c = 1, CORES do readings[c] = sys.sched_lane(c) or false end
 
-  for c = 1, CORES do
-    local lane = sys.sched_lane(c)
-
-    if lane then
-      lanes[c] = lane
-      total = total + lane.switches
-      keys = math.max(keys, lane.waits[INPUT + 1] or 0)
-    end
-  end
-
-  local now = sys.ticks()
-
-  if before and now > before.at then
-    switches_per_second = math.floor((total - before.switches) * counter_hz / (now - before.at) + 0.5)
-  end
-
-  before = { switches = total, at = now }
-  keys_wait_ms = keys > 0 and keys * 1000 / counter_hz or 0
+  who_ran:take(readings, sys.ticks(), CORES)
+  switches_per_second, keys_wait_ms = who_ran.switches, who_ran.keys_ms
 end
 
 --
@@ -270,8 +255,7 @@ local LEFT_W = (W - 2 * PAD - GAP) * 155 // 255
 local RIGHT_W = W - 2 * PAD - GAP - LEFT_W
 local TURN_NOTE_LINES = #ui.wrapped(TURN_NOTE, RIGHT_W - 24, "label")
 local TURN_H = 10 + LH + TURN_NOTE_LINES * LH + 6 + UH + 4 + 10 + 6 + 6 + trade_lines(RIGHT_W) * LH + 10
-local LANE_H = math.max(12, LH - 4)
-local LANES_H = 10 + LH + 8 + CORES * (LANE_H + 6) + 6 + LH + 10
+local LANES_H = 10 + LH + 8 + ui.lanes.height(CORES, { face = LBL }) + 10
 local TILE_H = 8 + gfx.height("title") + LH + 8
 local LADDER_H = 10 + LH + 8 + #RUNGS * (LH + 8) + 6 + LH + 10
 
@@ -369,66 +353,12 @@ local function draw_modes(g)
   end
 end
 
-local function lane_ink(band)
-  if band == IDLE then return nil end
-
-  return BAND_INK[band] or BAND_INK[NORMAL]
-end
-
 local function draw_lanes(g, x, y, w)
   pane(g, x, y, w, LANES_H)
   pane_title(g, x, y, w, "Who ran, the last two seconds", "a lane a core, a colour a band")
 
-  local label_w = gfx.measure("Core " .. CORES, LBL) + 10
-  local lx, lw = x + 12 + label_w, w - 24 - label_w
-  local ly = y + 10 + LH + 8
-  local N = 512
-
-  for c = 1, CORES do
-    local lane = lanes[c]
-
-    g:text(x + 12, ly + (LANE_H - LH) // 2, "Core " .. c, theme.text_dim, nil, LBL)
-    g:fill_round(lx, ly, lw, LANE_H, 0xff15181d, 3)
-
-    if lane then
-      -- Oldest at the left: tick (ticks - N) to tick (ticks - 1), a column
-      -- of pixels a stretch of ticks, runs of one colour drawn as one.
-      local start = lane.ticks - N
-      local run_ink, run_x = nil, lx
-
-      for px = 0, lw do
-        local ink = nil
-
-        if px < lw then
-          local t = start + (px * N) // lw
-
-          if t >= 0 then
-            ink = lane_ink(lane.bands:byte(t % N + 1))
-          end
-        end
-
-        if ink ~= run_ink or px == lw then
-          if run_ink then g:fill(run_x, ly, lx + px - run_x, LANE_H, run_ink) end
-          run_ink, run_x = ink, lx + px
-        end
-      end
-    end
-
-    ly = ly + LANE_H + 6
-  end
-
-  -- The legend.
-  local gx = x + 12
-  ly = ly + 6
-
-  for _, b in ipairs({ { "input", BAND_INK[INPUT] }, { "audio", BAND_INK[AUDIO] }, { "display", BAND_INK[DISPLAY] },
-                       { "game", GAME_INK }, { "normal", BAND_INK[NORMAL] }, { "low", BAND_INK[LOW] } }) do
-    g:fill_round(gx, ly + (LH - 9) // 2, 9, 9, b[2], 2)
-    g:text(gx + 13, ly, b[1], theme.text_dim, nil, LBL)
-    gx = gx + 13 + gfx.measure(b[1], LBL) + 12
-  end
-
-  g:text(gx, ly, "empty = idle", theme.text_dim, nil, LBL)
+  -- The kit's lanes (`ui.lanes`), with their legend, inside the pane.
+  ui.lanes.draw(g, x + 12, y + 10 + LH + 8, w - 24, lanes, { cores = CORES, inks = INKS, face = LBL })
 end
 
 local function draw_tiles(g, x, y, w)

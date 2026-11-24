@@ -29,10 +29,15 @@
 -- of numbers a process - no table a sample - and only the chosen one is
 -- made into the lists `ui.history` draws (`S:follow`), when it is chosen.
 --
+-- **Who ran, asked always** (S6): `sys.sched_lane(c)` for each core, a
+-- system call each, its switches a second and the keys' longest wait
+-- `meters.lanes`', for the CPU page's lanes and the Overview's switches.
+--
 -- **Asked only while their page shows** (*Sampling*): the window
 -- manager's list of windows, for Processes' **draws** column, once
 -- `S:want("windows", true)`; its rendering mode, for the GPU page
--- (`"rendering"`); and the drives' `.programs` (`"programs"`) - the chosen
+-- (`"rendering"`); which application has game mode, for the CPU page
+-- (`"game"`, S6); and the drives' `.programs` (`"programs"`) - the chosen
 -- drive's while Disks shows, every drive's while Processes shows, whose
 -- strip says which drives the chosen process reads and writes (S5). The
 -- connections come with the network's totals every pace, since a rate is
@@ -150,6 +155,10 @@ SOURCES.cpu = {
 
     ui.history.push(self.heat_h, { heat and heat.temp_c or nil }, cols)
     ui.history.push(self.watts_h, { heat and heat.watts or nil }, cols)
+    -- Where it was held, a column a pace, for the power's graph (S6): a
+    -- full column held, a gap not - and nothing at all where the package
+    -- keeps no limits, so a machine that measures none marks none.
+    ui.history.push(self.held_h, { heat and heat.held and 100 or nil }, cols)
     return true
   end,
 }
@@ -163,9 +172,17 @@ SOURCES.machine = {
 
     meters.totals(k, m, self.totals)
 
+    -- Used over the history window, Nebula's part at the floor and the
+    -- rest of what is spoken for over it; what is free is the room above
+    -- (S6, the Memory page; the Overview's tile draws the same).
     local t = self.totals
+    local used = percent(t.used_mb, t.total_mb)
+    local nebula = self.kernel and self.kernel.memory_kb
+                   and percent(self.kernel.memory_kb // 1024, t.total_mb) or nil
 
-    ui.history.push(self.memory_h, { percent(t.used_mb, t.total_mb) }, self.columns)
+    if used and nebula and nebula > used then nebula = used end
+
+    ui.history.push(self.memory_h, { nebula or (used and 0), used and (used - (nebula or 0)) }, self.columns)
     return true
   end,
 }
@@ -262,8 +279,58 @@ SOURCES.processes = {
       return a.id < b.id
     end)
 
+    -- **The largest by memory**, for the Memory page (S6): every process
+    -- the busiest list has, the most first and ties by id, the first ten
+    -- and Nebula - which is first or last, so it is kept apart.
+    local big = self.largest
+
+    for i = #big, 1, -1 do big[i] = nil end
+
+    self.nebula_bytes = nil
+
+    for _, r in ipairs(top) do
+      if r.id == 0 then self.nebula_bytes = r.bytes else big[#big + 1] = r end
+    end
+
+    table.sort(big, function(a, b)
+      if a.bytes ~= b.bytes then return a.bytes > b.bytes end
+      return a.id < b.id
+    end)
+
+    for i = #big, 11, -1 do big[i] = nil end
+
     for i = #top, 6, -1 do top[i] = nil end
 
+    return true
+  end,
+}
+
+-- Who ran on each core: a system call a core (S6). Its switches a second
+-- and the keys' longest wait are `meters.lanes`'.
+SOURCES.lanes = {
+  calls = 0, messages = 0,
+  ask = function(self)
+    local readings = self.lane_readings
+
+    for c = 1, self.cores do readings[c] = sys.sched_lane(c) or false end
+
+    return readings
+  end,
+  take = function(self, readings, _, at)
+    self.who_ran:take(readings, at, self.cores)
+    return true
+  end,
+}
+
+-- Which application has game mode, while the CPU page shows: a message to
+-- the window manager, which keeps it (`wm/gamemode.lua`).
+SOURCES.game = {
+  calls = 0, messages = 1,
+  ask = function() return fs.send("/Running/wm", { type = "game", op = "state" }) end,
+  take = function(self, r)
+    if type(r) ~= "table" or r.ok == false then return false end
+
+    self.game = r.state or {}
     return true
   end,
 }
@@ -541,7 +608,11 @@ end
 function S:arrange()
   local list = {}
 
-  if self:has("cpu") then list[#list + 1] = SOURCES.cpu end
+  if self:has("cpu") then
+    list[#list + 1] = SOURCES.cpu
+    SOURCES.lanes.calls = self.cores
+    list[#list + 1] = SOURCES.lanes
+  end
   if self:has("machine") then list[#list + 1] = SOURCES.machine end
 
   if self:has("processes") then
@@ -562,6 +633,7 @@ function S:arrange()
 
   if self.wants.windows then list[#list + 1] = SOURCES.windows end
   if self.wants.rendering then list[#list + 1] = SOURCES.rendering end
+  if self.wants.game then list[#list + 1] = SOURCES.game end
   if self.wants.programs and #self.drives > 0 then list[#list + 1] = SOURCES.programs end
 
   -- What each source knew of itself - slow, how long it took - kept across
@@ -602,6 +674,13 @@ function M.new(counter_hz, columns, parts)
   local load0 = sys.cpuload() or {}
   local cores = math.max(1, #load0)
   local info = sys.info() or {}
+  local input = nil
+
+  -- The input band's number, whose longest wait is the keys'.
+  for n, name in pairs((sys.scheduler() or {}).band_names or {}) do
+    if name == "input" then input = n end
+  end
+
   local self = setmetatable({
     hz = counter_hz, columns = columns or 60, cores = cores, samples = 0,
     pace_ticks = counter_hz, info = info, kernel = nil, parts = parts,
@@ -609,6 +688,8 @@ function M.new(counter_hz, columns, parts)
     hot = meters.heat(counter_hz, info, sys.ticks()),
     procs = meters.processes(), net = meters.network(counter_hz),
     gpu = meters.gpu(counter_hz), llm = meters.llm(),
+    who_ran = meters.lanes(counter_hz, input), lane_readings = {}, game = nil,
+    largest = {}, nebula_bytes = nil,
     drive = {}, drives = {}, totals = {}, temps = {}, busiest = {}, alive = 0,
     proc_rows = {}, strip = { id = nil }, video = {}, wants = {},
     names = {}, conns = {}, net_open = 0, net_s = nil, render_mode = nil,
@@ -668,7 +749,7 @@ function S:clear()
 
   for c = 1, self.cores do self.core[c] = {} end
 
-  self.heat_h, self.watts_h, self.memory_h = {}, {}, {}
+  self.heat_h, self.watts_h, self.memory_h, self.held_h = {}, {}, {}, {}
   self.gpu_h, self.net_h, self.llm_h = {}, {}, {}
   self.gpu_clock_h, self.gpu_mem_h, self.gpu_disp_h, self.gpu_watts_h = {}, {}, {}, {}
   self.proc_hist = {}
@@ -713,6 +794,7 @@ function S:restart()
   self.cpu:restart(sys.cpuload())
   self.net:restart()
   self.gpu:restart()
+  self.who_ran:restart()
 
   for _, m in pairs(self.drive) do m:restart() end
   for _, f in pairs(self.prog_flows) do f:restart() end

@@ -16,6 +16,7 @@
 --   no-seconds   a rate not divided by the time between readings
 --   no-wrap      a counter that went backwards subtracted as it is
 --   no-first     a first reading answered as though nought came before it
+--   no-lanes     the Scheduler's switches counted without the time between readings
 
 local control = arg and arg[1]
 
@@ -25,6 +26,7 @@ local CONTROLS = {
   ["no-first"]   = { { "local a, b = self.was_in[key], self.was_out[key]",
                        "local a, b = self.was_in[key] or 0, self.was_out[key] or 0" },
                      { "  if self.idle then\n", "  if true then self.idle = self.idle or 0; self.busy = self.busy or 0\n" } },
+  ["no-lanes"]   = { { "* self.hz / (at - self.at)", "* 1" } },
 }
 
 if control and not CONTROLS[control] then
@@ -502,6 +504,24 @@ do
   -- Tokens fewer with the clock on (a count from somewhere else): nought.
   rate = l:take(stats(5e6, 2, 0))
   check(rate == 0, "a count gone backwards gave " .. tostring(rate))
+end
+
+-- Who ran (`meters.lanes`, S6): two cores read two seconds apart, so a
+-- rate that forgot the time between readings is caught (`no-lanes`).
+do
+  local lanes = meters.lanes(HZ, 6)
+  local function lane(sw, keys)
+    return { ticks = 0, switches = sw, bands = "", waits = { 0, 0, 0, 0, 0, 0, keys } }
+  end
+
+  check(lanes:take({ lane(100, 0), lane(50, 0) }, 0, 2) == false and lanes.switches == nil,
+        "lanes: a first reading has no rate")
+  lanes:take({ lane(1100, 0), lane(2050, HZ // 500) }, 2 * HZ, 2)
+  check(lanes.switches == 1500, "lanes: switches a second across the cores, two seconds apart")
+  check(math.abs(lanes.keys_ms - 2) < 1e-9, "lanes: the keys' longest wait, in ms")
+  lanes:take({ lane(10, 0), false }, 3 * HZ, 2)
+  check(lanes.switches == 0 and lanes.lanes[2].switches == 2050,
+        "lanes: a counter that went back is nought, and a core that gave none keeps its lane")
 end
 
 print(("test_meters: %d checks, %d failed%s"):format(checks, fails,

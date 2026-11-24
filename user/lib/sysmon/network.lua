@@ -83,7 +83,7 @@ function M.new(spec)
   local function up() return sys.ticks() // S.hz end
 
   function page:measure()
-    local m = { inner = W - 2 * L.page_side }
+    local m = { inner = self.w - 2 * L.page_side }
     local y = L.page_top
 
     m.card = y

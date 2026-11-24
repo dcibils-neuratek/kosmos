@@ -543,4 +543,62 @@ function LLM:take(s)
   return rate, answer, first
 end
 
+--------------------------------------------------------------------------
+-- Who ran: `sys.sched_lane(c)`, a reading a core - the Scheduler's lanes
+-- and their numbers, which System Monitor's CPU page shows too (S6).
+--------------------------------------------------------------------------
+
+local LANES = {}
+LANES.__index = LANES
+
+--
+-- `input` is the input band's number (`sys.scheduler().band_names`), whose
+-- longest wait is the keys'. After `take`:
+--
+--   lanes[c]    core c's latest reading, kept from before where it gave none
+--   switches    switches a second on every core since the last reading;
+--               nil for the first
+--   keys_ms     the longest the keys waited on any core, in ms; 0 for none
+--
+function meters.lanes(counter_hz, input)
+  return made(LANES, nil, { hz = counter_hz, input = input, lanes = {}, switches = nil,
+                            keys_ms = nil, total = nil, at = nil })
+end
+
+-- `readings[c]` a core's reading, nil or false where it gave none, for
+-- cores 1 to `cores`, taken at the counter's `at`; true when there is a
+-- new rate.
+function LANES:take(readings, at, cores)
+  local total, keys, any = 0, 0, false
+
+  for c = 1, cores or #readings do
+    local lane = readings[c]
+
+    if lane then
+      self.lanes[c] = lane
+      total = total + lane.switches
+      keys = math.max(keys, lane.waits[(self.input or -1) + 1] or 0)
+      any = true
+    end
+  end
+
+  if not any then return false end
+
+  local fresh = false
+
+  if self.total and at > self.at then
+    self.switches = math.floor(grew(self.total, total) * self.hz / (at - self.at) + 0.5)
+    fresh = true
+  end
+
+  self.total, self.at = total, at
+  self.keys_ms = keys > 0 and keys * 1000 / self.hz or 0
+  return fresh
+end
+
+-- The switches measured again from the next reading.
+function LANES:restart()
+  self.total, self.switches = nil, nil
+end
+
 return meters

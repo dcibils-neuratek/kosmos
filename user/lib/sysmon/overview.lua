@@ -42,6 +42,7 @@ local GROUND = cpu_page.GRAPH_GROUND
 -- red and green are: a temperature, a power, memory, the GPU, the LLM.
 local HEAT_COL = 0xffff8a5c
 local MEM_COL  = 0xff4fb3ff
+local NEBULA_COL = 0xff2f7fc0    -- Nebula's part of memory, under the rest
 local GPU_COL  = 0xffb98cff
 local LLM_COL  = 0xffd98cff
 
@@ -69,7 +70,7 @@ function M.new(spec)
   local TOP_H = math.max(PIC, LH + NH + UH)
   local NUMS_H = LH + UH + 8
 
-  local page = { name = "overview", title = "Overview", tiles = {} }
+  local page = { name = "overview", title = "Overview", w = W, tiles = {} }
 
   local function rate(b) return files.rate(b, bits()) end
 
@@ -169,9 +170,13 @@ function M.new(spec)
         if ghz then big[#big + 1] = { ("%.2f GHz"):format(ghz), "now" } end
         if hot ~= UNMEASURED then big[#big + 1] = { hot, watts or "the package" } end
 
+        -- Switches a second after the facts, from who ran (row 97).
+        local switches = S.who_ran.switches
+        local facts = switches and ("%s \u{b7} %d switches a second"):format(P.facts, switches) or P.facts
+
         top(g, x, y, w, function(gg, px, py)
           ui.processor_chip(gg, px + 3, py + 3, PIC - 6, P.lid, nil)
-        end, "CPU", P.model, P.facts, big)
+        end, "CPU", P.model, facts, big)
 
         local gy = y + PAD + TOP_H + 10
         local inner = w - 2 * PAD
@@ -205,6 +210,7 @@ function M.new(spec)
           { 8, "The package's power", heat and heat.watts and ("%.1f W"):format(heat.watts) or UNMEASURED },
           { 10, "Each core busy", table.concat(busy, " ") },
           { 13, "A graph a core", ("%d small %s"):format(one and 1 or CORES, (one or CORES == 1) and "graph" or "graphs") },
+          { 97, "Switches a second", S.who_ran.switches and tostring(S.who_ran.switches) or "not counted yet" },
           { 100, "How busy the machine is", ("%d%%"):format(S:busy()) },
         }
       end,
@@ -215,7 +221,7 @@ function M.new(spec)
   -- battery's, in one line, and the package's temperature over the window.
   local function heat_tile()
     return {
-      id = "heat", h = PAD + TOP_H + 8 + NUMS_H + SMALL_H + PAD, opens = "cpu",
+      id = "heat", h = PAD + TOP_H + 8 + NUMS_H + SMALL_H + PAD, opens = "heat",
       draw = function(g, x, y, w)
         local heat = S.hot.heat
         local name, facts = UNMEASURED, "QEMU's processor and others keep none"
@@ -260,7 +266,8 @@ function M.new(spec)
     }
   end
 
-  -- Memory: used of total, and the kernel's part.
+  -- Memory: used of total, and the kernel's part - Nebula's at the floor of
+  -- its graph and the rest over it. A click opens the Memory page (S6).
   local function memory_tile()
     return {
       id = "memory", h = PAD + TOP_H + 10 + SMALL_H + PAD, opens = "memory",
@@ -273,7 +280,7 @@ function M.new(spec)
         top(g, x, y, w, picture("memory"), "Memory",
             t.used_mb and ("%s of %s"):format(gb(t.used_mb), gb(t.total_mb)) or "-", facts, nil)
         graph(g, x + PAD, y + PAD + TOP_H + 10, w - 2 * PAD, SMALL_H, S.memory_h,
-              { mode = "stacked", colours = { MEM_COL } })
+              { mode = "stacked", colours = { NEBULA_COL, MEM_COL } })
       end,
       rows = function()
         local t = S.totals
@@ -477,7 +484,7 @@ function M.new(spec)
   end
 
   function page:measure()
-    local inner = W - 2 * L.page_side
+    local inner = self.w - 2 * L.page_side
     local cw = (inner - GAP) // 2
     local y = L.page_top
     local col = { y, y }

@@ -211,6 +211,7 @@ end
 --   limit_c     where it slows to cool (TjMax)
 --   watts       what the package drew between the readings, or nil
 --   limit_w     what it may draw sustained (PL1); burst_w a burst (PL2)
+--   window_s    the seconds PL1 is averaged over, or nil where not said
 --   held        "hot" or "power" when it is held below its speed now
 --
 function pulse.heat(a, b, seconds, load)
@@ -230,6 +231,7 @@ function pulse.heat(a, b, seconds, load)
     out.watts = da and da >= 0 and seconds and seconds > 0 and da / 1e6 / seconds or nil
     out.limit_w = (b.power_limit_mw or 0) > 0 and b.power_limit_mw / 1000 or nil
     out.burst_w = (b.power_burst_mw or 0) > 0 and b.power_burst_mw / 1000 or nil
+    out.window_s = (b.power_window_ms or 0) > 0 and b.power_window_ms / 1000 or nil
     out.held = (b.held_hot == 1 and "hot") or (b.held_power == 1 and "power") or nil
   end
 

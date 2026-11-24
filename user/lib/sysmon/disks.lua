@@ -48,8 +48,9 @@ local ROW_H    = 24
 local GROUND   = cpu_page.GRAPH_GROUND
 local FAINT    = 0xff8b949e
 
-local RIGHT_W = M.WIDTH - LIST_W - L.page_side
-local INNER = RIGHT_W - L.page_side
+-- The right side's width at the page's own width: `measure` works it out
+-- from `self.w`, so a window grown by its grip grows the graphs (S6).
+local function inner_at(w) return w - LIST_W - 2 * L.page_side end
 
 M.LIST_W, M.LIST_TOP, M.DEV_H = LIST_W, LIST_TOP, DEV_H
 
@@ -94,6 +95,7 @@ function M.new(spec)
   local counter_hz = S.hz
 
   local page = { name = "disks", title = "Disks", w = M.WIDTH }
+  local INNER = inner_at(M.WIDTH)          -- the right side's, from the last `measure`
 
   local function rate(b) return files.rate(b, bits()) end
   local amount = files.size
@@ -134,7 +136,9 @@ function M.new(spec)
   --------------------------------------------------------------------------
 
   function page:measure()
-    local m = {}
+    local m = { inner = inner_at(self.w) }
+
+    INNER = m.inner
     local y = L.page_top
 
     m.card = y

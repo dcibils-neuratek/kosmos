@@ -43562,3 +43562,46 @@ for the LLM row before it clicks.
 **Result**: the whole gate, 136 of 137 and `x86-film-load` alone after (its
 film's sound ran dry once under the gate's load); `x86-sysmon` 48 of 48 and
 `x86-sysmon-io` 20 of 20 after the row fix.
+
+## 18.1027 System Monitor's Memory and Heat and power pages (S6), and its pages at the window's size
+
+**What.** S6 folded from its lane: the Memory page (rows 21-24, 34, 36,
+48, 71) and Heat and power (7-9, 54, 102); who ran under the CPU page's
+cores (96-99) on `ui.lanes`, moved out of the Scheduler; `meters.lanes`
+for switches a second and the keys' longest wait. And Diego's fourth
+report from the M700 (`roadmap.md`, *Found on the M700 with 0.12.105*):
+every page measured from its own `w` rather than the width it was made
+with, the window keeping a size dragged by its grip (`win:on_resize`,
+its own `resize`'s echo known by the size it asked), the page laid out
+at that size less the sidebar and never narrower than its own.
+
+**How it was folded.** The lane started from 0.12.103, and `sysmon.lua`
+and `run_sysmon.py` changed after; each was merged three ways against
+its 0.12.103 copy (`git merge-file`), with no conflict.
+
+**Checks.** `test_meters.lua`'s four on `meters.lanes`, with a control
+`no-lanes` (a rate that forgets the time between readings). It did not
+bite as the lane wrote the test - its two readings a second apart, where
+a rate per second and a count are the same number - so the readings are
+two seconds apart now. `x86-sysmon` gains the lane's checks and
+`grip_wrong`: the Overview's corner dragged 160 right and 60 down, the
+window at least 120 and 40 larger, its page that less the sidebar, the
+tiles reaching at least 120 further, and the CPU page shown after at the
+same width - each of the four halves broken in `grip_controls`, on the
+host and over the boot's own lines.
+
+**What booting it found, that the lane's harness could not.** (1) The CPU
+and Overview pages measure while they are made, before `sysmon.lua` gave
+them a `w`, and System Monitor stopped on opening: each page has its `w`
+from its constructor now. (2) Telling the window's own resize from a
+person's by the size it asked failed with two pages in quick succession,
+the first one's echo arriving after the second was asked and kept as a
+person's choice - the window then never shrank back (`x86-sysmon`'s
+header-above-the-taller check, 46 then 60). The window manager posts one
+`resize` for each it grants, in order, so the window counts them
+(`echoes`) instead. (3) The lane's sidebar checks clicked the row of the
+page already shown, which shows nothing, and clicked Heat and power where
+it was before LLM's row arrived above it; the suite leaves the page first
+and reads the rows as last said. Measured in the boot that passed: the
+Overview at 880x787, its corner dragged, 1040x847 with the page 840 wide,
+and the CPU page after it at 1040.

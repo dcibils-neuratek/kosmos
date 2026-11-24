@@ -811,9 +811,11 @@ SUITES = [
     # level on one and a ring on the other.
     Suite("arm-sysapps", ["python3", "tools/run_sysapps.py", ARM]),
     Suite("x86-sysapps", ["python3", "tools/run_sysapps.py", X86], x86=True),
-    # System Monitor (`docs/sysmonitor.md` S3-S5): the inventory's rows 1-86 on
-    # their pages, QEMU's absences, the cost of a sample, pages by a click,
-    # Monitor's paces held to the counter, and the Deskbar's meters.
+    # System Monitor (`docs/sysmonitor.md` S3-S6): the inventory's rows 1-86,
+    # 96-99 and 102 on their pages, Memory and Heat and power among them,
+    # QEMU's absences - TjMax, PL1 and PL2 too - the cost of a sample, pages
+    # by a click, Monitor's paces held to the counter, and the Deskbar's
+    # meters.
     Suite("x86-sysmon", ["python3", "tools/run_sysmon.py", X86], x86=True),
     # System Monitor's second half (S5): a FAT stick read by `reader` and the
     # network pulled by `pull`, the GPU, Disks and Network pages, the strip.

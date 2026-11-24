@@ -4504,6 +4504,138 @@ function ui.history.draw(g, x, y, w, h, list, spec)
   return most
 end
 
+--------------------------------------------------------------------------
+-- **Who ran** (`docs/sysmonitor.md` S6): a lane a processor over the last
+-- `#lane.bands` ticks - two seconds - a colour a band, from what each core
+-- records at every tick (`sys.sched_lane`). Moved here from the Scheduler,
+-- which drew it first (`docs/scheduler.md` G2), so the Scheduler and System
+-- Monitor's CPU page draw who ran with one copy, and their band colours
+-- with it.
+--
+--   local inks = ui.lanes.inks(sys.scheduler().band_names)
+--   local h = ui.lanes.height(cores, { lane_h = 12, gap = 6 })
+--   ui.lanes.draw(g, x, y, w, lanes, { cores = cores, inks = inks })
+--
+-- `lanes` is a list a core of `sys.sched_lane`'s readings, nil for a core
+-- not read yet, whose lane is drawn empty.
+--------------------------------------------------------------------------
+
+ui.lanes = {}
+
+ui.lanes.IDLE = 255                    -- a tick a core was idle: no colour
+ui.lanes.TRACK = 0xff15181d            -- a lane's ground, dark in every look
+ui.lanes.GAME = 0xfff0b43c             -- game mode's band, named before it has a number
+
+--
+-- **The bands' colours, by the kernel's numbers for them** (`band_names`,
+-- `sys.scheduler()`), so nothing here keeps a numbering of its own: a sign,
+-- the same in every look. `by` is a colour a band number, `band` a colour a
+-- band's name, and `legend` the bands a lane shows, in the ladder's order.
+--
+function ui.lanes.inks(band_names)
+  local number = {}
+
+  for n, name in pairs(band_names or {}) do number[name] = n end
+
+  local colour = { input = 0xffe85d75, audio = 0xffb07cf0, display = 0xff4f8cf0,
+                   game = ui.lanes.GAME, normal = 0xff4bb07a, low = 0xff3a7a5a, idle = 0xff2f5c47 }
+  local out = { by = {}, band = colour, number = number, legend = {} }
+
+  for name, c in pairs(colour) do
+    if number[name] then out.by[number[name]] = c end
+  end
+
+  for _, name in ipairs({ "input", "audio", "display", "game", "normal", "low" }) do
+    out.legend[#out.legend + 1] = { name, colour[name] }
+  end
+
+  return out
+end
+
+-- How tall `cores` lanes and their legend are: a lane `lane_h` high and
+-- `gap` under each, then the legend's line.
+function ui.lanes.height(cores, spec)
+  spec = spec or {}
+
+  local face = spec.face or "label"
+  local lane_h = spec.lane_h or math.max(12, gfx.height(face) - 4)
+  local gap = spec.gap or 6
+
+  return cores * (lane_h + gap) + (spec.legend == false and 0 or 6 + gfx.height(face))
+end
+
+--
+-- **The lanes drawn**, `cores` of them from `y` down, "Core N" at the left
+-- of each and its lane beside it, the oldest tick at the left: a column of
+-- pixels a stretch of ticks, and a run of one colour one fill. Under them
+-- the legend, and "empty = idle". A band with no colour of its own is
+-- drawn as `normal`'s.
+--
+-- `spec`: `cores`, `inks` (`ui.lanes.inks`), `face` ("label"), `lane_h`,
+-- `gap` (6), `legend` (false for none), `background` (the text's).
+--
+function ui.lanes.draw(g, x, y, w, lanes, spec)
+  local face = spec.face or "label"
+  local fh = gfx.height(face)
+  local lane_h = spec.lane_h or math.max(12, fh - 4)
+  local gap = spec.gap or 6
+  local inks = spec.inks
+  local cores = spec.cores or #lanes
+  local bg = spec.background
+  local normal = inks.band.normal
+
+  local label_w = gfx.measure("Core " .. cores, face) + 10
+  local lx, lw = x + label_w, w - label_w
+  local ly = y
+
+  for c = 1, cores do
+    local lane = lanes[c]
+
+    g:text(x, ly + (lane_h - fh) // 2, "Core " .. c, theme.text_dim, bg, face)
+    g:fill_round(lx, ly, lw, lane_h, ui.lanes.TRACK, 3)
+
+    if lane then
+      local N = #lane.bands
+      local start = lane.ticks - N
+      local run_ink, run_x = nil, lx
+
+      for px = 0, lw do
+        local ink = nil
+
+        if px < lw then
+          local t = start + (px * N) // lw
+
+          if t >= 0 then
+            local band = lane.bands:byte(t % N + 1)
+
+            ink = band ~= ui.lanes.IDLE and (inks.by[band] or normal) or nil
+          end
+        end
+
+        if ink ~= run_ink or px == lw then
+          if run_ink then g:fill(run_x, ly, lx + px - run_x, lane_h, run_ink) end
+          run_ink, run_x = ink, lx + px
+        end
+      end
+    end
+
+    ly = ly + lane_h + gap
+  end
+
+  if spec.legend == false then return end
+
+  local gx = x
+  ly = ly + 6
+
+  for _, b in ipairs(inks.legend) do
+    g:fill_round(gx, ly + (fh - 9) // 2, 9, 9, b[2], 2)
+    g:text(gx + 13, ly, b[1], theme.text_dim, bg, face)
+    gx = gx + 13 + gfx.measure(b[1], face) + 12
+  end
+
+  g:text(gx, ly, "empty = idle", theme.text_dim, bg, face)
+end
+
 --
 -- **A processor's chip, its maker's mark on its lid** (Diego, 13 October
 -- 2026, with BeOS's CPU Monitor beside it - a PowerPC chip with its logo

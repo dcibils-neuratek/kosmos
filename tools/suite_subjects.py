@@ -494,8 +494,8 @@ suite("x86-sysmon", "app", ["app:sysmon", "lib:sysmon", "kit:series", "lib:meter
                             "app:deskbar", "lib:indicators.lua",
                             "lib:prockind.lua", "lib:wmproto.lua", "lib:prefs.lua", "lib:clock.lua",
                             "lib:filetypes.lua", "lib:proctable.lua", "program:spin",
-                            "app:gpumon", "app:diskmon", "app:netmon"],
-      "run_sysmon.py: System Monitor - inventory rows 1-86, QEMU's absences, cost, pages, paces, Deskbar meters")
+                            "app:gpumon", "app:diskmon", "app:netmon", "app:scheduler"],
+      "run_sysmon.py: System Monitor - inventory rows 1-86, 96-99, 102 on their pages, Memory and Heat and power, QEMU's absences, cost, pages, paces, Deskbar meters")
 suite("x86-sysmon-io", "app", ["app:sysmon", "lib:sysmon", "kit:series", "lib:meters.lua",
                                "app:diskmon", "app:netmon", "app:gpumon", "server:net",
                                "server:drives", "lib:drivelist.lua", "driver:usb/xhci",
@@ -503,7 +503,7 @@ suite("x86-sysmon-io", "app", ["app:sysmon", "lib:sysmon", "kit:series", "lib:me
                                "files:tools/run_sysmon.py"],
       "run_sysmon.py --io: GPU, Disks and Network pages - a stick read, the network pulled, the strip")
 suite("x86-scheduler", "app", ["app:scheduler", "lib:scheduling.lua", "files:kernel/sched*",
-                               "lib:wm/gamemode.lua"],
+                               "lib:wm/gamemode.lua", "lib:meters.lua"],
       "run_scheduler.py: the Scheduler window - lanes, Fair (round-robin), 20 ms turn, game mode")
 suite("x86-netmon", "app", ["lib:sysmon", "app:netmon", "kit:series", "server:net", "lib:hardware.lua"],
       "run_netmon.py: Network Monitor's rate in, busiest connection by name, mirrored graph")

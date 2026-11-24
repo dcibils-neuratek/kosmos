@@ -984,7 +984,9 @@ launched LLM Monitor again on every click - `launch` takes `front = true`
 now, which raises the window the program has (0.12.106); (d) System
 Monitor's pages lay out from the width they were made with, and its header
 and body follow nothing - every page to lay out from the window's width,
-after S6 is folded, since S6 changes the same pages.
+after S6 is folded, since S6 changes the same pages. (b) and (d) done in
+0.12.107: Memory opens its own page, and a size dragged by the grip is
+kept and every page laid out at it.
 
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64

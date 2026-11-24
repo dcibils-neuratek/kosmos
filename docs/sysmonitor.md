@@ -66,9 +66,10 @@ and power**.
 | 17 | The pace: every 0.5, 1 or 2 s, the history begun again on a change | the window kit's clock | the window's dots, for every page |
 | 18 | The words over the history ("The last minute") and the foot ("A column a second") | the pace | every graph |
 
-Computed and not drawn: `pulse.heat`'s `limit_c` (TjMax), `limit_w` (PL1)
-and `burst_w` (PL2). `clocks` prints them at the prompt. They go to **Heat
-and power**, where they are drawn for the first time.
+Computed and, until S6, not drawn: `pulse.heat`'s `limit_c` (TjMax),
+`limit_w` (PL1) and `burst_w` (PL2). `clocks` prints them at the prompt.
+Since S6 they are drawn on **Heat and power** and under the CPU page's
+cores, with PL1's averaging window (`window_s`) beside them.
 
 ### Process Viewer - `procs.lua`
 
@@ -642,7 +643,11 @@ working until S9.
 6. **S6 - Memory, Heat and power, and who ran.** The two new pages, from
    readings that exist today. TjMax, PL1 and PL2 drawn for the first time.
    `ui.lanes` moved out of the Scheduler, and the CPU page's lanes and
-   tiles (rows 96-99).
+   tiles (rows 96-99). **Built, 24 November 2026** (0.12.107), folded from
+   its lane; the pages agreed by Diego from the mockup ("S6 mockup is
+   fine"). With it every page lays out at the window's width: a size
+   dragged by the grip is kept, no page drawn narrower than its own, and
+   the next page shown at it (`x86-sysmon`'s grip check).
 7. **S7 - the history windows.** 1 minute, 10 minutes and 1 hour from the
    kit's three steps, the highest marked, the hover's readout.
    `test_series.c` holds the steps against a fake clock.

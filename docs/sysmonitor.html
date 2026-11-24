@@ -180,7 +180,7 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 
 .lanes { display: grid; gap: 3px; }
 .lane { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 8px; font-size: 11.5px; color: var(--a-dim); }
-.lane div { height: 12px; display: flex; gap: 0; background: #181b21; border-radius: 3px; overflow: hidden; }
+.lane div { height: 12px; display: flex; gap: 0; background: #15181d; border-radius: 3px; overflow: hidden; }
 .lane div i { flex: 1; }
 .mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .mini div { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 9px; padding: 8px 12px; }
@@ -189,6 +189,33 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .foot { color: var(--a-dim); font-size: 12px; margin: 12px 2px 0; }
 .link { color: #8fb8ff; }
 .none { color: var(--a-faint); font-style: italic; }
+
+/* S6: Memory, and Heat and power - proctable.level, a card of rows, a cell a core, every reading */
+.pools { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+.level { display: flex; justify-content: space-between; color: var(--a-dim); font-variant-numeric: tabular-nums; }
+.level b { color: var(--a-ink); font-weight: 400; }
+.level + .lbar { height: 8px; border-radius: 4px; background: #343c4b; margin-top: 9px; position: relative; overflow: hidden; }
+.lbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: #6d9cf5; min-width: 8px; }
+.holders { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 4px 14px; }
+.holder { display: grid; grid-template-columns: 1fr 33% 64px; gap: 12px; align-items: center; height: 24px; font-variant-numeric: tabular-nums; }
+.holder .b { height: 6px; border-radius: 3px; background: #343c4b; position: relative; overflow: hidden; }
+.holder .b i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; min-width: 6px; }
+.holder span:last-child { text-align: right; color: var(--a-dim); }
+.holder.k span:first-child { color: var(--a-dim); }
+.cells3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cell small { display: block; color: var(--a-dim); font-size: 10.5px; letter-spacing: .04em; }
+.cell div { font-variant-numeric: tabular-nums; }
+.cell .b { height: 6px; border-radius: 3px; background: #343c4b; margin-top: 4px; position: relative; overflow: hidden; }
+.cell .b i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--mem); min-width: 6px; }
+.corecells { display: flex; flex-wrap: wrap; }
+.corecells div { width: 96px; padding-left: 3px; margin-bottom: 8px; }
+.corecells small { display: block; color: var(--a-dim); font-size: 10.5px; letter-spacing: .04em; }
+.corecells b { color: var(--heat); font-weight: 400; font-variant-numeric: tabular-nums; }
+.readings { display: grid; grid-auto-flow: column; grid-template-rows: repeat(9, 26px); grid-template-columns: 1fr 1fr; column-gap: 16px;
+            background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; padding: 4px 0; }
+.readings div { display: flex; justify-content: space-between; align-items: center; padding: 0 14px; gap: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.readings div span:first-child { color: var(--a-dim); }
+.readings div span.none2 { color: var(--a-dim); }
 </style>
 </head>
 <body>
@@ -206,9 +233,17 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 <div class="scroller"><div class="win" id="cpu"></div></div>
 <p class="cap"><b>Monitor's window, whole</b>: the chip with its maker's mark, the model, its features (virtualization green), the clock now, and a graph for each core with the kernel's time in red under the thread's own in green, each core's speed and share above it. <b>New beside each core: its temperature</b>, which Nebula already reads on every core's tick. <b>New under them: the package's temperature against TjMax, and its power against PL1 and PL2</b>, over the history window. Monitor computes TjMax, PL1 and PL2 and has never drawn them. <b>And who ran</b>: the Scheduler's lanes and its three numbers, read-only. The Scheduler stays the place to change them.</p>
 
+<h2>The Memory page: used, the pools, who holds the most</h2>
+<div class="scroller"><div class="win" id="memory"></div></div>
+<p class="cap"><b>Drawn after the code, for a look before it is folded</b> (<code>user/lib/sysmon/memory.lua</code>, S6). <b>Used over the history window</b>, Nebula's part at the floor in a darker blue and the rest spoken for over it; at 64 MB of 7.9 GB Nebula's part is under one per cent of the graph's height. <b>The four pools</b>, each of the most it can grow to, the address spaces drawn for the first time (Process Viewer counted them and drew no bar). <b>Who holds the most</b>: the ten largest processes and Nebula, each with a bar against the largest. <b>Elsewhere</b>: the GPU's buffers against the GPU page's 256 MB, what <code>/Temporary</code> holds, which no server reports, so it says "not measured on this machine", and each drive's cache.</p>
+
 <h2>The GPU page: each part, its clock, its name, its power</h2>
 <div class="scroller"><div class="win" id="gpu"></div></div>
 <p class="cap"><b>GPU Monitor's window, whole</b>, while Xavier answers on the GPU over ten minutes: the card with the device's name and id, its range and its clock now, a chip for each engine with its share, busy, the clock and its sleep, memory, the display, who holds its memory, and down the right the facts. <b>New: the power in watts as a graph</b>, not only as the number now, and <b>the temperature</b>. An Intel GPU on the die has no sensor of its own, so the package's stands in, and the page says it is the package's. Over ten minutes a column is ten seconds: its bar is the mean, and the tick above it is the highest second, so a short spike still shows.</p>
+
+<h2>The Heat and power page: every temperature and every watt</h2>
+<div class="scroller"><div class="win" id="heat"></div></div>
+<p class="cap"><b>Drawn after the code</b> (<code>user/lib/sysmon/heat.lua</code>, S6), over a minute in which a build held the package at its power limit for four seconds. <b>The package's two graphs</b>, the same pair the CPU page draws: its temperature against TjMax, and its power against PL2 with a faint line at PL1 and a mark under it for each column it was held. <b>Each core's temperature</b>, a cell a core. <b>The GPU's power</b> over the window, where there is a GPU. <b>Every reading</b>: TjMax, PL1, its window and PL2 in words for the first time, and the six readings no machine gives today listed by name, each "not measured on this machine" and never a nought. The M700 has no battery, so that row says "none on this machine". Under QEMU every reading on this page says not measured.</p>
 
 <h2>Where each window goes</h2>
 <table class="plain">
@@ -267,6 +302,17 @@ function stacked(seed, n, busy, opts) {
   return `<div class="graph"${opts && opts.h ? ` style="height:${opts.h}px"` : ""}><div class="cols">${out}</div></div>`;
 }
 
+/* Memory, stacked: Nebula's part at the floor, the rest spoken for over it (S6). */
+const NEBULA = "#2f7fc0";
+function memory(seed, n, h, legend) {
+  const r = seeded(seed); let out = "";
+  for (let i = 0; i < n; i++) {
+    const k = 0.8, u = 23 + (i > 20 ? 1.5 : 0) + (i > 41 && i < 50 ? 2.2 : 0) + r() * .6;
+    out += `<i><u style="bottom:0;height:${k}%;background:${NEBULA}"></u><s style="bottom:${k}%;height:${u}%;background:var(--mem);opacity:.85"></s></i>`;
+  }
+  return `<div class="graph" style="height:${h}px;border-radius:6px"><div class="cols">${out}</div>${legend || ""}</div>`;
+}
+
 /* A single series, with the highest of each column as a tick above its mean. */
 function single(seed, n, f, colour, h, scale, peaks) {
   const r = seeded(seed); let out = "";
@@ -293,15 +339,34 @@ function mirrored(seed, n, a, b, h, top, bottom) {
 }
 
 /* A line: a temperature, against its limit drawn dashed. */
-function line(seed, n, f, colour, h, limitAt, labels) {
+function line(seed, n, f, colour, h, limitAt, labels, solidAt) {
   const r = seeded(seed); const pts = [];
   for (let i = 0; i < n; i++) pts.push(`${(i / (n - 1) * 100).toFixed(2)},${(100 - clamp(f(i, r), 0, 100)).toFixed(2)}`);
   const area = `0,100 ${pts.join(" ")} 100,100`;
   return `<div class="graph" style="height:${h}px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">
       ${limitAt != null ? `<line x1="0" x2="100" y1="${100 - limitAt}" y2="${100 - limitAt}" stroke="#6b7486" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>` : ""}
+      ${solidAt != null ? `<line x1="0" x2="100" y1="${100 - solidAt}" y2="${100 - solidAt}" stroke="#3a4250" stroke-width="1" vector-effect="non-scaling-stroke"/>` : ""}
       <polygon points="${area}" fill="${colour}" opacity=".14"/>
       <polyline points="${pts.join(" ")}" fill="none" stroke="${colour}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
     </svg>${labels || ""}</div>`;
+}
+
+/* Held: a 5 px strip under a power graph, a mark a column the package was held (S6). */
+function held(n, cols) {
+  let out = "";
+  for (let i = 0; i < n; i++) out += `<i>${cols.includes(i) ? `<u style="bottom:0;height:100%;background:#e3a04f"></u>` : ""}</i>`;
+  return `<div class="graph" style="height:5px;border-radius:2px;margin-top:3px"><div class="cols" style="inset:0 2px">${out}</div></div>`;
+}
+
+/* The package's two graphs, as cpu.lua's package_graphs draws them for the CPU page and Heat and power:
+   the temperature to TjMax, the power to PL2 with a line at PL1, and held under it. */
+function packageGraphs(seed, n, h, temp, watts, tWords, pWords, heldCols) {
+  return `<div class="g2">
+    <div><div class="gname"><b>The package's temperature</b><span>${tWords}</span></div>
+      ${line(seed, n, temp, "var(--heat)", h, null)}</div>
+    <div><div class="gname"><b>The package's power</b><span>${pWords}</span></div>
+      ${line(seed + 2, n, watts, "var(--watt)", h, null, "", 65 / 81 * 100)}${held(n, heldCols)}</div>
+  </div>`;
 }
 
 /* ------------------------------------------------------------- the Overview */
@@ -321,7 +386,7 @@ document.getElementById("overview").innerHTML = head("Overview · the last minut
   <div class="main"><div class="tiles">
     <div class="tile w2">
       <div class="top"><div class="chip"><b>intel</b></div>
-        <div><div class="kind">CPU</div><div class="name">Core i7-6700</div><div class="fx">8 processors · rated 3.40 GHz</div></div>
+        <div><div class="kind">CPU</div><div class="name">Core i7-6700</div><div class="fx">8 processors · rated 3.40 GHz · 3412 switches a second</div></div>
         <div class="big"><b style="color:var(--user)">23%</b><span>busy</span></div>
         <div class="big"><b>3.41 GHz</b><span>now</span></div>
         <div class="big"><b>44 °C</b><span>12.4 W</span></div></div>
@@ -329,13 +394,13 @@ document.getElementById("overview").innerHTML = head("Overview · the last minut
     </div>
     <div class="tile">
       <div class="top"><div><div class="kind">Heat and power</div><div class="name">44 °C · 12.4 W</div><div class="fx">the package, of 100 °C and 65 W</div></div></div>
-      <div class="nums"><div><small>CPU package</small><b>12.4 W</b></div><div><small>GPU (PP1)</small><b>0.4 W</b></div><div><small>Hottest core</small><b>46 °C</b></div><div><small>Battery</small><b class="none">none</b></div></div>
+      <div class="nums"><div><small>CPU package</small><b>12.4 W</b></div><div><small>GPU</small><b>0.4 W</b></div><div><small>Hottest core</small><b>46 °C</b></div><div><small>Battery</small><b class="none">none</b></div></div>
       ${line(5, 60, (i, r) => 40 + Math.sin(i / 6) * 3 + r() * 2 + (i > 37 && i < 47 ? 8 : 0), "var(--heat)", 40, null)}
     </div>
     <div class="tile">
       <div class="top"><div class="pic" style="color:var(--mem)">RAM</div>
-        <div><div class="kind">Memory</div><div class="name">1.9 GB of 7.9 GB</div><div class="fx">Nebula 64 MB · GPU buffers 19 MB</div></div></div>
-      <div style="margin-top:10px">${single(9, 60, (i, r) => 23 + (i > 20 ? 1.5 : 0) + r() * .6, "var(--mem)", 40, "8 GB")}</div>
+        <div><div class="kind">Memory</div><div class="name">1.9 GB of 7.9 GB</div><div class="fx">Nebula 64 MB</div></div></div>
+      <div style="margin-top:10px">${memory(9, 60, 40)}</div>
     </div>
     <div class="tile">
       <div class="top"><div class="chip g"><b>GPU</b></div>
@@ -377,7 +442,8 @@ const temps = [43, 44, 41, 46, 43, 44, 41, 46];
 const cpuGraphs = cores8.map((b, c) =>
   `<div><div class="gname"><b>Core ${c + 1}</b><span>${speeds[c].toFixed(2)} GHz · ${temps[c]} °C · ${b}%</span></div>${stacked(c + 31, 60, b * .8, { h: 78 })}</div>`).join("");
 
-const BAND = { input: "#ff6b6b", audio: "#f2c94c", display: "#5fd08a", game: "#ff8a5c", normal: "#4f8fe8", low: "#7b8494", idle: "#181b21" };
+/* The Scheduler's band colours, ui.lanes.inks since S6; idle has no colour, the lane's ground shows. */
+const BAND = { input: "#e85d75", audio: "#b07cf0", display: "#4f8cf0", game: "#f0b43c", normal: "#4bb07a", low: "#3a7a5a", idle: "transparent" };
 function lanes() {
   let out = "";
   for (let c = 0; c < 8; c++) {
@@ -389,7 +455,9 @@ function lanes() {
     }
     out += `<div class="lane">Core ${c + 1}<div>${cells}</div></div>`;
   }
-  return `<div class="lanes">${out}</div>`;
+  const legend = ["input", "audio", "display", "game", "normal", "low"].map(b =>
+    `<span><i style="background:${BAND[b]}"></i>${b}</span>`).join("") + `<span>empty = idle</span>`;
+  return `<div class="lanes">${out}</div><div class="lg" style="margin-top:6px;font-size:11.5px">${legend}</div>`;
 }
 
 document.getElementById("cpu").innerHTML = head("CPU · the last 10 minutes", "10 min",
@@ -405,20 +473,17 @@ document.getElementById("cpu").innerHTML = head("CPU · the last 10 minutes", "1
     <div class="heading"><b>The last 10 minutes</b><span>8 processors · 23% busy · a column ten seconds</span></div>
     <div class="g4">${cpuGraphs}</div>
 
-    <div class="g2" style="margin-top:14px">
-      <div><div class="gname"><b>The package's temperature</b><span>44 °C · hottest core 46 °C · slows at 100 °C</span></div>
-        ${line(41, 60, (i, r) => 40 + (i > 30 && i < 42 ? 18 : 0) + r() * 3, "var(--heat)", 92, 100,
-          `<span class="scale r">100 °C</span><span class="scale b">30 °C</span>`)}</div>
-      <div><div class="gname"><b>The package's power</b><span>12.4 W · PL1 65 W sustained · PL2 81 W a burst · never held</span></div>
-        ${single(43, 60, (i, r) => 14 + (i > 30 && i < 42 ? 40 : 0) + r() * 5, "var(--watt)", 92, "81 W", true)}</div>
-    </div>
+    <div style="margin-top:14px">${packageGraphs(41, 60, 72,
+      (i, r) => 40 + (i > 30 && i < 42 ? 18 : 0) + r() * 3,
+      (i, r) => (14 + (i > 30 && i < 42 ? 40 : 0) + r() * 5) / 81 * 100,
+      "44 °C · hottest core 46 °C · slows at 100 °C", "12.4 W · PL1 65 W sustained · PL2 81 W a burst · never held", [])}</div>
 
     <div class="heading"><b>Who ran, the last two seconds</b><span>a lane a core, a colour a band · <span class="link">Change in Scheduler ›</span></span></div>
     <div class="g2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
       ${lanes()}
       <div class="mini" style="grid-template-columns:1fr; gap:6px">
-        <div><b>3,412</b><span>switches a second</span></div>
-        <div><b>0.4 ms</b><span>the keys' longest wait</span></div>
+        <div><b>3412</b><span>switches a second</span></div>
+        <div><b>0.40 ms</b><span>the keys' longest wait</span></div>
         <div><b>off</b><span>game mode</span></div>
       </div>
     </div>
@@ -492,6 +557,71 @@ document.getElementById("gpu").innerHTML = head("GPU · the last 10 minutes", "1
     </div>
   </div></div>
   <div class="foot">Ten minutes: a column ten seconds, its mean as the bar and its busiest second as the tick; the newest at the right.</div>
+  </div></div>`;
+
+/* ------------------------------------------------------------- the Memory page (S6) */
+const POOLS = [["Threads", 187, 4096], ["Processes", 43, 1024], ["Endpoints", 96, 2048], ["Address spaces", 44, 1024]];
+const HOLDERS = [
+  ["nebula", 0, 64], ["jetski", 31, 312], ["webkit", 33, 186], ["windowserver", 9, 24], ["wm", 11, 9.8],
+  ["sysmon", 40, 7.2], ["net", 14, 6.4], ["diskfs", 6, 5.1], ["mail", 37, 4.8], ["tracker", 22, 4.3], ["audio", 12, 3.1],
+];
+const mb = v => v < 10 ? `${v.toFixed(1)} MB` : `${Math.round(v)} MB`;
+const memLegend = `<span class="lg" style="position:absolute;left:10px;top:8px;z-index:1;font-size:11.5px">
+  <span><i style="background:${NEBULA}"></i>Nebula 64 MB</span><span><i style="background:var(--mem)"></i>the rest spoken for</span></span>`;
+
+document.getElementById("memory").innerHTML = head("Memory · the last minute", "1 min") + `<div class="frame">${nav("memory")}<div class="main">
+    <div class="heading" style="margin-top:4px"><b>The last minute</b><span>1.9 GB of 7.9 GB used · 6.0 GB free</span></div>
+    ${memory(91, 60, 96, memLegend)}
+
+    <div class="heading"><b>The pools</b><span>each of the most there can be</span></div>
+    <div class="pools">${POOLS.map(([n, v, of]) =>
+      `<div><div class="level">${n}<b>${v} of ${of}</b></div><div class="lbar"><i style="width:${v / of * 100}%"></i></div></div>`).join("")}</div>
+
+    <div class="heading"><b>Who holds the most</b><span>the 10 largest and Nebula</span></div>
+    <div class="holders">${HOLDERS.map(([n, id, m]) =>
+      `<div class="holder${id === 0 ? " k" : ""}"><span>${n} · ${id}</span><span class="b"><i style="width:${m / 312 * 100}%;background:${id === 0 ? NEBULA : "var(--mem)"}"></i></span><span>${mb(m)}</span></div>`).join("")}</div>
+
+    <div class="heading"><b>Elsewhere</b><span></span></div>
+    <div class="cells3">
+      <div class="cell"><small>THE GPU'S BUFFERS</small><div>19.0 MB in 3 buffers</div><div class="b"><i style="width:${19 / 256 * 100}%"></i></div></div>
+      <div class="cell"><small>WHAT /TEMPORARY HOLDS</small><div class="none" style="font-style:normal;color:var(--a-dim)">not measured on this machine</div></div>
+      <div class="cell"><small>THE DRIVES' CACHES ANSWERED</small><div>/Home 94%</div></div>
+    </div>
+    <div class="foot">A column a second; the newest at the right.</div>
+  </div></div>`;
+
+/* ------------------------------------------------------------- the Heat and power page (S6) */
+/* A minute on the M700 in which a build ran for twelve seconds: the package rose to 71 °C and
+   reached PL1, held at its power limit for four of them, and is back at 44 °C and 12.4 W now. */
+const build = i => i > 34 && i < 47;
+const heldCols = [41, 42, 43, 44];
+const UNM = "not measured on this machine";
+const READINGS = [
+  ["The package's temperature", "44 °C"], ["Where it slows to cool (TjMax)", "100 °C"], ["The package's power", "12.4 W"],
+  ["What it may draw sustained (PL1)", "65 W"], ["PL1 is averaged over", "28.0 s"], ["What it may draw a burst (PL2)", "81 W"],
+  ["Held", "held in 4 of 60 columns"], ["The hottest core", "46 °C"], ["The GPU's power", "0.42 W"],
+  ["The GPU's temperature", "44 °C, the package's"], ["The battery", "none on this machine"],
+  ["The GPU's own temperature", UNM], ["The cores' power (RAPL PP0)", UNM], ["The memory's power (RAPL DRAM)", UNM],
+  ["The fans", UNM], ["A disk's temperature (SMART)", UNM], ["The battery's draw and time left", UNM],
+];
+
+document.getElementById("heat").innerHTML = head("Heat and power · the last minute", "1 min") + `<div class="frame">${nav("heat")}<div class="main">
+    <div class="heading" style="margin-top:4px"><b>The package</b><span>The last minute</span></div>
+    ${packageGraphs(81, 60, 96,
+      (i, r) => build(i) ? 64 + r() * 7 : 41 + r() * 3,
+      (i, r) => (build(i) ? (heldCols.includes(i) ? 64 + r() * 1.5 : 68 + r() * 10) : 11 + r() * 3) / 81 * 100,
+      "44 °C · hottest core 46 °C · slows at 100 °C", "12.4 W · PL1 65 W sustained · PL2 81 W a burst · held in 4 of 60 columns", heldCols)}
+
+    <div class="heading"><b>Each core</b><span>its own sensor, on its tick</span></div>
+    <div class="corecells">${temps.map((t, c) => `<div><small>CORE ${c + 1}</small><b>${t} °C</b></div>`).join("")}</div>
+
+    <div class="heading" style="margin-top:8px"><b>The GPU's power</b><span>0.42 W</span></div>
+    ${line(85, 60, (i, r) => (0.3 + r() * .25 + (i > 50 && i < 53 ? 1.6 : 0)) / 5 * 100, "var(--watt)", 56, null)}
+
+    <div class="heading"><b>Every reading</b><span>what this machine measures, and what it does not</span></div>
+    <div class="readings">${READINGS.map(([n, v]) =>
+      `<div><span>${n}</span><span class="${v === UNM ? "none2" : ""}">${v}</span></div>`).join("")}</div>
+    <div class="foot">A column a second; the newest at the right.</div>
   </div></div>`;
 </script>
 </body>

@@ -11,6 +11,7 @@
 --   wm sysmon                  the Overview
 --   wm sysmon:cpu              the CPU page
 --   wm sysmon:processes        the Processes page
+--   wm sysmon:memory           the Memory page; heat, Heat and power
 --   wm sysmon:gpu              the GPU page; disks, network the same
 --   wm sysmon:disks /Home      the Disks page, that drive chosen
 --   wm sysmon:--tell cpu       and a line a sample, for a suite
@@ -28,6 +29,10 @@
 -- GPU Monitor's, Disk Monitor's and Network Monitor's windows are its GPU,
 -- Disks and Network pages since S5 (`sysmon/gpu.lua`, `disks.lua`,
 -- `network.lua`), which those windows draw too until S9 retires them.
+-- Memory and Heat and power are pages of their own since S6
+-- (`sysmon/memory.lua`, `heat.lua`) - TjMax, PL1 and PL2 drawn for the
+-- first time - and the CPU page has the Scheduler's lanes, by the kit's
+-- `ui.lanes`, with switches a second, the keys' wait and game mode.
 --
 -- **The window is the thinnest layer** (*Kits supply, applications
 -- orchestrate*): it counts nothing. Every number is the kernel's, a
@@ -41,10 +46,7 @@
 -- with that drive chosen. A part whose page is not here yet - the LLM
 -- server, until S8 moves it in - opens the window that shows it today,
 -- which stays until its rows have been seen here (S9), so nothing is out
--- of reach in between. Heat and power opens
--- the CPU page, whose card holds the package's heat and power, and Memory
--- the Processes page, whose band holds memory and the pools, until each
--- has its own page (S6).
+-- of reach in between.
 --
 -- **What it may do** (decision 7): `needs network`, for the network's
 -- counts, which Network Monitor held alone, and `needs processes`, for
@@ -68,6 +70,8 @@ local processes_page = use("/Kosmos/Libraries/sysmon/processes.lua")
 local gpu_page = use("/Kosmos/Libraries/sysmon/gpu.lua")
 local disks_page = use("/Kosmos/Libraries/sysmon/disks.lua")
 local network_page = use("/Kosmos/Libraries/sysmon/network.lua")
+local memory_page = use("/Kosmos/Libraries/sysmon/memory.lua")
+local heat_page = use("/Kosmos/Libraries/sysmon/heat.lua")
 
 local ARGS = tostring(args or "")
 local TELL = ARGS:find("%-%-tell") ~= nil     -- a line a sample, for its suite
@@ -141,23 +145,27 @@ local pages = {
   disks = disks_page.new{ S = S, pace = the_pace, bits = in_bits, prefix = "sysmon: disks",
                           on_choose = function(key) drive_chosen(key) end },
   network = network_page.new{ S = S, w = math.max(MW, network_page.WIDTH), pace = the_pace, bits = in_bits },
+  memory = memory_page.new{ S = S, w = MW, pace = the_pace },
+  heat = heat_page.new{ S = S, w = MW, pace = the_pace },
 }
 
 -- How wide each page is: its own `w`, the window's width the sidebar and it.
-for _, page in pairs(pages) do page.w = page.w or MW end
+-- That is the narrowest it is drawn: a window a person grows with the grip
+-- lays the page out again at the width it was given (`natural_w` kept).
+for _, page in pairs(pages) do
+  page.w = page.w or MW
+  page.natural_w = page.w
+end
 
--- The pages in the order `--tell` says them.
-local TOLD = { "overview", "cpu", "processes", "gpu", "disks", "network" }
+-- The pages in the order `--tell` says them: the Network page's last,
+-- whose row 86 is what a suite waits for.
+local TOLD = { "overview", "cpu", "memory", "heat", "processes", "gpu", "disks", "network" }
 
 local ELSEWHERE = {
   llm       = "/Kosmos/Apps/llmmon.lua",
 }
 
--- Heat and power has the CPU page's card, and Memory the Processes page's
--- band, until each has its own page (S6).
-local STANDS_IN = { heat = "cpu", memory = "processes" }
-
-local showing = pages[START] and START or STANDS_IN[START] or "overview"
+local showing = pages[START] and START or "overview"
 
 print(("sysmon: processor %s | %s | %s"):format(P.maker, P.model, P.facts))
 print("sysmon: features " .. P.feature_words)
@@ -238,12 +246,31 @@ local function side_need()
   return (side.y - L.head) + (y or 0) + (h or 0) + L.page_foot
 end
 
+--
+-- **The size a person chose, kept** (Diego, 23 November 2026: "system
+-- monitor is not resizing its contents when i resize the window"). Each
+-- page was laid out once at the width it was made with, so a window grown
+-- by the grip showed the same page in a corner of it. A size from the grip
+-- is kept as `chosen` and every page is laid out at it from then on, never
+-- narrower than its own nor shorter than it and the sidebar need. `echoes`
+-- counts the resizes this asked for whose `resize` event has not come: the
+-- window manager posts one for each it grants, in order, so those are this
+-- window's own. Told by the size instead, two quick pages made the first
+-- one's echo look like a person's, and the window kept it.
+--
+local chosen_w, chosen_h
+local echoes = 0
+
 local function height()
-  return math.max(side_need(), pages[showing].h)
+  local need = math.max(side_need(), pages[showing].h)
+
+  return chosen_h and math.max(chosen_h, need) or need
 end
 
 local function width()
-  return SIDE + pages[showing].w
+  local need = SIDE + pages[showing].natural_w
+
+  return chosen_w and math.max(chosen_w, need) or need
 end
 
 win, err = ui.window{ title = "System Monitor", w = width(), h = L.head + height(), x = 90, y = 130,
@@ -442,6 +469,11 @@ local function say_tiles()
 end
 
 function body:draw(g)
+  -- Below a page shorter than the window a person chose, the window's own.
+  if self.h > pages[showing].h then
+    g:fill(0, pages[showing].h, self.w, self.h - pages[showing].h, theme.window)
+  end
+
   if not self.told and more.x then
     say_where()
     self.told = true
@@ -495,6 +527,8 @@ local function tell_rows()
   print(("sysmon: row 85 overview: The header, since the machine started = %s"):format(pages.network:since()))
 
   print("sysmon: core temperatures " .. pages.cpu:temperatures())
+  print("sysmon: heat limits " .. pages.heat:limits())
+  print("sysmon: memory spaces " .. pages.memory:spaces())
   print("sysmon: gpu temperature " .. pages.gpu:temperature())
   print("sysmon: strip " .. pages.processes:strip_words())
 
@@ -587,18 +621,26 @@ end
 function relayout(why)
   local page = pages[showing]
 
+  page.w = width() - SIDE
   page:measure()
-  body.w, body.h = page.w, page.h
+  body.w, body.h = page.w, height()
 
   -- The page's width and the taller of it and the sidebar, below the
-  -- header - as it was opened, and as every page since.
-  local ok, w, h = win:resize(width(), L.head + height())
+  -- header - as it was opened, and as every page since - or what a person
+  -- chose, where that is more. Asked only when it differs, and what the
+  -- window manager answered kept, so its event is known for this one's.
+  local ok, w, h = true, win.w, win.h
+
+  if width() ~= win.w or L.head + height() ~= win.h then
+    ok, w, h = win:resize(width(), L.head + height())
+    if ok then echoes = echoes + 1 end
+  end
 
   -- The page's own height and the sidebar's beside the window's: the
   -- window is the taller of the two, so on a machine of few cores the
   -- sidebar decides it and the page alone grows (`x86-sysmon`).
-  print(("sysmon: %s, %s, its page %d, the sidebar %d"):format(why,
-        ok and ("%dx%d"):format(w, h) or "not resized", page.h, side_need()))
+  print(("sysmon: %s, %s, its page %d, the sidebar %d, the page %d wide"):format(why,
+        ok and ("%dx%d"):format(w, h) or "not resized", page.h, side_need(), page.w))
   win:paint()
 
   -- The dots are at the header's right end, so a page of another width
@@ -626,6 +668,7 @@ local function wants_for(id)
   S:want("rendering", id == "gpu")
   S:want("programs", id == "disks" and "chosen" or id == "processes" and "all" or nil)
   S:want("connections", id == "network" or id == "processes")
+  S:want("game", id == "cpu")
 end
 
 -- Where a page's minute is in the window, for a suite to look at.
@@ -706,10 +749,8 @@ function open_part(id, from)
     return
   end
 
-  local page = pages[id] and id or STANDS_IN[id]
-
-  if page then
-    show(page, from)
+  if pages[id] then
+    show(id, from)
     return
   end
 
@@ -780,4 +821,16 @@ say_graph(showing)
 
 -- After the sampler, which is what makes the kit read a clock at all.
 win.tick_every = pace_ticks(pace)
+-- The grip: a size a person chose is kept and the page laid out at it. The
+-- event that follows this window's own `resize` is its echo, and is not.
+function win:on_resize(w, h)
+  if echoes > 0 then
+    echoes = echoes - 1
+    return
+  end
+
+  chosen_w, chosen_h = w, h - L.head
+  relayout(("resized to %dx%d"):format(w, h))
+end
+
 win:run()
