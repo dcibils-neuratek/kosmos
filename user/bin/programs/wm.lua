@@ -4799,6 +4799,26 @@ handlers.launch = function(req, who)
     end
   end
 
+  --
+  -- **`front = true`: the window it has, if it has one.** A part of another
+  -- application that opens a program - System Monitor's LLM row, until its
+  -- page is here - would start a second copy on every click; this raises
+  -- the first window of the same file and starts nothing (Diego, 23
+  -- November 2026: "clicking llm opens a new window every time"). Decided
+  -- here, where the windows are, so the click waits on nobody's answer.
+  --
+  if req.front then
+    for i = #windows, 1, -1 do
+      local win = windows[i]
+
+      if not win.backdrop and (win.program == path or win.program == req.program) then
+        raise(win)
+        print(("wm: %s has a window, raised rather than started again"):format(tostring(req.program)))
+        return { ok = true, raised = win.handle }
+      end
+    end
+  end
+
   print(("wm: launching %s"):format(tostring(req.program)))
 
   --

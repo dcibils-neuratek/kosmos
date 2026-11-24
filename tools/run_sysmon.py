@@ -1123,6 +1123,29 @@ def main():
               "Control-W then Right did not move System Monitor 16 to the right of %r: %r"
               % (placed, got))
 
+        # ---- LLM, twice: one LLM Monitor, the second click raising it ----
+        # It opened another on every click (Diego on the M700, 23 November).
+        # Last but the meters, since LLM Monitor's window lands over this one.
+        # Its row comes with the LLM server's first answer, so it is waited
+        # for and read now rather than with the others.
+        said("sysmon: sidebar llm at ", start, 30)
+        side = dict((s_.group(1), (int(s_.group(2)), int(s_.group(3))))
+                    for s_ in re.finditer(r"sysmon: sidebar (\S+) at (\d+),(\d+)", guest.seen[start:]))
+        check("llm" in side, "the sidebar said no LLM row: %r" % sorted(side))
+
+        if "llm" in side:
+            mark = len(guest.seen)
+            click(ox + side["llm"][0], oy + side["llm"][1])
+            first_open = said("wm: launching /Kosmos/Apps/llmmon.lua", mark, 10)
+            shown = said("wm: window LLM Monitor at ", mark, 60)
+            mark = len(guest.seen)
+            click(ox + side["llm"][0], oy + side["llm"][1])
+            raised = said("wm: /Kosmos/Apps/llmmon.lua has a window, raised", mark, 10)
+            again = "wm: launching /Kosmos/Apps/llmmon.lua" in guest.seen[mark:]
+            check(first_open is not None and shown is not None and raised is not None and not again,
+                  "LLM twice did not open one LLM Monitor and raise it: %r, %r, %r, launched again %r"
+                  % (first_open, shown, raised, again))
+
         # ---- The Deskbar's meters open the Overview (row 103) ----
         meters = re.findall(r"deskbar: the meters at (\d+)", guest.seen[start:])
         bar = said("wm: window Deskbar at ", start, 5)

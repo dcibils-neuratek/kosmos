@@ -43530,3 +43530,35 @@ is left as a gap, said here.
 **Result**: host, `x86-gpumon`, `x86-llm`, `x86-llmmon`, `x86-servers`
 (`monitor 1`), `x86-display-1`, `x86-virtio-gpu`, `x86-sysmon` and
 `x86-sysmon-io`, 9 of 9.
+
+## 18.1026 The Mixer's tiles, and LLM raised rather than opened again
+
+Two of four things Diego found on the M700 with 0.12.105 (`roadmap.md`,
+*Found on the M700*); the other two wait for S6.
+
+**The Mixer.** Sample, Rate and Channels were 54-pixel tiles holding three
+lines, and three lines of the desktop's faces are 70 or more, so the third
+ran over "Mixed at ...". That is true at QEMU's faces as well as the
+M700's; nothing looked. A tile is now as tall as its lines with 6 above
+and below, and the Mixer says once a size `mixer: a tile N tall, its lines
+M`, which `usb_audio_mixer` (in `x86-usb-3`) holds to N >= M + 12. The old
+Mixer said nothing, and with 54 the check fails by its numbers.
+
+**LLM.** System Monitor's LLM row launched LLM Monitor, which has no page
+until S8, on every click. `launch` takes `front = true` now: the window
+manager raises the window of the same file if there is one, and starts
+nothing. It is decided in the window manager, where the windows are, so the
+click waits on nobody (`nothing on the desktop waits on a server`).
+`x86-sysmon` clicks LLM twice and wants one launch, one window and the
+second click's `has a window, raised`.
+
+**What writing that check found.** It first passed by not running: the LLM
+row comes with the server's first answer, after System Monitor had said
+where its rows were, so the suite never had the row and skipped the click
+without a word. A missing row is now a failure of its own; System Monitor
+says its rows again whenever the set of them changes; and the suite waits
+for the LLM row before it clicks.
+
+**Result**: the whole gate, 136 of 137 and `x86-film-load` alone after (its
+film's sound ran dry once under the gate's load); `x86-sysmon` 48 of 48 and
+`x86-sysmon-io` 20 of 20 after the row fix.

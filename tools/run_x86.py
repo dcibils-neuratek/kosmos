@@ -5861,6 +5861,15 @@ def usb_audio_mixer(image, check):
               "Mixer did not show Built-in alone, or the Deskbar was not told of devices: %r"
               % said(0))
 
+        # The format's tiles as tall as their three lines and 6 above and
+        # below: they were 54 pixels, and the third line ran over "Mixed at"
+        # (Diego on the M700, 23 November 2026).
+        machine.wait_for(0, r"mixer: a tile \d+ tall", 30)
+        tile = re.search(r"mixer: a tile (\d+) tall, its lines (\d+)", machine.since(0))
+        check(tile is not None and int(tile.group(1)) >= int(tile.group(2)) + 12,
+              "Mixer's tiles are not as tall as their lines: %r"
+              % (tile.group(0) if tile else said(0)))
+
         mark = machine.mark()
         machine.monitor.ask("device_add usb-audio,id=spk,bus=usb0.0,audiodev=ua0", quiet=0.3)
         check(machine.wait_for(mark, r"speaker: playing the mix on 1\.1 at 48000 Hz", 30),

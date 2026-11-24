@@ -281,10 +281,18 @@ local function also(list, now, say)
   return #out > 0 and ("also " .. table.concat(out, ", ")) or "only"
 end
 
-local TILE_H, TILE_GAP = 54, 8
+local TILE_GAP = 8
+
+-- A tile is as tall as its three lines in the desktop's faces, with 6
+-- above and below: it was 54 pixels, which held them at QEMU's sizes and
+-- not at the M700's, where the third line ran out of the tile and over
+-- "Mixed at" (Diego, 23 November 2026).
+local function tile_h()
+  return 6 + 2 * gfx.height("ui") + gfx.height("label") + 6
+end
 
 local function tiles()
-  local v = ui.view{ h = TILE_H + 22 }
+  local v = ui.view{ h = tile_h() + 6 + gfx.height("ui") + 4 }
 
   v.fill = true
 
@@ -294,6 +302,15 @@ local function tiles()
     if not d then return end
 
     local w = (self.w - 2 * TILE_GAP) // 3
+    local TILE_H = tile_h()
+    local lines = 2 * gfx.height("ui") + gfx.height("label")
+
+    -- Once a size: how tall a tile is and its three lines, which the USB
+    -- speaker's suite holds the one to the other (`usb_audio_mixer`).
+    if self.said_h ~= TILE_H then
+      self.said_h = TILE_H
+      print(("mixer: a tile %d tall, its lines %d"):format(TILE_H, lines))
+    end
     local items = {
       { "Sample", ("%d bit"):format(d.bits or 16),
         also(d.offers.bits, d.bits, function(b) return tostring(b) end) },

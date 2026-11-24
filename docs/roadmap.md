@@ -972,6 +972,20 @@ windows thin shells over them until S9, the GPU's watts as a graph, the
 strip's drives, connections and buffers, rows 42-86 and `x86-sysmon-io`.
 Next: S6, Memory and Heat and power.
 
+**Found on the M700 with 0.12.105, 23 November 2026** (Diego: "the audio
+settinghs screen has some overlapping", "clicking the memory tab in the
+system monitor does nothing", "clicking llm opens a new window every time",
+"system monitor is not resizeing its contents when i resiuze the window"):
+(a) the Mixer's Sample, Rate and Channels tiles were 54 pixels for three
+lines, and at the M700's faces the third ran over "Mixed at" - the tiles
+are as tall as their lines now (0.12.106); (b) Memory stands for Processes
+until S6 and nothing says so - S6's Memory page is the fix; (c) LLM
+launched LLM Monitor again on every click - `launch` takes `front = true`
+now, which raises the window the program has (0.12.106); (d) System
+Monitor's pages lay out from the width they were made with, and its header
+and body follow nothing - every page to lay out from the window's width,
+after S6 is folded, since S6 changes the same pages.
+
 **Found in V6, to do, 22 November 2026.** (a) Settings turns the GPU on
 for both wherever Vulkan opens, and on the M700 that writes at 0.55-0.64
 of the processor's speed: decided, (2) above. (b) The

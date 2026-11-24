@@ -397,13 +397,30 @@ local function say_where()
 
   print(("sysmon: window at %d,%d; more at %d,%d"):format(
         win.origin_x or 0, win.origin_y or 0, mx + more.w // 2, my + more.h // 2))
+end
+
+-- The sidebar's rows, said again whenever the set of them changes: LLM's
+-- row arrives with the server's first answer, after the first paint, and
+-- a suite that read the rows once never had it to click.
+local told_side = nil
+
+local function say_side()
+  local ids = {}
 
   for _, it in ipairs(side.items) do
-    if it.id and not it.heading then
-      local y, h = side:row_of(it.id)
+    if it.id and not it.heading then ids[#ids + 1] = it.id end
+  end
 
-      print(("sysmon: sidebar %s at %d,%d"):format(it.id, side.x + side.w // 2, side.y + y + h // 2))
-    end
+  local key = table.concat(ids, " ")
+
+  if key == told_side then return end
+
+  told_side = key
+
+  for _, id in ipairs(ids) do
+    local y, h = side:row_of(id)
+
+    print(("sysmon: sidebar %s at %d,%d"):format(id, side.x + side.w // 2, side.y + y + h // 2))
   end
 end
 
@@ -429,6 +446,8 @@ function body:draw(g)
     say_where()
     self.told = true
   end
+
+  if self.told then say_side() end
 
   say_tiles()
 
@@ -699,7 +718,8 @@ function open_part(id, from)
   local program = ELSEWHERE[id]
 
   if program then
-    fs.send("/Running/wm", { type = "launch", program = program })
+    -- `front`: its window raised when it has one, never a second copy.
+    fs.send("/Running/wm", { type = "launch", program = program, front = true, wait = false })
     print(("sysmon: %s opens %s, until its page is here"):format(id, program))
   end
 
